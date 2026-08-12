@@ -70,6 +70,8 @@ Rules:
 
 ## 3. Platform & Technical Foundation
 
+*Implementation detail for everything in this section lives in [SCAN_PIPELINE.md](SCAN_PIPELINE.md).*
+
 **iOS-first, fully on-device.** The photo mess lives on the phone; iOS users pay for apps; on-device processing means zero server cost (which is what makes a one-time price viable) and a privacy story subscription competitors can't match: *"your photos never leave your phone."*
 
 ### Detection signals available on-device
