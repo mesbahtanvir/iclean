@@ -1,0 +1,56 @@
+# XcodeGen spec — run `xcodegen generate` on a Mac to produce iClean.xcodeproj
+name: iClean
+options:
+  bundleIdPrefix: com.iclean
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  iCleanCore:
+    path: Packages/iCleanCore
+  iCleanData:
+    path: Packages/iCleanData
+  iCleanUIKit:
+    path: Packages/iCleanUIKit
+targets:
+  iClean:
+    type: application
+    platform: iOS
+    sources: [App/Sources]
+    dependencies:
+      - package: iCleanCore
+        product: PhotoGateway
+      - package: iCleanCore
+        product: ScanEngine
+      - package: iCleanData
+        product: ProposalStore
+      - package: iCleanData
+        product: CommitEngine
+      - package: iCleanData
+        product: Entitlements
+      - package: iCleanUIKit
+        product: iCleanUI
+    info:
+      path: App/Resources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        # Honesty bar copy — APP_PLATFORM.md §7
+        NSPhotoLibraryUsageDescription: >-
+          iClean scans your library on this device to find duplicates and junk.
+          Nothing is uploaded, and nothing is deleted without your confirmation.
+        # We own the limited-access moment, not the OS re-prompt — APP_PLATFORM.md §3
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
+        # Registration silently fails without this — SCAN_PIPELINE.md §8
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.iclean.scan.processing
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: App/Resources/iClean.entitlements
+      properties:
+        # Widget snapshot + shared DB container — APP_PLATFORM.md §6
+        com.apple.security.application-groups:
+          - group.com.iclean.shared
+    settings:
+      base:
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.10"
