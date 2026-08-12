@@ -85,7 +85,7 @@ Principles:
 
 ## 4. Persistence Layer & Data Model
 
-**Choice: SQLite via GRDB** (WAL mode). Rationale: bulk-insert throughput for 200k-row scans, precise index control for hash lookups, value-type records that fit Swift Concurrency, trivial migrations. Core Data/SwiftData rejected: object-graph overhead and implicit faulting fight a batch pipeline; we need plain columnar rows and covering indexes. The DB lives in the app container with `.completeUntilFirstUserAuthentication` file protection.
+**Choice: SQLite via GRDB** (WAL mode). Rationale: bulk-insert throughput for 200k-row scans, precise index control for hash lookups, value-type records that fit Swift Concurrency, trivial migrations. Core Data/SwiftData rejected: object-graph overhead and implicit faulting fight a batch pipeline; we need plain columnar rows and covering indexes. The DB lives in an **App Group container** (`group.<bundleid>.shared`, `.completeUntilFirstUserAuthentication` file protection) from day one — the v1.x widget reads a snapshot JSON from the same group, never the DB itself (APP_PLATFORM.md §6).
 
 Schema (columns abridged to the load-bearing ones):
 
@@ -97,6 +97,8 @@ asset (
   width INT, height INT, duration REAL,
   isFavorite BOOL, burstId TEXT, hasLocation BOOL,
   latBucket INT, lonBucket INT,   -- ~1km grid, for sessionization only
+  sessionId INT,                  -- owned by the sessionizer (§6.1); indexed
+  cloudId TEXT,                   -- PHCloudIdentifier, lazily mapped (§9 restore remap)
   filename TEXT, uti TEXT,        -- from PHAssetResource (S3)
   fileSize INT, fileSizeIsEstimate BOOL,
   isEdited BOOL, hasRawResource BOOL,
@@ -108,9 +110,11 @@ asset (
 scan_state (
   assetId TEXT, stage TEXT,       -- 's1'..'s4' + per-detector rows
   status INT,                     -- pending / done / failed / needsConnection
-  detectorVersion INT, updatedAt REAL, retryCount INT,
+  detectorVersion INT, updatedAt REAL, retryCount INT, nextRetryAt REAL,
   PRIMARY KEY (assetId, stage)
 )
+-- covering index (stage, status, detectorVersion) — the batch query treats
+-- done-with-stale-version as pending, so version bumps rewrite nothing (§11).
 
 asset_signal (                    -- ONE wide row per asset: row overhead paid once,
   assetId TEXT PRIMARY KEY,       -- hashes stored losslessly as INTEGER
@@ -142,14 +146,32 @@ cluster_member (clusterId INT, assetId TEXT, keepScore REAL, rescued BOOL,
 
 proposal (
   id INTEGER PRIMARY KEY, actionType TEXT, unit TEXT,      -- photo/cluster/batch/rule
-  clusterId INT NULL, reasonParams TEXT,                   -- JSON for the reason string
+  dedupeKey TEXT UNIQUE,           -- hash(actionType, sorted memberIds, keeperId):
+                                   -- S7 upserts on it, so an unchanged regenerated
+                                   -- proposal keeps its state instead of reappearing
+  clusterId INT NULL, reasonParams TEXT,                   -- templated JSON (§5-S7)
   regretTier INT, confidence REAL, estBytes INT,
-  state INT,                       -- pending/shown/approved/rejected/staged/committed/invalidated
+  score REAL,                      -- materialized deck ordering (§12)
+  state INT,                       -- lifecycle state machine in §5-S7
   createdAt REAL, decidedAt REAL
 )
 
-decision_log (proposalId INT, verdict INT, decidedAt REAL, restored BOOL)
-                                   -- feeds adaptive thresholds (DESIGN.md §9.5)
+suppression (assetId TEXT, actionType TEXT, createdAt REAL,
+             PRIMARY KEY (assetId, actionType))
+  -- "Kept — won't suggest again", durably: S7 excludes suppressed assets from
+  -- deletion candidacy for that actionType even across re-clustering. Cleared
+  -- only when the asset's modifiedAt changes (content changed → fair to re-ask).
+
+decision_log (uiSessionId INT, seq INT, proposalId INT, verdict INT,
+              decidedAt REAL, restored BOOL, PRIMARY KEY (uiSessionId, seq))
+  -- append-only; the undo stack IS this table: swipe-down pops the UI session's
+  -- highest seq and reverts proposal.state (a batch verdict is one row whose pop
+  -- reverts all member proposals). Restores append rows, never delete — adaptive
+  -- thresholds (§7) and regret telemetry read one source of truth.
+
+staging_note (proposalId INT, kind INT, createdAt REAL)
+  -- droppedMissing / droppedModified / commitFailed: backs the bin-screen notes
+  -- and the commit engine's partial-failure reporting (APP_PLATFORM.md §2).
 
 meta (key TEXT PRIMARY KEY, value BLOB)
   -- 'changeToken': archived PHPersistentChangeToken
@@ -180,7 +202,7 @@ Enables immediately, with zero image I/O:
 - Largest-files queue seeding (sizes arrive in S3; dimensions×format estimate until then, flagged `fileSizeIsEstimate`)
 - Sessionization (§6.1) — sessions are computable from timestamps + location buckets alone
 
-**This is the tier that brings the hub alive in ~10 s** — buckets appear with live counts. The first swipeable *deck*, per the trust ladder, is exact duplicates: S1's dimension-equality groups seed the **dupe fast path**, pulling S2 + S3 forward for those groups so the opener deck is ready in ≤ 60 s (§8 priority 3).
+**This is the tier that brings the hub alive in ~10 s** — buckets appear with live counts. The first swipeable *deck*, per the trust ladder, is exact duplicates, via the **dupe fast path**: S1 seeds candidate groups on `(width, height, createdAt rounded to 1 s, duration rounded to 0.5 s)` — dimensions alone are degenerate (every 12 MP photo shares one shape) — keeping only keys with ≥ 2 members, ranked by `memberCount × estimated bytes` so the biggest wins confirm first. S2 pHash ≤ 2 then partitions each group into confirmed clusters; S3 `fileSize` splits residual false merges and finalizes `estBytes`. The Duplicates deck is declared **ready** at the first of: fast-path queue drained, ≥ 15 confirmed clusters with final sizes, or 60 s after permission grant — and keeps streaming clusters in afterward. (Same-shot copies saved months apart don't share `createdAt`; they arrive later via the ordinary band-index path, §6.2.)
 
 ### S1.5 — Album membership ingest
 
@@ -223,11 +245,17 @@ Face/eyes signals persist to `signal`; embeddings are handed directly to S5 for 
 
 ### S5 — Clustering (§6), S6 — Scoring (§7), S7 — Proposal generation
 
+**Triggering:** a session becomes cluster-eligible when every member's S4 row is terminal (`done`, failed-out, or `needsConnection`); non-`done` members are excluded from similarity but still participate in dupe/burst grouping via S2 signals. The orchestrator feeds a cluster queue from (a) S4 batch completions — checking that batch's sessions for eligibility — and (b) dirty-flag writes. S5→S6→S7 run as one synchronous unit per session at ladder priority 6 (§8), committing cluster rows + proposals + the dirty-clear in a single transaction. Dupe clustering (§6.2) is session-independent and instead runs per S2/S3 batch over the band-index candidates that batch touched.
+
 **Protection gating invariant:** a destructive proposal is emitted only when every protection-relevant signal for its assets is final — favorite (S1), album membership (S1.5), edited flag (S3), and face presence (S4) wherever the action's tier depends on it. Batch proposals require the full protection set for *every* member; per-item deck proposals may surface earlier only if their action never batches and their card renders protections as badges. A protection signal arriving late for any other reason (e.g., a version-bump backfill) is an invalidation trigger like any upstream change.
 
 S7 owns **routing rules** (DESIGN.md §4 notes): a severe-blur photo with a sharp near-dupe routes to Keep-Best instead of Blurry; screenshots recognized by later OCR passes migrate from the generic sweep to their subtype action; every proposal stores `reasonParams` sufficient to render its one-line explanation (the DESIGN.md §9.4 shipping bar — **a detector that can't fill `reasonParams` doesn't get a proposal type**).
 
-Proposal invalidation: any upstream change (asset deleted/edited, cluster dirtied, detector version bump) flips affected proposals to `invalidated`; the UI silently drops them. Staged (approved) items are re-validated at commit time against live `PHAsset` fetches.
+**Reason contract:** `reasonParams = {"key": templateId, "v": 1, "args": {name: typedValue}}` with raw values only (bytes as Int, dates as epoch seconds, scores as Double); all formatting and localization happen at render time via a `ReasonCatalog` mapping templateId → localized format string. Registry entries declare their templateIds plus required arg names/types; the §13 harness renders every emitted proposal's reason in CI and fails on missing/mistyped args — mechanically enforcing the shipping bar. An unknown templateId at render time (a DB that survived an app downgrade) invalidates the proposal rather than showing a generic fallback.
+
+**Lifecycle:** `pending → shown` written by the UI when a card is first dealt (impression semantics); `shown → approved` on right-swipe, with `approved → staged` in the same transaction (`approved` exists so undo can pop `staged → shown`); `shown → rejected` on left-swipe; `staged → committed` at commit; only the pipeline writes `→ invalidated`, from any non-committed state. **Rejection outlives the proposal row:** a drill-in left-swipe writes `suppression(assetId, actionType)` for every deletion-candidate on the card, and S7 excludes suppressed assets from deletion candidacy for that actionType even across re-clustering — "Kept — won't suggest again" survives re-scans (a cluster reduced below 2 emits nothing). A suppression clears only when the asset's `modifiedAt` changes. S7 upserts on `dedupeKey`, so unchanged regenerated proposals keep their state instead of reappearing as new.
+
+Proposal invalidation: any upstream change (asset deleted/edited, cluster dirtied, detector version bump) flips affected proposals to `invalidated`; the UI silently drops them (mid-swipe race handled in §12). Staged items are re-validated at commit time against live `PHAsset` fetches (APP_PLATFORM.md §2).
 
 ## 6. Clustering & Matching Algorithms
 
@@ -235,14 +263,16 @@ Proposal invalidation: any upstream change (asset deleted/edited, cluster dirtie
 
 Sort by `createdAt`; split on **gap > 10 min** or location-bucket jump. Sessions are the unit of similarity clustering, dirty-marking, and Vision scheduling. Typical session: 5–100 assets; degenerate giant sessions (all-day events) are soft-split at 300 assets on the largest internal gaps.
 
+Membership is materialized as `asset.sessionId`, owned exclusively by the sessionizer. Edge rules: a nil `createdAt` (it's optional on `PHAsset`) falls back to `modifiedAt`, else the asset joins a per-scan "undated" session excluded from similarity clustering (dupe detection is session-independent and unaffected). A location jump means Chebyshev distance > 1 between consecutive assets' grid buckets — photos straddling a cell edge never split a session — and `hasLocation = false` assets inherit the running bucket, never triggering a jump. Incremental re-segmentation: any insert/delete/date-edit re-runs the splitter over the window [start of previous session, end of next session], diffs against existing session rows (stable ids for unchanged spans), reassigns `sessionId`, and dirties every session whose membership changed.
+
 ### 6.2 Exact & near duplicates
 
 Layered, cheapest-first:
 
-1. **Candidate grouping** by `(width, height, fileSize)` equality (fileSize from S3 when available) → exact-dupe candidates across the whole library.
+1. **Candidate grouping** by the fast-path seed key (§5-S1: dimensions + rounded `createdAt`/`duration`), refined by `fileSize` equality when S3 delivers it → exact-dupe candidates across the whole library; the band index (step 4) catches copies that don't share capture time.
 2. **pHash confirmation**: Hamming distance 0–2 confirms; distance ≤ 7 flags near-dupe.
 3. **Byte-hash verification** (SHA-256 of original bytes) **only when both pairs have `originalAvailability == local`** (§5-S2 lazy probe) — upgrades the pair to byte-verified ("identical copy" card copy; DESIGN.md §4.1). Evicted pairs stay "near-certain copy."
-4. **Near-dupe search at scale** avoids O(n²) via **multi-index hashing**: each 64-bit pHash is split into **8 bands of 8 bits**, each band indexed **in memory** (rebuilt at launch from the `phash` column — 200k × 8 B ≈ 1.6 MB of source data, sub-second). By pigeonhole, any pair within Hamming distance ≤ 7 shares at least one identical band, so lookup = 8 map probes + Hamming verification of the candidate union. **≤ 7 is the candidate search radius (the index's recall bound), not a verdict**: each action applies its own threshold on top — Near-Duplicate Copy Collapse confirms at ≤ 2 (DESIGN.md §4.1); distances 3–7 only feed similar-cluster gating.
+4. **Near-dupe search at scale** avoids O(n²) via **multi-index hashing**: each 64-bit pHash is split into **8 bands of 8 bits**, each band indexed **in memory** (rebuilt at launch from the `phash` column — 200k × 8 B ≈ 1.6 MB of source data, sub-second). By pigeonhole, any pair within Hamming distance ≤ 7 shares at least one identical band, so lookup = 8 map probes + Hamming verification of the candidate union. **≤ 7 is the candidate search radius (the index's recall bound), not a verdict**: each action applies its own threshold on top — Near-Duplicate Copy Collapse confirms at ≤ 2 (DESIGN.md §4.1). **The band index serves dupe candidacy only.** Similarity clustering (§6.3) computes its own pairwise gates within session windows — genuinely similar-but-distinct shots routinely sit far beyond Hamming 7, so an index-served similarity gate would silently reduce "Similar" to near-dupes.
 5. Guard rails from DESIGN.md §4.1: matching dimensions *ratio* + edited flag checked before calling something a "copy" rather than an edit; keeper preference order = favorite > in-album > richest metadata > highest resolution.
 
 Duplicate videos: candidate key = `(duration rounded to 0.5 s, fileSize)`; poster-frame pHash confirms; frame-sampled confirmation only when both are local.
@@ -252,7 +282,7 @@ Duplicate videos: candidate key = `(duration rounded to 0.5 s, fileSize)`; poste
 Embeddings are the pipeline's biggest storage/compute liability (a feature print is ~KBs; 200k × archived observations = hundreds of MB — absurd for a cleanup app). The design dodges it:
 
 - Clustering is **strictly within a session window** (DESIGN.md §4.2: <10 min + same place). Cross-session similarity is deliberately out of scope for cleanup (that's v2 event features).
-- Per session: compute feature prints for all members (S4), pairwise `computeDistance` within the window (sessions are small; 100-asset worst case = 4,950 distances, microseconds each), **union-find** with threshold θ (tuned on labeled data; gated additionally by pHash distance to avoid semantic-but-not-visual grouping), then **discard the embeddings**.
+- Per session: compute feature prints for all members (S4), pairwise distances within the window (sessions are small; 100-asset worst case = 4,950 distances, microseconds each), then **union-find** with the edge predicate `featurePrintDistance(a,b) ≤ θ AND hamming64(pHash) ≤ H_sim` — both computed pairwise; the band index plays no role here (§6.2). The pHash term blocks semantic-but-not-visual grouping. Initial values ship in a bundled `calibration.json` keyed by `(detectorId, visionRevision)` — starting points θ = 0.55 and H_sim = 26/64 for feature-print revision 2, regenerated per revision by the §13 harness; **an unrecognized Vision revision at runtime disables the similar detector** rather than clustering with an uncalibrated θ. After clustering, **discard the embeddings**.
 - Only cluster assignments + per-member keep-scores persist. Re-clustering a dirty session recomputes ~dozens of embeddings — cheap, and dirty sessions are almost always recent (new photos) whose thumbnails are cache-warm.
 - Clusters > 12 members are pre-split for the card UI on largest internal time gaps / embedding distances (DESIGN.md §7 edge cases); narrative-sequence demotion (time spread × pose variance) lowers confidence rather than suppressing the cluster.
 
@@ -279,10 +309,11 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 ```
 
 - All components **z-scored within the cluster** (absolute sharpness is meaningless across scenes; relative sharpness within a burst is exactly meaningful).
+- **Degenerate statistics are defined, not improvised:** population σ with a per-signal ε floor (values from the fixture harness); σ < ε ⇒ that component returns 0 for every member — no information, no vote. A signal that is null across the whole cluster (no faces anywhere, saliency absent) drops its term and renormalizes the remaining weights to sum 1. In mixed clusters, faceless members take the cluster-minimum faceScore (a missing face in a people cluster argues against keeping) and `eyesOpenMin` defaults to 1 (no penalty) where no face exists. If no non-degenerate component survives, the kernel **must not crown a keeper** — it emits the humility layout ("pick your favorite", DESIGN.md §9.7); this defines exactly when that path is mandatory.
 - Deterministic tie-break: favorite > edited > earliest capture. Weights start hand-tuned (`w_s`=0.4, `w_f`=0.3, `w_c`=0.2, `w_r`=0.1), then validated against the labeled fixture set (§13); per-user adaptation adjusts *thresholds*, never weights (predictability beats cleverness — the user must be able to learn what the app will pick).
 - Every winning component ≥ its runner-up emits a reason chip ("sharpest", "eyes open"); a keeper that wins on *no* individual metric triggers the humility layout (DESIGN.md §9.7: "pick your favorite").
 
-**Confidence** is per-proposal, 0–1, from a per-detector calibration table (fixture-set precision at the emitting threshold). Adaptive per-user thresholds (DESIGN.md §9.5.5): rejection rate per action type > 30% over a 20-decision window ⇒ tighten that detector's threshold one calibration step; restores from staging tighten two steps. Confidence maps to deck placement and tier presentation, never to bypassing tier caps (Decision Log #11).
+**Confidence** is per-proposal, 0–1, read from the bundled `calibration.json`: for each `(detectorId, visionRevision)`, an ordered array of 10–20 operating points `{threshold, precision, recall}` emitted by the §13 harness. The shipped default threshold is an index into that array, and proposal confidence = that row's precision. Per-user adaptation (DESIGN.md §9.5.5) is a `user_calibration(detectorId, stepOffset, decisionsSinceChange)` row: one step = `stepOffset ± 1` (clamped to the array bounds), evaluated after each decision over the trailing 20 `decision_log` rows for the mapped action type — rejection > 30% ⇒ +1 (tighter), a staging restore ⇒ +2, and offsets relax −1 after 50 consecutive decisions under 10% rejection, so an early bad streak is not permanent. The actionType → detectorId mapping is declared in the detector registry (§11). Confidence maps to deck placement and tier presentation, never to bypassing tier caps (Decision Log #11).
 
 ## 8. Scheduling, Resource Governance & Background Execution
 
@@ -293,7 +324,8 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 3. **The dupe fast path**: S2 + S3 over S1's dimension-equality candidate groups (feeds the ≤ 60-s opener deck)
 4. S2 for sessions the user can currently see as greyed buckets
 5. S4 (ordering per §5-S4: protection passes for batch-eligible sets, then newest sessions)
-6. S3 backfill, re-scans from detector version bumps
+6. S5–S7 for cluster-eligible sessions (§5 triggering; below fresh S4, above backfill)
+7. S3 backfill, re-scans from detector version bumps
 
 **Governors** (checked between every batch):
 
@@ -302,14 +334,15 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 - Memory: batches sized so peak decoded-thumbnail residency ≤ 32 MB (32 × ~1 MB RGBA @ 512 px); an `os_proc_available_memory` floor + memory-pressure source halves batch sizes dynamically. Every batch runs inside an autorelease pool (PhotoKit/Vision spray autoreleased objects).
 - All governors act at **batch boundaries**; batches are the checkpoint unit (one DB transaction per batch: signals + scan_state + progress counters), so a kill costs at most one batch.
 
-**Background execution:** a `BGProcessingTaskRequest` (`requiresExternalPower = true`, `requiresNetworkConnectivity = false`) continues S4 overnight; the task loop drains batches until `expirationHandler` fires, checkpoints, and re-submits itself. First-scan-complete fires the (threshold-gated) notification only if the user opted in. Foreground scans never depend on background grants — BG tasks are a bonus lane, not a requirement, since iOS grants them capriciously.
+**Background execution:** one identifier, `com.iclean.scan.processing`, declared in `BGTaskSchedulerPermittedIdentifiers` and registered in `didFinishLaunching`. A `BGProcessingTaskRequest` (`requiresExternalPower = true`, `requiresNetworkConnectivity = false`, `earliestBeginDate = nil`) is submitted idempotently — replacing any pending request — on every scene-background where unfinished `scan_state` rows exist. The launch handler runs the same `ScanOrchestrator` restricted to ladder priorities 5–7 (nothing UI-facing); `expirationHandler` sets a flag checked at every batch boundary — finish the current batch's transaction, resubmit if work remains, then `setTaskCompleted`. If the user activates the app mid-task the system ends it; both entry points drive the same single actor under the same governors, so foreground scanning resumes with no double-scheduled batches. First-scan-complete fires the (threshold-gated) notification only if the user opted in. BG tasks are a bonus lane, never a dependency — iOS grants them capriciously.
 
 **Progress model:** per-tier `done/total` counters in `meta`, updated per batch; the Home scan indicator derives "found 2.1 GB so far" strictly from *emitted proposals* (real numbers only — DESIGN.md §9.6).
 
 ## 9. Incrementality & Change Tracking
 
 - **Foreground:** `PHPhotoLibraryChangeObserver` → `changeDetails(for:)` on the registered fetch results → same insert/update/delete path as S0 diffs. Registered results include the album collection fetches (S1.5), so album adds/removes/deletions update `album_member` and re-evaluate the protection gate for affected assets.
-- **Across launches:** `fetchPersistentChanges(since:)` on every cold start *before* trusting any cached state.
+- **Across launches:** `fetchPersistentChanges(since:)` on every cold start *before* trusting any cached state. Change results are processed in batches, persisting each batch's last `PHPersistentChange.changeToken` in the same transaction as its rows — a kill replays at most one change batch.
+- **Device restore/migration:** `localIdentifier` is device-scoped, and the DB — including staged decisions, a product promise (DESIGN.md §2) — rides iCloud backup. The nullable `asset.cloudId` is populated lazily at S3 priority via `cloudIdentifierMappings(forLocalIdentifiers:)` (iOS 15+). On cold start, if the persistent token is invalid *and* a sampled identifier lookup misses heavily, run a remap via `localIdentifierMappings(for:)` and rewrite keys before trusting cached state; per-identifier mapping failures (non-iCloud users) degrade to accepting loss for those rows, with a one-time "your staged queue from the old device couldn't be fully recovered" note.
 - **Update semantics:** `modifiedAt` change (edit, favorite toggle) → invalidate S2+/derived signals for that asset, mark its session dirty, re-run. Favorite toggles additionally re-evaluate protection rules synchronously (cheap; correctness of Tier-4 exclusions must not wait on a scan pass).
 - **Delete semantics:** tombstone → cascade to `cluster_member` → if the keeper died, re-score the cluster; if membership < 2, dissolve cluster + invalidate its proposals → reconcile staging (staged items that no longer exist silently drop with a bin-screen note).
 - **Detector version bump** (algorithm improvement, Vision revision change): `scan_state` rows for that detector flip to `pending` lazily, backfilled at priority 5 — an app update never triggers a visible full re-scan.
@@ -334,10 +367,10 @@ Per-asset budgets are **per-lane**; wall clock ≈ N × budget ÷ width × ~1.3 
 
 ## 11. Failure Handling & Detector Versioning
 
-- Per-asset stage failure → `failed(retryCount)`; exponential backoff caps at 3 tries, then the asset is skipped and *counted* ("212 items couldn't be analyzed" surfaces in Settings diagnostics — silent truncation reads as "covered everything").
+- S0 creates `scan_state` rows for exactly {s1, s2, s3, s4}; detector-specific passes (e.g. `face1024`, §5-S4) get rows on demand from the registry. Failure sets `nextRetryAt = updatedAt + 60·4^retryCount`; the batch query selects `pending` OR (`failed` AND `retryCount < 3` AND `nextRetryAt < now`). After three tries the asset is skipped and *counted* ("212 items couldn't be analyzed" surfaces in Settings diagnostics — silent truncation reads as "covered everything"). `needsConnection` rows flip back to `pending` in one UPDATE on app-foreground with reachability up. Version bumps rewrite nothing: the batch query additionally treats `done AND detectorVersion < registry.current` as pending (the `(stage, status, detectorVersion)` covering index makes this free).
 - Thumbnail unavailable offline → `needsConnection` bucket (DESIGN.md §7); re-probed when reachability returns *and* the user opens the app (no background network).
 - **Corrupt assets are a detector, not an error**: repeated thumbnail-generation failure with local availability emits the Corrupt/Zero-Byte proposal (DESIGN.md §4.3).
-- Every signal row carries `detectorVersion`; every detector declares `(id, version, tier, requiredSignals, emittedSignals)` in a static registry. The registry is the single source of truth for scheduling, backfills, and the §13 metric harness.
+- Signal versions ride the wide row's `sigVersions`; every detector declares `(id, version, tier, requiredSignals, emittedSignals, templateIds, actionTypes)` in a static registry — the single source of truth for scheduling, backfills, calibration mapping (§7), reason validation (§5-S7), and the §13 metric harness.
 - Commit-time safety: before `deleteAssets`, staged identifiers are re-fetched; missing/changed assets are dropped from the batch with a bin note. Batches > 1,000 assets are chunked into sequential requests pending §14 validation (DESIGN.md §14.5) — chunking trades extra system dialogs for reliability, so the chunk size wants to be as large as proves stable.
 
 ## 12. Concurrency Design
@@ -348,7 +381,8 @@ Swift Concurrency, actor-isolated:
 - **Stage executors** — `TaskGroup`s with fixed width per stage (S2: 4, S4: 2, S3: 8); each task processes one asset, returns a value-type `SignalBatch`; the orchestrator commits per-batch transactions. No shared mutable state inside executors.
 - **`Database` (GRDB `DatabasePool`)** — WAL allows concurrent UI reads (proposal store observation via `ValueObservation`) against pipeline writes.
 - **PhotoKit boundary (`PhotoLibraryGateway`)** — a thin, protocol-typed wrapper over `PHAsset`/`PHCachingImageManager`/change APIs. Everything above it is Sendable value types (`AssetStub`, `Thumbnail`, `ChangeSet`), which is what makes §13's fixture testing possible.
-- The deck UI reads **only** from the proposal store + its own image prefetcher; it never awaits the pipeline.
+- **Proposal store → deck contract:** S6 materializes the DESIGN.md §10 ordering score into `proposal.score`; the deck is a GRDB `ValueObservation` over `state = 'pending' AND actionType IN (<the family's action types, from the registry>) ORDER BY score DESC LIMIT 30`, with the pacing rules (warm-up, interleaving, batch metering) applied by the DeckViewModel over that window. The ViewModel owns an immutable **dealt window** (top card + the 5-card buffer, IDs handed to `PHCachingImageManager.startCachingImages`); observation diffs apply only *behind* the window, so a card never mutates on screen. Verdicts are compare-and-set — `UPDATE proposal SET state = 'approved' WHERE id = ? AND state IN ('pending','shown')`; zero rows updated means invalidation won the race mid-swipe: the gesture completes visually, the verdict is discarded, and a quiet toast says "That group changed — skipped" (never a modal). Staging totals are a second observation (`COUNT(*), SUM(estBytes) WHERE state = 'staged'`) feeding the GB ticker — honest by construction.
+- The deck UI reads **only** from the proposal store + its own image prefetcher; it never awaits the pipeline. Module decomposition and everything above the pipeline (commit engine, authorization, entitlements) live in [APP_PLATFORM.md](APP_PLATFORM.md).
 
 ## 13. Testing Strategy
 
@@ -377,7 +411,7 @@ Swift Concurrency, actor-isolated:
 | **M0** | GRDB schema, `PhotoLibraryGateway`, S0+S1+S1.5, screenshot/burst instant detectors, fixture harness skeleton | hub alive in ~10 s; permission → bucket flow |
 | **M1** | S2 (thumbnails + cheap math), dupe fast path, exact/near dupes via band index, blur/dark/blank detectors, kill-resume checkpointing | §10 budgets on real hardware; the ≤ 60-s exact-dupe opener |
 | **M2** | S3, S4 (embeddings/faces/saliency), sessionization, similar clustering + keep-best kernel, S7 routing | the flagship Similar experience end-to-end |
-| **M3** | Change tracking (observer + persistent token), staging reconciliation, governors + BG task, metric harness in CI | incremental forever; maintenance mode readiness |
+| **M3** | Change tracking (observer + persistent token), device-restore remap (cloudId), staging reconciliation, governors + BG task, metric harness in CI | incremental forever; maintenance mode readiness |
 | **M4 (v1.x)** | OCR slot (S4), ephemera detectors, rules engine hooks, marked-faces protection (§14.8) | the differentiator family |
 
 Each milestone is shippable to TestFlight behind the corresponding deck features; **M0–M3 map to the DESIGN.md §15 MVP** — incremental scanning and staging reconciliation are MVP requirements, not extras.
