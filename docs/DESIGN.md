@@ -507,7 +507,7 @@ Surfaced by the critique pass; each needs a designed answer before or during MVP
 - **Four families:** Exact/near duplicates, Similar clusters (keep-best), Blurry & junk (incl. blank/corrupt/zero-byte/pocket frames), Screenshots — **review-only in MVP:** the Screenshots Plan card starts a drill-in review rather than offering queue-all, because the chat-screenshot exclusion (§4.4, §5.7) is OCR-dependent and OCR is v1.x. Screenshot batch queue-all ships together with OCR subtyping.
 - Two-level deck (Plan cards + drill-ins), the five-gesture vocabulary, cluster-edit grid.
 - Staging bin, undo stack, Review & Commit, receipt screen with Recently Deleted deep link + "empty now" guidance.
-- Protected classes (Favorites, edited, albums, marked faces) + protections badge.
+- Protected classes (Favorites, edited photos, album members) + protections badge. Marked-faces protection ships in v1.x — iOS exposes no face-identity API, so it needs the custom face-anchor design (SCAN_PIPELINE.md §14.8).
 - Explainability chips on every card.
 - Trust ladder (session-1 training wheels), adaptive thresholds (v1: per-type rejection tracking only).
 - Paywall: $2.99 one-time; the entire first session is free (§2).
@@ -520,6 +520,7 @@ Surfaced by the critique pass; each needs a designed answer before or during MVP
 - OCR ephemera family (boarding passes first — it's the marketing moment), receipts/QR/maps — plus screenshot OCR subtyping, which unlocks the batch screenshot sweep and the chat-screenshot hard exclusion.
 - Video family (screen recordings, pocket videos, micro-videos, largest-files queue).
 - Standing rules (earned, pre-flag model) + weekly mini-deck + threshold-gated notifications + widget.
+- Marked-faces protection (face-anchor matching, SCAN_PIPELINE.md §14.8).
 - Post-event cleanup prompts.
 
 ### v2 — reclaim & curation

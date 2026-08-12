@@ -31,7 +31,7 @@
 **Goals**
 
 - Produce the typed proposals that feed the deck UI (DESIGN.md §4, §6): duplicate clusters, similar clusters with keepers, blur/junk verdicts, screenshot buckets — each with a one-line reason and a confidence score.
-- **Time-to-first-swipe ≈ 10 seconds** after permission grant (target; validate at scale — DESIGN.md §14.3). Buckets unlock progressively as tiers complete; the UI never blocks on a full scan.
+- **Hub alive in ~10 seconds** after permission grant (buckets appear with live counts as tiers complete; target — validate at scale, DESIGN.md §14.3), and **first swipeable deck in ≤ 60 seconds**: the trust ladder's exact-duplicate opener (DESIGN.md §9.5 "first 60 seconds"), delivered by the dupe fast path (§5). The UI never blocks on a full scan.
 - Fully **resumable**: the app can be killed at any moment and loses at most one in-flight batch.
 - **Incremental forever**: after the first full scan, work is proportional to library *changes*, not library size.
 - Scale to **200k-asset libraries** within memory, thermal, and battery budgets.
@@ -69,6 +69,7 @@ flowchart TD
     S2 --> S4[S4 Vision passes<br/><i>embeddings, faces, saliency;<br/>OCR slot v1.x</i>]
     S4 --> S5[S5 Clustering<br/><i>windowed, incremental</i>]
     S2 --> S5
+    S3 --> S5
     S5 --> S6[S6 Scoring<br/><i>keep-best kernel, confidence</i>]
     S6 --> S7[S7 Proposal generation<br/><i>typed, explained, routed</i>]
     D1 --> S7
@@ -78,7 +79,7 @@ flowchart TD
 
 Principles:
 
-- **Stages are per-asset state machines, not global phases.** Each asset carries independent per-stage state (`pending / done(version) / failed(n) / needsConnection`), so a slow Tier-C pass on old assets never blocks instant detectors on new ones.
+- **Stages are per-asset state machines, not global phases.** Each asset carries independent per-stage state (`pending / done(version) / failed(n) / needsConnection`), so a slow S4 pass on old assets never blocks instant detectors on new ones.
 - **Detectors subscribe to signals, not stages.** A detector declares the signals it needs (e.g. blur needs `laplacianVariance` + `faceCount`); the orchestrator runs it when its inputs exist. Adding detector #26 means adding a signal dependency list, not rewiring the pipeline.
 - **Everything flows into one proposal store** that the deck UI observes. The UI is a pure consumer; it never triggers analysis except thumbnail prefetch for cards.
 
@@ -99,7 +100,8 @@ asset (
   filename TEXT, uti TEXT,        -- from PHAssetResource (S3)
   fileSize INT, fileSizeIsEstimate BOOL,
   isEdited BOOL, hasRawResource BOOL,
-  localAvailability INT,          -- unknown / local / evicted (probed, §5-S2)
+  thumbAvailability INT,          -- unknown / local / needsConnection (S2 probe)
+  originalAvailability INT,       -- unknown / local / evicted (lazy probe, §5-S2)
   deletedAt REAL                  -- tombstone; kept for staging reconciliation
 )
 
@@ -110,21 +112,21 @@ scan_state (
   PRIMARY KEY (assetId, stage)
 )
 
-signal (
-  assetId TEXT, kind TEXT,        -- 'phash','dhash','lapVar','meanLum','pixelVar',
-                                  -- 'faceCount','bestFaceQuality','eyesOpenMin',
-                                  -- 'saliencyBox','ocrDensity'(v1.x)...
-  detectorVersion INT,
-  valueNum REAL, valueBlob BLOB,  -- exactly one populated
-  PRIMARY KEY (assetId, kind)
+asset_signal (                    -- ONE wide row per asset: row overhead paid once,
+  assetId TEXT PRIMARY KEY,       -- hashes stored losslessly as INTEGER
+  phash INT, dhash INT,
+  lapVar REAL, meanLum REAL, pixelVar REAL,
+  faceCount INT, bestFaceQuality REAL, eyesOpenMin REAL,
+  saliencyBox BLOB,
+  sigVersions BLOB                -- packed per-signal detector versions
 )
--- covering index: (kind, valueNum) for threshold scans;
--- phash additionally decomposed into band table below.
+-- sparse v1.x signals (OCR text stats, barcode types) get a side EAV table.
+-- The pHash band index (§6.2) is IN-MEMORY ONLY, rebuilt at launch from the
+-- phash column (200k × 8 B ≈ 1.6 MB source data) — persisting it bought
+-- nothing but page churn.
 
-phash_band (                      -- multi-index hashing for near-dupe search (§6.2)
-  band INT, value INT, assetId TEXT,
-  PRIMARY KEY (band, value, assetId)
-)
+album (id TEXT PRIMARY KEY, title TEXT)          -- user-created albums only
+album_member (albumId TEXT, assetId TEXT, PRIMARY KEY (albumId, assetId))
 
 session (                         -- time/place windows for similarity clustering
   id INTEGER PRIMARY KEY, startAt REAL, endAt REAL,
@@ -160,7 +162,7 @@ meta (key TEXT PRIMARY KEY, value BLOB)
 
 ### S0 — Enumerate / Diff
 
-- **First run:** `PHAsset.fetchAssets(with:)` over the user's authorized library (all media types), sorted by `creationDate DESC` — newest first, because new photos are what users came to clean and what sessions cluster around. Insert `asset` skeleton rows + `scan_state` rows in one transaction per 2,000 assets.
+- **First run:** `PHAsset.fetchAssets(with:)` over the user's authorized library (all media types), with `includeAllBurstAssets = true` — burst members must exist as rows or §6.4 has nothing to collapse; UI counts use burst representatives only. Insert `asset` skeleton rows + `scan_state` rows in one transaction per 2,000 assets. First-scan ordering is **bucket-driven, not uniformly newest-first**: the backlog is the product (DESIGN.md §1), so S0 seeds the dupe fast path first (§5-S2), then feeds buckets in their session-order priority. Plain newest-first applies only to the incremental/maintenance loop, where "new photos are the work" is actually true.
 - **Later runs:** `fetchPersistentChanges(since: storedToken)` → inserted/updated/deleted identifier sets. `PHPersistentChangeToken` is archived in `meta` after each successfully processed batch. If the token is expired/invalid (throws), fall back to a full re-enumeration *diff* (fetch all identifiers, set-difference against `asset` — no signal recomputation for unchanged `modifiedAt`).
 - Deletions write tombstones (`deletedAt`), cascade `dirty` onto affected sessions/clusters, and reconcile staged proposals (DESIGN.md §14.4).
 - Limited Library access changes arrive as ordinary diffs; the pipeline is agnostic (numbers honesty is a UI concern, DESIGN.md §14.1).
@@ -172,24 +174,28 @@ Reads only fetch-time-free `PHAsset` fields: media type/subtypes, dates, dimensi
 Enables immediately, with zero image I/O:
 
 - Screenshot bucketing by age (`photoScreenshot` subtype)
-- Micro-video candidates (duration < 2 s)
-- Burst groups (`burstIdentifier`; members via `fetchAssets(withBurstIdentifier:)`)
-- Panorama aspect-ratio checks
+- Micro-video candidates (duration < 2 s) *(v1.x action — the signal is free, so computed anyway)*
+- Burst groups (`burstIdentifier`; members via `fetchAssets(withBurstIdentifier:options:)` with `includeAllBurstAssets = true`)
+- Panorama aspect-ratio checks *(v1.x)*
 - Largest-files queue seeding (sizes arrive in S3; dimensions×format estimate until then, flagged `fileSizeIsEstimate`)
 - Sessionization (§6.1) — sessions are computable from timestamps + location buckets alone
 
-**This is the tier that gets the user swiping in ~10 s**: the screenshots drill-in and burst groups need nothing else.
+**This is the tier that brings the hub alive in ~10 s** — buckets appear with live counts. The first swipeable *deck*, per the trust ladder, is exact duplicates: S1's dimension-equality groups seed the **dupe fast path**, pulling S2 + S3 forward for those groups so the opener deck is ready in ≤ 60 s (§8 priority 3).
+
+### S1.5 — Album membership ingest
+
+User-created albums only: `PHAssetCollection.fetchAssetCollections(with: .album, ...)`, then one identifier-only asset fetch per album into `album_member`. Bounded by album count (typically tens), so it runs immediately after S1 — album membership is a Tier-4 protection input (DESIGN.md §9.3), a keeper-preference input (§6.2), and a gate for destructive proposals (§5-S7 invariant). Collection change details flow through the same observer/persistent-change machinery as assets (§9).
 
 ### S2 — Thumbnail fetch + cheap pixel math
 
-- `PHCachingImageManager.requestImage` with `targetSize ≈ 512×512` (aspect-fit), `deliveryMode = .highQualityFormat` (single callback), `resizeMode = .fast`, `isNetworkAccessAllowed = false`, batched 32 assets at a time, newest sessions first.
-- A nil/degraded-only result with the "in cloud" info key marks the asset `localAvailability = evicted` for thumbnails too → `needsConnection` (rare: Photos usually retains small derivatives even for evicted originals — this is also our **local-availability probe**, since no public API exposes eviction).
+- `PHCachingImageManager.requestImage` with `targetSize ≈ 512×512` (aspect-fit), `deliveryMode = .highQualityFormat` (single callback), `resizeMode = .fast`, `isNetworkAccessAllowed = false`, batched 32 assets at a time — dupe-fast-path groups first, then bucket-driven order (S0).
+- With `.highQualityFormat` there is no degraded delivery: the failure mode is a single callback with `nil` plus `PHImageResultIsInCloudKey`, which sets `thumbAvailability = needsConnection` (rare — Photos usually retains small derivatives even for evicted originals). **This probes only the derivative; a successful thumbnail says nothing about the original.** `originalAvailability` is probed separately and lazily — `requestImageDataAndOrientation` (photos) / `requestAVAsset` (videos) with network disabled, checking the in-cloud key — and only for assets whose detectors actually need original bytes: byte-hash verification (§6.2), EXIF confirmation, frame sampling, transcodes.
 - Per thumbnail, computed in one pass over a grayscale downsample (vImage/vDSP; all trivial at 512 px):
-  - **dHash (64-bit)** on 9×8, **pHash (64-bit)** via 32×32 DCT — pHash bands written to `phash_band`
+  - **dHash (64-bit)** on 9×8, **pHash (64-bit)** via 32×32 DCT — persisted on the wide signal row; bands go straight into the in-memory index (§6.2)
   - **Laplacian variance** (blur), normalized for thumbnail scale
   - **Mean luminance + histogram concentration** (dark), **pixel variance** (blank)
   - Corner-anchored uniform-blob heuristic (finger-over-lens candidate flag)
-- Videos: the poster frame flows through the same math (dark/blank pocket-video signals); frame *sampling* is deferred to an S4 sub-stage gated on `localAvailability == local` (probed via `requestAVAsset` with network disabled).
+- Videos: the poster frame flows through the same math (dark/blank pocket-video signals); frame *sampling* is deferred to an S4 sub-stage gated on `originalAvailability == local` (probed via `requestAVAsset` with network disabled).
 
 Cheap detectors fire as soon as their signals land: exact/near-dupe candidates (§6.2), blur/dark/blank/pocket verdicts.
 
@@ -197,7 +203,7 @@ Cheap detectors fire as soon as their signals land: exact/near-dupe candidates (
 
 Per-asset `PHAssetResource.assetResources(for:)`: `originalFilename`, `uniformTypeIdentifier`, `fileSize` (KVC, guarded by `responds(to:)` and a fallback estimate), edited flag (adjustment-data resource present), RAW sibling detection (`.alternatePhoto`), screen-recording filename patterns.
 
-Runs interleaved with S2 at lower priority — it's pure metadata calls, no image I/O, but it *is* a per-asset ObjC round-trip, so it's batched and it's the first stage shed under thermal pressure (its detectors are not first-session material).
+Runs interleaved with S2, and **dupe-fast-path assets are processed first**: exact-duplicate confirmation, `estBytes`, and the honest GB ticker all need `fileSize`, and Duplicates is the first-session deck. After the fast path drains, S3 drops to backfill priority and is the first stage shed under thermal pressure.
 
 ### S4 — Vision passes (expensive tier)
 
@@ -205,15 +211,19 @@ One `VNImageRequestHandler` per thumbnail, `perform([...])` with all needed requ
 
 - `VNGenerateImageFeaturePrintRequest` (embedding for §6.3) — **pinned to an explicit `revision`**; distances are only valid within a revision, and a Vision upgrade bumps our detector version (§11)
 - `VNDetectFaceLandmarksRequest` → face count, eye-aspect-ratio → derived `eyesOpenMin`
-- `VNDetectFaceCaptureQualityRequest` → `bestFaceQuality`
+- `VNDetectFaceCaptureQualityRequest` → `bestFaceQuality` (scores are revision-scoped like feature prints — pinned and versioned the same way)
 - `VNGenerateAttentionBasedSaliencyImageRequest` → saliency bounding box
 - *(v1.x slot)* `VNRecognizeTextRequest` (`.fast` screening → `.accurate` on candidates) + `VNDetectBarcodesRequest`
 
-Requests execute on a dedicated serial-ish pool (width 2; Vision internally parallelizes onto ANE/GPU — more request-level width mostly adds memory, not throughput; tune on device). Ordering: **newest sessions first**, because Similar clustering (the flagship) matters most for recent shoots and the maintenance loop only ever touches recent windows.
+Requests execute on a dedicated serial-ish pool (width 2; Vision internally parallelizes onto ANE/GPU — more request-level width mostly adds memory, not throughput; tune on device). Ordering: **(1) protection-relevant passes for batch-eligible candidate sets first** (e.g., the old-screenshots Tier-1 slice needs face presence before batch eligibility — §5-S7 invariant), **(2) then newest sessions first** for similarity clustering, where recency genuinely matters (fresh shoots, and the maintenance loop only touches recent windows).
+
+**Face detection at 512 px misses small/distant faces**, and "no faces" is a batch-eligibility gate (pocket batch, severe-blur batch, screenshot slice). Before any asset enters a *batch* on a no-face basis, a confirming face pass runs at 1024-px best-local; 512-px absence alone is weak evidence, sufficient only for per-item decks where a human sees the photo anyway.
 
 Face/eyes signals persist to `signal`; embeddings are handed directly to S5 for the asset's session window and dropped after clustering (§6.3).
 
 ### S5 — Clustering (§6), S6 — Scoring (§7), S7 — Proposal generation
+
+**Protection gating invariant:** a destructive proposal is emitted only when every protection-relevant signal for its assets is final — favorite (S1), album membership (S1.5), edited flag (S3), and face presence (S4) wherever the action's tier depends on it. Batch proposals require the full protection set for *every* member; per-item deck proposals may surface earlier only if their action never batches and their card renders protections as badges. A protection signal arriving late for any other reason (e.g., a version-bump backfill) is an invalidation trigger like any upstream change.
 
 S7 owns **routing rules** (DESIGN.md §4 notes): a severe-blur photo with a sharp near-dupe routes to Keep-Best instead of Blurry; screenshots recognized by later OCR passes migrate from the generic sweep to their subtype action; every proposal stores `reasonParams` sufficient to render its one-line explanation (the DESIGN.md §9.4 shipping bar — **a detector that can't fill `reasonParams` doesn't get a proposal type**).
 
@@ -231,8 +241,8 @@ Layered, cheapest-first:
 
 1. **Candidate grouping** by `(width, height, fileSize)` equality (fileSize from S3 when available) → exact-dupe candidates across the whole library.
 2. **pHash confirmation**: Hamming distance 0–2 confirms; distance ≤ 7 flags near-dupe.
-3. **Byte-hash verification** (SHA-256 of original bytes) **only when both originals are local** — upgrades the pair to byte-verified ("identical copy" card copy; DESIGN.md §4.1). Evicted pairs stay "near-certain copy."
-4. **Near-dupe search at scale** avoids O(n²) via **multi-index hashing**: each 64-bit pHash is split into **8 bands of 8 bits**, each band indexed in `phash_band`. By pigeonhole, any pair within Hamming distance ≤ 7 shares at least one identical band, so lookup = 8 indexed probes + Hamming verification of the candidate union. Insertion and query are both O(1)-ish per asset; the band table for 200k assets is ~1.6 M small rows — fine for SQLite with the composite primary key.
+3. **Byte-hash verification** (SHA-256 of original bytes) **only when both pairs have `originalAvailability == local`** (§5-S2 lazy probe) — upgrades the pair to byte-verified ("identical copy" card copy; DESIGN.md §4.1). Evicted pairs stay "near-certain copy."
+4. **Near-dupe search at scale** avoids O(n²) via **multi-index hashing**: each 64-bit pHash is split into **8 bands of 8 bits**, each band indexed **in memory** (rebuilt at launch from the `phash` column — 200k × 8 B ≈ 1.6 MB of source data, sub-second). By pigeonhole, any pair within Hamming distance ≤ 7 shares at least one identical band, so lookup = 8 map probes + Hamming verification of the candidate union. **≤ 7 is the candidate search radius (the index's recall bound), not a verdict**: each action applies its own threshold on top — Near-Duplicate Copy Collapse confirms at ≤ 2 (DESIGN.md §4.1); distances 3–7 only feed similar-cluster gating.
 5. Guard rails from DESIGN.md §4.1: matching dimensions *ratio* + edited flag checked before calling something a "copy" rather than an edit; keeper preference order = favorite > in-album > richest metadata > highest resolution.
 
 Duplicate videos: candidate key = `(duration rounded to 0.5 s, fileSize)`; poster-frame pHash confirms; frame-sampled confirmation only when both are local.
@@ -248,10 +258,16 @@ Embeddings are the pipeline's biggest storage/compute liability (a feature print
 
 ### 6.4 Bursts, brackets, panoramas, document re-shoots
 
-- Bursts: exact grouping by `burstIdentifier`; Apple's own pick (`.isCuratedByUser` / burst selection types) recorded as a scoring prior.
+- Bursts: exact grouping by `burstIdentifier` over members fetched with `includeAllBurstAssets = true` (§5-S0); Apple's own pick recorded as a scoring prior via `PHAsset.burstSelectionTypes` (`.userPick` / `.autoPick`) and `representsBurst`.
 - Brackets: sub-2 s timestamp runs + pHash-identical framing; exposure-bias EXIF confirmation only if originals local.
 - Failed panoramas: panorama subtype + aspect < threshold, or overlap chains (pHash band overlap between horizontally-cropped halves) adjacent to a kept pano — v1.x, low priority.
 - Document re-shoots (v1.x): OCR-density signal + rectangle detection reuse the S5 session machinery with a text-region sharpness keeper metric.
+
+### 6.5 Remaining DESIGN §4.1 sub-actions
+
+- **Original + Edited Pair Collapse (MVP):** edited flag (S3) + pHash proximity + `creationDate` equality — a free `PHAsset` field, so no EXIF needed. EXIF match is an optional confidence boost when originals are local.
+- **Re-received Chat Copy Dedup:** the §6.2 band index finds the pHash cluster; non-camera filenames/UTIs (S3) + multi-day date spread classify it. No new machinery.
+- **Frame-Grab Dedup:** requires frame-sampling kept videos — local-only and post-MVP; lands with the v1.x video family.
 
 ## 7. Scoring & Confidence
 
@@ -273,10 +289,11 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 **Priority ladder** (top pre-empts bottom):
 
 1. UI-driven thumbnail prefetch for the current deck (5-card buffer — a verdict on an unseen image is a trust bug)
-2. S0/S1 for newly-arrived assets (keeps the maintenance loop instant)
-3. S2 for sessions the user can currently see as greyed buckets
-4. S4 newest-sessions-first
-5. S3, backfill, re-scans from detector version bumps
+2. S0/S1/S1.5 for newly-arrived assets (keeps the maintenance loop instant)
+3. **The dupe fast path**: S2 + S3 over S1's dimension-equality candidate groups (feeds the ≤ 60-s opener deck)
+4. S2 for sessions the user can currently see as greyed buckets
+5. S4 (ordering per §5-S4: protection passes for batch-eligible sets, then newest sessions)
+6. S3 backfill, re-scans from detector version bumps
 
 **Governors** (checked between every batch):
 
@@ -291,7 +308,7 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 
 ## 9. Incrementality & Change Tracking
 
-- **Foreground:** `PHPhotoLibraryChangeObserver` → `changeDetails(for:)` on the registered fetch results → same insert/update/delete path as S0 diffs.
+- **Foreground:** `PHPhotoLibraryChangeObserver` → `changeDetails(for:)` on the registered fetch results → same insert/update/delete path as S0 diffs. Registered results include the album collection fetches (S1.5), so album adds/removes/deletions update `album_member` and re-evaluate the protection gate for affected assets.
 - **Across launches:** `fetchPersistentChanges(since:)` on every cold start *before* trusting any cached state.
 - **Update semantics:** `modifiedAt` change (edit, favorite toggle) → invalidate S2+/derived signals for that asset, mark its session dirty, re-run. Favorite toggles additionally re-evaluate protection rules synchronously (cheap; correctness of Tier-4 exclusions must not wait on a scan pass).
 - **Delete semantics:** tombstone → cascade to `cluster_member` → if the keeper died, re-score the cluster; if membership < 2, dissolve cluster + invalidate its proposals → reconcile staging (staged items that no longer exist silently drop with a bin-screen note).
@@ -301,16 +318,18 @@ faceScore = bestFaceQuality (per-cluster z-scored) − eyesClosedPenalty · (1 �
 
 Targets on an A15-class device (iPhone 13), 50k-photo library — **estimates to validate in M1 (§15); the numbers are budgets, not promises**:
 
-| Stage | Per-asset budget | 50k-library wall clock | Notes |
-|---|---|---|---|
-| S0+S1 | ~50 µs (batch inserts) | < 5 s | enables first swipe |
-| S2 | ~10–20 ms (decode + math, 4-wide) | ~3–6 min | derivative decode dominates; math is < 1 ms |
-| S3 | ~1–2 ms | ~1–2 min | interleaved, sheds first |
-| S4 | ~25–60 ms (ANE, 2-wide) | ~15–40 min | mostly background/overnight for big libraries |
-| S5/S6/S7 | amortized µs–ms per asset | minutes | windowed; never global |
+Per-asset budgets are **per-lane**; wall clock ≈ N × budget ÷ width × ~1.3 (I/O stalls, governor pauses).
 
-- 200k libraries scale linearly except SQLite index pressure — mitigated by the band-table composite PK and `WITHOUT ROWID` where profiling supports it.
-- DB size envelope: ~1 KB/asset core rows + 8 band rows ⇒ **≤ ~100 MB at 200k assets, no embedding storage** (the §6.3 decision is what keeps this sane).
+| Stage | Per-asset budget | Width | 50k-library wall clock | Notes |
+|---|---|---|---|---|
+| S0+S1 | ~50 µs (batch inserts) | — | < 5 s | brings the hub alive |
+| S2 | ~10–20 ms (decode + math) | 4 | ~2.5–5 min | derivative decode dominates; math is < 1 ms; fast-path subset lands in seconds |
+| S3 | ~1–2 ms | 8 | < 1 min | fast-path subset first, then backfill |
+| S4 | ~25–60 ms (ANE) | 2 | ~13–33 min | mostly background/overnight for big libraries |
+| S5/S6/S7 | amortized µs–ms per asset | — | minutes | windowed; never global |
+
+- 200k libraries scale linearly except SQLite index pressure — `WITHOUT ROWID` where profiling supports it; the near-dupe band index is in-memory (§6.2), off the disk entirely.
+- DB size envelope: wide-row signals (§4) keep the total at ~0.6–0.8 KB/asset including indexes ⇒ **≤ ~150 MB at 200k assets** — no embedding storage (§6.3) and no persisted band index are the two decisions that keep this sane.
 - Thumbnail cache: we do **not** persist decoded thumbnails; Photos' own derivative cache is the cache. `PHCachingImageManager.startCachingImages` warms only the active deck's 5-card buffer + next batch.
 
 ## 11. Failure Handling & Detector Versioning
@@ -347,17 +366,18 @@ Swift Concurrency, actor-isolated:
 3. **Thumbnail decode throughput reality** on A13/A14 devices — the §10 budgets assume A15; the 10-second first-swipe target may need the S1-only path on older hardware (it already is S1-only, but validate the S0+S1 5-second claim at 200k).
 4. **`deleteAssets` chunking threshold** (with DESIGN.md §14.5) — find the largest reliably-atomic batch on device; each chunk costs a system dialog, so this directly shapes commit UX.
 5. **Session-window θ and the 10-min gap** — both need tuning against real labeled libraries; the fixture set must include narrative sequences (the known false-positive trap).
-6. **`WITHOUT ROWID` and band-table sizing at 200k** — profile before committing to schema details that are annoying to migrate.
+6. **Launch-time band-index rebuild at 200k** — a full `phash` column scan + 8 map inserts per asset; budget < 1 s, validate on A13-class hardware (if it misses, persist a serialized snapshot invalidated by row count + max rowid).
 7. **Poster-frame representativeness** for pocket-video detection (frame 0 vs mid-file poster) — PhotoKit chooses the poster; measure false-negative rate on real pocket videos.
+8. **Marked-faces protection mechanism (v1.x).** iOS exposes no face-identity API (Vision has no recognition; Photos' People data is private). Sketch: feature prints on face *crops* matched against user-labeled anchor crops, with a deliberately loose threshold — over-protecting is safe, false negatives are the risk to measure. Needs a signal home (face-crop embeddings persisted for anchors only) and a labeled fixture set before DESIGN.md §9.3's "protect these people" flow can ship.
 
 ## 15. Build Order
 
 | Milestone | Delivers | Proves |
 |---|---|---|
-| **M0** | GRDB schema, `PhotoLibraryGateway`, S0+S1, screenshot/burst instant detectors, fixture harness skeleton | 10-second first swipe; permission → bucket flow |
-| **M1** | S2 (thumbnails + cheap math), exact/near dupes via band index, blur/dark/blank detectors, kill-resume checkpointing | §10 budgets on real hardware; the trust-opener buckets |
+| **M0** | GRDB schema, `PhotoLibraryGateway`, S0+S1+S1.5, screenshot/burst instant detectors, fixture harness skeleton | hub alive in ~10 s; permission → bucket flow |
+| **M1** | S2 (thumbnails + cheap math), dupe fast path, exact/near dupes via band index, blur/dark/blank detectors, kill-resume checkpointing | §10 budgets on real hardware; the ≤ 60-s exact-dupe opener |
 | **M2** | S3, S4 (embeddings/faces/saliency), sessionization, similar clustering + keep-best kernel, S7 routing | the flagship Similar experience end-to-end |
 | **M3** | Change tracking (observer + persistent token), staging reconciliation, governors + BG task, metric harness in CI | incremental forever; maintenance mode readiness |
-| **M4 (v1.x)** | OCR slot (S4), ephemera detectors, rules engine hooks | the differentiator family |
+| **M4 (v1.x)** | OCR slot (S4), ephemera detectors, rules engine hooks, marked-faces protection (§14.8) | the differentiator family |
 
-Each milestone is shippable to TestFlight behind the corresponding deck features; M0–M2 map to the DESIGN.md §15 MVP.
+Each milestone is shippable to TestFlight behind the corresponding deck features; **M0–M3 map to the DESIGN.md §15 MVP** — incremental scanning and staging reconciliation are MVP requirements, not extras.
