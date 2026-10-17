@@ -1,0 +1,37 @@
+{
+  "configurations": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "commandLineArgumentEntries": [
+      {
+        "argument": "-UITesting"
+      },
+      {
+        "argument": "-NetworkTripwire"
+      }
+    ],
+    "targetForVariableExpansion": {
+      "containerPath": "container:iclean.xcodeproj",
+      "identifier": "iclean",
+      "name": "iclean"
+    }
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:iclean.xcodeproj",
+        "identifier": "icleanUITests",
+        "name": "icleanUITests"
+      },
+      "selectedTests": [
+        "NoNetworkFlowTests"
+      ]
+    }
+  ],
+  "version": 1
+}
