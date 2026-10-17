@@ -1,58 +1,76 @@
-# iClean
+# iclean
 
-An iOS photo-cleanup app: turn the photo cleanup you've put off for years into a few 15-minute swipe sessions. All detection on-device, every proposal explained, nothing deleted without your commit — $2.99 once, no subscription.
+An iPhone app that cleans up your photo library: duplicate photos, similar shots,
+blurry photos, screenshots, duplicate videos and large videos. Free up iCloud space and
+declutter the Photos app.
 
-## Design documents
+## Privacy
 
-| Doc | Covers |
-|---|---|
-| [docs/DESIGN.md](docs/DESIGN.md) | Product & UX design: action taxonomy, card grammar, the two-level swipe deck, trust & safety design, IA, business model, competitive landscape, decision log, MVP scope |
-| [docs/SCAN_PIPELINE.md](docs/SCAN_PIPELINE.md) | Scan pipeline (the read path): staged architecture S0–S7, data model, clustering & scoring algorithms, scheduling & governors, incrementality, performance budgets, build order |
-| [docs/APP_PLATFORM.md](docs/APP_PLATFORM.md) | App platform (the write path): commit engine, photo-library authorization, StoreKit 2 entitlements, on-device telemetry, module architecture, release & privacy checklist |
+Everything stays on your iPhone. iclean never connects to the internet, needs no
+account, and collects nothing. It reads only previews already on the phone and never
+downloads photos from iCloud. Removed items go to **Recently Deleted** in the Photos app,
+where you can restore them. See the [constitution](.specify/memory/constitution.md).
 
-## Code layout
+## Build
 
-Module map per APP_PLATFORM.md §1 — one-way dependencies, `import Photos` appears in exactly one module:
-
-```
-Packages/
-  iCleanCore/        PhotoGateway (the PhotoKit boundary + PhotosGateway impl)
-                     ScanEngine  (S0–S7 pipeline: hashing, clustering, scoring,
-                                  sessionizer, detectors, orchestrator — UIKit-free)
-                     FixtureKit  (mock gateway + synthetic pixel fixtures)
-  iCleanData/        ProposalStore (GRDB schema, pipeline store, deck store)
-                     CommitEngine  (allowance gate → re-validation → chunked
-                                    atomic commits → journal → receipts)
-                     Entitlements  (StoreKit 2 + Keychain allowance counter)
-  iCleanUIKit/       iCleanUI    (SwiftUI: home, deck, cluster grid, commit, summary)
-App/                 App target sources (composition root, auth gate, BG task)
-project.yml          XcodeGen spec for the iClean app target
-```
-
-## Building
-
-Requires a Mac with Xcode 15.4+ (iOS 16.0 deployment target). **To put it on your iPhone, follow [INSTALL.md](INSTALL.md).**
+Requirements: macOS with Xcode 27 and an iOS 26+ simulator.
+To put the app on your own iPhone, see [INSTALL.md](INSTALL.md).
 
 ```bash
 brew install xcodegen
-xcodegen generate      # produces iClean.xcodeproj
-open iClean.xcodeproj  # select the iClean scheme, run on device/simulator
 ```
-
-Package tests (no app target needed):
 
 ```bash
-cd Packages/iCleanCore && swift test    # pure-logic tests: hashing, band index,
-                                        # sessionizer, kernel, calibration, clusterers
-cd Packages/iCleanData && swift test    # store: migrations, CAS verdicts, undo,
-                                        # suppression, retry schedule, allowance gate
+xcodegen generate
 ```
 
-Before shipping, complete the release checklist in APP_PLATFORM.md §7 (privacy manifest, App Group identifier, StoreKit product setup).
+Open `iclean.xcodeproj` and run the `iclean` scheme, or build from the command line:
 
-> **Status / honesty note:** this codebase was authored in a Linux environment
-> with no Apple toolchain available, so it has **not yet been compiled**.
-> The architecture, algorithms, and data model follow the design docs exactly,
-> and the pure-logic modules carry a test suite — but expect a shake-out pass
-> of compiler fixes (API signatures, concurrency annotations) on first build.
-> Treat `swift test` in both packages as the first task on a Mac.
+```bash
+xcodebuild build -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+## Test
+
+Core logic (no simulator needed):
+
+```bash
+swift test --package-path Packages/CleanupKit
+```
+
+UI tests (run against a built-in demo library, no real photos needed):
+
+```bash
+xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+No-network checks (constitution Principle V):
+
+```bash
+scripts/check-no-network.sh
+```
+
+```bash
+xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -testPlan NoNetwork
+```
+
+To try the app with test photos in a simulator's Photos library:
+
+```bash
+scripts/seed-simulator.sh "iPhone 17 Pro"
+```
+
+## Layout
+
+- `iclean/` — SwiftUI app (screens and wiring)
+- `Packages/CleanupKit/` — all logic: library access, analysis, grouping, removal
+- `icleanUITests/` — UI tests
+- `Fixtures/` — labeled test photos (see `Fixtures/README.md`)
+- `specs/001-photo-cleanup/` — spec, plan, research and tasks (Spec Kit)
+
+## Earlier design documents
+
+`docs/` holds the design documents from an earlier iClean implementation (merged in
+PR #1, replaced by this app). They are kept for reference only; where they differ from
+`specs/001-photo-cleanup/` and the [constitution](.specify/memory/constitution.md)
+(for example a paid unlock or third-party libraries), the specs and constitution win.

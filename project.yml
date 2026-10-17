@@ -1,56 +1,60 @@
-# XcodeGen spec — run `xcodegen generate` on a Mac to produce iClean.xcodeproj
-name: iClean
+name: iclean
 options:
-  bundleIdPrefix: com.iclean
+  bundleIdPrefix: com.mesbahtanvir
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: ""
 packages:
-  iCleanCore:
-    path: Packages/iCleanCore
-  iCleanData:
-    path: Packages/iCleanData
-  iCleanUIKit:
-    path: Packages/iCleanUIKit
+  CleanupKit:
+    path: Packages/CleanupKit
 targets:
-  iClean:
+  iclean:
     type: application
     platform: iOS
-    sources: [App/Sources]
+    sources:
+      - path: iclean
     dependencies:
-      - package: iCleanCore
-        product: PhotoGateway
-      - package: iCleanCore
-        product: ScanEngine
-      - package: iCleanData
-        product: ProposalStore
-      - package: iCleanData
-        product: CommitEngine
-      - package: iCleanData
-        product: Entitlements
-      - package: iCleanUIKit
-        product: iCleanUI
+      - package: CleanupKit
     info:
-      path: App/Resources/Info.plist
+      path: iclean/Info.plist
       properties:
+        CFBundleDisplayName: iclean
         UILaunchScreen: {}
-        # Honesty bar copy — APP_PLATFORM.md §7
-        NSPhotoLibraryUsageDescription: >-
-          iClean scans your library on this device to find duplicates and junk.
-          Nothing is uploaded, and nothing is deleted without your confirmation.
-        # We own the limited-access moment, not the OS re-prompt — APP_PLATFORM.md §3
-        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
-        # Registration silently fails without this — SCAN_PIPELINE.md §8
-        BGTaskSchedulerPermittedIdentifiers:
-          - com.iclean.scan.processing
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: "iclean looks at your photos on this iPhone to find duplicates and blurry shots. Nothing ever leaves your phone."
         ITSAppUsesNonExemptEncryption: false
-    entitlements:
-      path: App/Resources/iClean.entitlements
-      properties:
-        # Widget snapshot + shared DB container — APP_PLATFORM.md §6
-        com.apple.security.application-groups:
-          - group.com.iclean.shared
     settings:
       base:
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.10"
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.iclean
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+  icleanUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: icleanUITests
+        excludes: ["*.xctestplan"]
+    dependencies:
+      - target: iclean
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.icleanUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: iclean
+schemes:
+  iclean:
+    build:
+      targets:
+        iclean: all
+        icleanUITests: [test]
+    test:
+      testPlans:
+        - path: icleanUITests/Default.xctestplan
+          defaultPlan: true
+        - path: icleanUITests/NoNetwork.xctestplan
