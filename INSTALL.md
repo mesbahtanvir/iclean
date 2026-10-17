@@ -6,7 +6,7 @@ Xcode. Once set up, getting it onto your phone takes about ten minutes.
 ## What you need
 
 - A Mac with **Xcode 27** (App Store → Xcode)
-- An iPhone running **iOS 26 or newer** (the app's deployment target) + a cable
+- An iPhone running **iOS 18 or newer** (the app's deployment target) + a cable
   (or same-network Wi-Fi after the first wired install)
 - An Apple ID. A **free** Apple ID is enough — the app uses no App Groups,
   no push, no in-app purchases, nothing beyond photo-library access, so it
