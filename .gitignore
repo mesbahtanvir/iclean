@@ -7,3 +7,6 @@ DerivedData/
 .DS_Store
 # Synthetic fixtures (regenerate with scripts/seed-simulator.sh)
 Fixtures/generated/
+*.xcworkspace
+xcuserdata/
+Package.resolved

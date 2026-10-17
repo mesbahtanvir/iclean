@@ -66,3 +66,10 @@ scripts/seed-simulator.sh "iPhone 17 Pro"
 - `icleanUITests/` — UI tests
 - `Fixtures/` — labeled test photos (see `Fixtures/README.md`)
 - `specs/001-photo-cleanup/` — spec, plan, research and tasks (Spec Kit)
+
+## Earlier design documents
+
+`docs/` holds the design documents from an earlier iClean implementation (merged in
+PR #1, replaced by this app). They are kept for reference only; where they differ from
+`specs/001-photo-cleanup/` and the [constitution](.specify/memory/constitution.md)
+(for example a paid unlock or third-party libraries), the specs and constitution win.
