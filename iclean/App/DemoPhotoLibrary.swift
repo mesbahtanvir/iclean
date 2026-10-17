@@ -1,0 +1,247 @@
+#if DEBUG
+    import CleanupKit
+    import CoreGraphics
+    import Foundation
+
+    /// DEBUG-only synthetic photo library used by UI tests (`-UITesting`), so flows
+    /// run the same way every time without the Photos permission prompt or real
+    /// photos. Never compiled into release builds.
+    final class DemoPhotoLibrary: PhotoLibrary, @unchecked Sendable {
+        struct Asset {
+            var metadata: AssetMetadata
+            var image: CGImage?
+            var cloudOnly: Bool
+            var size: Int64?
+        }
+
+        private let lock = NSLock()
+        private var assets: [String: Asset] = [:]
+        private var order: [String] = []
+        private let scenario: String
+        private var listeners: [AsyncStream<LibraryChange>.Continuation] = []
+
+        init(scenario: String) {
+            self.scenario = scenario
+            if scenario != "empty" { buildStandard() }
+        }
+
+        // MARK: Content
+
+        private func add(
+            _ id: String, kind: ItemKind = .photo, image: CGImage?, minutes: Double,
+            width: Int = 4032, height: Int = 3024, favorite: Bool = false, edited: Bool = false,
+            portrait: Bool = false, duration: Double? = nil, burst: String? = nil,
+            albums: [String] = [], cloudOnly: Bool = false, size: Int64? = nil
+        ) {
+            let date = Date(timeIntervalSince1970: 1_700_000_000 + minutes * 60)
+            let m = AssetMetadata(
+                assetID: id, kind: kind, captureDate: date, modificationDate: date,
+                pixelWidth: width, pixelHeight: height, duration: duration, isFavorite: favorite,
+                hasAdjustments: edited, isPortrait: portrait, burstID: burst, albumNames: albums)
+            assets[id] = Asset(metadata: m, image: image, cloudOnly: cloudOnly, size: size)
+            order.append(id)
+        }
+
+        private func buildStandard() {
+            // Duplicates: three copies of one photo, two of another (one a favorite),
+            // and an edited version that must not be grouped with its original.
+            let d1 = DemoImages.scene(seed: 11)
+            add("dup1-a", image: d1, minutes: 0, size: 3_200_000)
+            add("dup1-b", image: DemoImages.resized(d1, 0.5), minutes: 600, width: 2016, height: 1512, size: 900_000)
+            add("dup1-c", image: DemoImages.resized(d1, 0.5), minutes: 1200, width: 2016, height: 1512, size: 850_000)
+            let d2 = DemoImages.scene(seed: 22)
+            add("dup2-a", image: d2, minutes: 2000, size: 3_000_000)
+            add("dup2-fav", image: d2, minutes: 2600, favorite: true, albums: ["Holiday"], size: 3_000_000)
+            let e = DemoImages.scene(seed: 33)
+            add("edit-orig", image: e, minutes: 3000, size: 2_800_000)
+            add("edit-crop", image: DemoImages.cropped(e), minutes: 3001, edited: true, size: 1_900_000)
+            // Blurry photos, and a portrait shot that is blurry on purpose.
+            add("blur1", image: DemoImages.blurred(DemoImages.scene(seed: 44)), minutes: 4000, size: 2_000_000)
+            add("blur2", image: DemoImages.blurred(DemoImages.scene(seed: 55)), minutes: 5000, size: 2_100_000)
+            add("portrait", image: DemoImages.blurred(DemoImages.scene(seed: 66)), minutes: 6000, portrait: true, size: 2_500_000)
+            add("sharp", image: DemoImages.scene(seed: 77), minutes: 7000, size: 3_100_000)
+            // A burst of similar shots.
+            for i in 0..<5 {
+                add(
+                    "burst\(i)", image: DemoImages.burstFrame(DemoImages.scene(seed: 88), index: i),
+                    minutes: 8000 + Double(i) / 60, burst: "B1", size: 2_400_000)
+            }
+            // Screenshots.
+            for i in 0..<3 {
+                add(
+                    "shot\(i)", kind: .screenshot, image: DemoImages.stripes(seed: UInt64(100 + i)),
+                    minutes: 9000 + Double(i) * 100, width: 1206, height: 2622, size: 400_000)
+            }
+            // Duplicate videos (same clip, two qualities) and a large video.
+            let v = DemoImages.scene(seed: 99)
+            add("vid-hd", kind: .video, image: v, minutes: 10000, width: 1920, height: 1080, duration: 12, size: 24_000_000)
+            add("vid-sd", kind: .video, image: DemoImages.resized(v, 0.5), minutes: 10100, width: 1280, height: 720, duration: 12.2, size: 9_000_000)
+            add("vid-big", kind: .video, image: DemoImages.scene(seed: 111), minutes: 11000, width: 3840, height: 2160, duration: 300, size: 900_000_000)
+            // Only in iCloud: not scanned.
+            add("cloud", image: nil, minutes: 12000, cloudOnly: true)
+        }
+
+        // MARK: PhotoLibrary
+
+        func authorizationStatus() -> LibraryAccess {
+            switch scenario {
+            case "denied": .denied
+            case "limited": .limited
+            default: .full
+            }
+        }
+
+        func requestAuthorization() async -> LibraryAccess { authorizationStatus() }
+
+        func fetchAllItems() async -> [AssetMetadata] {
+            if scenario == "deleteDuringReview" {
+                // Simulates a deletion in the Photos app while the user reviews results.
+                Task {
+                    try? await Task.sleep(for: .seconds(6))
+                    self.deleteElsewhere("dup1-b")
+                }
+            }
+            return lock.withLock { order.compactMap { assets[$0]?.metadata } }
+        }
+
+        func preview(for assetID: String, maxPixels: Int) async -> PreviewResult {
+            if scenario == "slow" { try? await Task.sleep(for: .milliseconds(1500)) }
+            guard let asset = lock.withLock({ assets[assetID] }), let image = asset.image else {
+                return .unavailable
+            }
+            return asset.cloudOnly ? .cloudPreview(image) : .local(image)
+        }
+
+        func localByteSize(for assetID: String) async -> Int64? {
+            lock.withLock { assets[assetID]?.size }
+        }
+
+        func remove(_ assetIDs: [String]) async -> RemovalResult {
+            if scenario == "cancelRemoval" {
+                return RemovalResult(removed: [], failed: [], cancelled: true)
+            }
+            let failing: Set<String> = scenario == "removalFails" ? [assetIDs.sorted().first ?? ""] : []
+            let result: RemovalResult = lock.withLock {
+                var removed: [String] = []
+                var failed: [String] = []
+                for id in assetIDs {
+                    if failing.contains(id) || assets[id] == nil {
+                        failed.append(id)
+                    } else {
+                        assets.removeValue(forKey: id)
+                        order.removeAll { $0 == id }
+                        removed.append(id)
+                    }
+                }
+                return RemovalResult(removed: removed, failed: failed)
+            }
+            return result
+        }
+
+        func changes() -> AsyncStream<LibraryChange> {
+            let (stream, continuation) = AsyncStream<LibraryChange>.makeStream()
+            lock.withLock { listeners.append(continuation) }
+            return stream
+        }
+
+        /// Simulates a deletion made in the Photos app (edge-case UI test).
+        func deleteElsewhere(_ id: String) {
+            let listeners = lock.withLock {
+                assets.removeValue(forKey: id)
+                order.removeAll { $0 == id }
+                return self.listeners
+            }
+            listeners.forEach { $0.yield(LibraryChange(removed: [id])) }
+        }
+    }
+
+    /// Synthetic images for the demo library.
+    enum DemoImages {
+        static func scene(seed: UInt64, width: Int = 640, height: Int = 480) -> CGImage {
+            var rng = DemoRandom(seed: seed)
+            let ctx = context(width: width, height: height)
+            ctx.setFillColor(CGColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            for _ in 0..<60 {
+                ctx.setFillColor(CGColor(red: rng.unit(), green: rng.unit(), blue: rng.unit(), alpha: 1))
+                let rect = CGRect(
+                    x: rng.unit() * Double(width), y: rng.unit() * Double(height),
+                    width: 10 + rng.unit() * Double(width) / 3,
+                    height: 10 + rng.unit() * Double(height) / 3)
+                if rng.unit() > 0.5 { ctx.fill(rect) } else { ctx.fillEllipse(in: rect) }
+            }
+            return ctx.makeImage()!
+        }
+
+        static func stripes(seed: UInt64, width: Int = 402, height: Int = 874) -> CGImage {
+            var rng = DemoRandom(seed: seed)
+            let ctx = context(width: width, height: height)
+            let band = 8 + Int(rng.unit() * 24)
+            for y in stride(from: 0, to: height, by: band) {
+                ctx.setFillColor(CGColor(red: rng.unit(), green: rng.unit(), blue: rng.unit(), alpha: 1))
+                ctx.fill(CGRect(x: 0, y: y, width: width, height: band))
+            }
+            return ctx.makeImage()!
+        }
+
+        static func resized(_ image: CGImage, _ scale: Double) -> CGImage {
+            let w = max(1, Int(Double(image.width) * scale))
+            let h = max(1, Int(Double(image.height) * scale))
+            let ctx = context(width: w, height: h)
+            ctx.interpolationQuality = .high
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return ctx.makeImage()!
+        }
+
+        static func blurred(_ image: CGImage) -> CGImage {
+            let small = resized(image, 1.0 / 12)
+            let ctx = context(width: image.width, height: image.height)
+            ctx.interpolationQuality = .high
+            ctx.draw(small, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return ctx.makeImage()!
+        }
+
+        static func cropped(_ image: CGImage) -> CGImage {
+            let w = image.width * 6 / 10
+            let h = image.height * 6 / 10
+            return image.cropping(to: CGRect(x: (image.width - w) / 2, y: (image.height - h) / 2, width: w, height: h))!
+        }
+
+        /// One frame of a burst: the camera moved and the subject changed a little.
+        static func burstFrame(_ image: CGImage, index: Int) -> CGImage {
+            let moved = shifted(image, by: index * 40)
+            let ctx = context(width: image.width, height: image.height)
+            ctx.draw(moved, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            var rng = DemoRandom(seed: UInt64(500 + index))
+            ctx.setFillColor(CGColor(red: rng.unit(), green: rng.unit(), blue: rng.unit(), alpha: 1))
+            ctx.fillEllipse(in: CGRect(x: 200 + index * 30, y: 150, width: 140, height: 180))
+            return ctx.makeImage()!
+        }
+
+        /// The same scene, shifted (like consecutive burst shots).
+        static func shifted(_ image: CGImage, by pixels: Int) -> CGImage {
+            let ctx = context(width: image.width, height: image.height)
+            ctx.draw(image, in: CGRect(x: pixels, y: pixels / 2, width: image.width, height: image.height))
+            return ctx.makeImage()!
+        }
+
+        private static func context(width: Int, height: Int) -> CGContext {
+            CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        }
+    }
+
+    struct DemoRandom {
+        private var state: UInt64
+        init(seed: UInt64) { state = seed &+ 0x9E37_79B9_7F4A_7C15 }
+        mutating func unit() -> Double {
+            state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return Double((z ^ (z >> 31)) >> 11) / Double(1 << 53)
+        }
+    }
+#endif

@@ -33,7 +33,26 @@ third-party runtime code.
 
 ## R3. Duplicate detection (photos)
 
-- **Decision**: Two-stage:
+- **Implementation update (2026-10-14)**: Measurements showed heavy JPEG recompression
+  flips up to 8 dHash bits in smooth areas, and Vision feature prints do not separate
+  copies from look-alike photos (and are unavailable on some simulators). A first
+  thumbprint (layout correlation) also matched different blurry photos and burst frames.
+  Final design:
+  1. **Candidates**: dHash ≤ **10** bits (11-chunk pigeonhole index, near O(n)).
+  2. **Confirm with a 32×32 grayscale thumbprint**:
+     - **Detail correlation ≥ 0.85**: high-pass, each pixel minus its 5×5 mean. Copies
+       measured ≥ 0.88 even after heavy recompression; crops, different photos and
+       different blurry photos ≤ 0.16.
+     - **Mean brightness difference ≤ 11** (0–255): copies ≤ 9.3; burst frames with a
+       moving subject ≥ 13.
+  - Feature prints are no longer used for photo duplicates.
+  - **Measured on synthetic sets**: recall 100%, false duplicates 0% (40 groups). In a
+    500-photo mixed library, duplicate precision ≥ 98%.
+  - **Known limits**: the thumbprint is grayscale, so two low-detail photos that differ
+    mainly in color (e.g. plain skies) can still match. Burst frames where almost
+    nothing changed are listed as duplicates rather than similar shots.
+  - **Real-photo calibration still pending** (Fixtures/README.md).
+- **Original decision**: Two-stage:
   1. **Candidate**: 64-bit perceptual hash (dHash) of the grayscale 9×8 downscale.
      Group items whose hashes differ by ≤ 4 bits, plus matching aspect ratio.
   2. **Confirm**: Vision image feature print (`GenerateImageFeaturePrintRequest`) distance
@@ -62,7 +81,23 @@ third-party runtime code.
 
 ## R5. Blur detection
 
-- **Decision**: Sharpness score = variance of the Laplacian on the 512 px grayscale
+- **Implementation update (2026-10-13)**: Variance of the Laplacian failed on realistic
+  images: sensor grain made blurry photos look sharp, and sharp low-texture scenes (sky,
+  walls) looked blurry (0% recall in the synthetic set). Replaced by the Crété-Roffet
+  no-reference blur effect on a 256 px grayscale copy: `sharpness = 1 − blurEffect`.
+  Measured: sharp 0.70–0.75, low-texture sharp 0.76–0.81, soft 0.63–0.68, clearly blurry
+  0.37–0.52. Threshold **sharpness < 0.55**, plus aesthetics < 0 when Vision is
+  available. Two guards stop low-detail photos (plain skies, walls, dark frames) from
+  being flagged:
+  - **Featureless**: strongest-edge contrast below 12 means nothing can be judged, so
+    the photo is never flagged. Clearly blurry photos measure 18 or more.
+  - **Crisp edges**: if the strongest edges change within one pixel rather than over
+    six (crispness 0.45 or more), the photo is in focus. Blurry photos measured 0.37 or
+    lower, sharp ones 0.50 or higher, plain skies 0.57 or higher.
+  - **Measured on synthetic sets**: recall 100% and false flags 0%, at 512 px and at
+    256 px previews; blurry-category precision 100% in the 500-photo mixed library.
+  - **Real-photo calibration still pending.**
+- **Original decision**: Sharpness score = variance of the Laplacian on the 512 px grayscale
   preview (Accelerate / vImage), computed on the whole image and on the most detailed
   3×3 tile (so a sharp subject with a soft background still counts as sharp). Flag only
   when the score is below a strict threshold (FR-003). Where available, Vision's image
@@ -99,7 +134,11 @@ third-party runtime code.
 
 ## R7. Measuring "space freed"
 
-- **Decision**: For items stored locally, size = sum of the bytes of the item's
+- **Implementation update**: real sizes are measured only for items shown in results
+  (not the whole library), so the scan stays fast. Videos use the file size of the local
+  AVURLAsset; photos stream their resources and count bytes. Everything else uses the
+  estimate.
+- **Original decision**: For items stored locally, size = sum of the bytes of the item's
   `PHAssetResource`s, read locally with `PHAssetResourceManager`
   (`isNetworkAccessAllowed = false`) and cached. For cloud-only items, size is estimated
   from pixel dimensions, duration and type, and the UI shows "about" sizes. Sizes are
@@ -112,7 +151,10 @@ third-party runtime code.
 
 ## R8. Removal
 
-- **Decision**: `PHPhotoLibrary.performChanges` with `PHAssetChangeRequest.deleteAssets`.
+- **Implementation update**: one `performChanges` request for the whole selection instead
+  of batches of 500, because iOS shows its confirmation once per request. A user-cancelled
+  prompt is reported as "cancelled" and nothing is removed.
+- **Original decision**: `PHPhotoLibrary.performChanges` with `PHAssetChangeRequest.deleteAssets`.
   iOS then shows its own system confirmation and moves the items to Recently Deleted
   (FR-013). Our summary sheet (FR-012) comes first; the system prompt is a second,
   unavoidable confirmation. Large selections are submitted in batches of 500 so a

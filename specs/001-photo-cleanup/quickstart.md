@@ -41,6 +41,16 @@ xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 
 
 Expected: scan, review and removal all succeed.
 
+UI tests run against a DEBUG-only demo library (launch argument `-UITesting`), so they
+need no real photos and no permission prompt:
+
+```bash
+xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+Note: Vision requests fail on some simulators ("Failed to create espresso context");
+the app then skips the Vision signals and still works.
+
 ## Scenario 2 — Seed the test library
 
 ```bash

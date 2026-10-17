@@ -25,9 +25,11 @@ iclean stores only identifiers and analysis results.
 | `albumNames` | [String] | User-made albums containing the item (album badge) |
 | `analysisSource` | enum `localPreview` / `cloudPreview` / `notScanned` | FR-014 |
 | `dHash` | UInt64? | Duplicate candidate fingerprint (R3) |
+| `thumbprint` | Data? | 16×16 grayscale miniature; confirms duplicates (R3) |
 | `featurePrint` | Data? | Serialized Vision feature print (R3, R4) |
-| `sharpness` | Double? | Laplacian score (R5) |
+| `sharpness` | Double? | 0 (blurred) … 1 (sharp), `1 − blurEffect` (R5) |
 | `aestheticsScore` | Double? | Second blur signal (R5) |
+| `faceQuality` | Double? | Best face capture quality; similar-shots tie-break (R4) |
 | `byteSize` | Int64? | Measured local size (R7) |
 | `isSizeEstimated` | Bool | True when `byteSize` is an estimate (cloud-only) |
 | `analyzedAt` | Date | |

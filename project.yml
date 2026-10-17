@@ -1,0 +1,60 @@
+name: iclean
+options:
+  bundleIdPrefix: com.mesbahtanvir
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: ""
+packages:
+  CleanupKit:
+    path: Packages/CleanupKit
+targets:
+  iclean:
+    type: application
+    platform: iOS
+    sources:
+      - path: iclean
+    dependencies:
+      - package: CleanupKit
+    info:
+      path: iclean/Info.plist
+      properties:
+        CFBundleDisplayName: iclean
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: "iclean looks at your photos on this iPhone to find duplicates and blurry shots. Nothing ever leaves your phone."
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.iclean
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+  icleanUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: icleanUITests
+        excludes: ["*.xctestplan"]
+    dependencies:
+      - target: iclean
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.icleanUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: iclean
+schemes:
+  iclean:
+    build:
+      targets:
+        iclean: all
+        icleanUITests: [test]
+    test:
+      testPlans:
+        - path: icleanUITests/Default.xctestplan
+          defaultPlan: true
+        - path: icleanUITests/NoNetwork.xctestplan
