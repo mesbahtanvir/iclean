@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "CleanupKit",
-    platforms: [.iOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v18), .macOS(.v26)],
     products: [
         .library(name: "CleanupKit", targets: ["CleanupKit"])
     ],
