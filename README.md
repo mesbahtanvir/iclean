@@ -14,6 +14,7 @@ where you can restore them. See the [constitution](.specify/memory/constitution.
 ## Build
 
 Requirements: macOS with Xcode 27 and an iOS 26+ simulator.
+To put the app on your own iPhone, see [INSTALL.md](INSTALL.md).
 
 ```bash
 brew install xcodegen
