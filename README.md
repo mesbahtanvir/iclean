@@ -31,7 +31,7 @@ project.yml          XcodeGen spec for the iClean app target
 
 ## Building
 
-Requires a Mac with Xcode 15.4+ (iOS 16.0 deployment target).
+Requires a Mac with Xcode 15.4+ (iOS 16.0 deployment target). **To put it on your iPhone, follow [INSTALL.md](INSTALL.md).**
 
 ```bash
 brew install xcodegen
