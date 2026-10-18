@@ -21,16 +21,20 @@ public struct ResultGroup: Sendable, Hashable, Identifiable {
     public var members: [String]
     public var keepers: Set<String>
     public var confidence: Confidence
+    /// Why some copies' dates look unreliable, by asset id, when that separates the copies of a
+    /// duplicate group. Empty otherwise. Only explains; it never changes what is selected.
+    public var dateNotes: [String: [DateReason]]
 
     public init(
         type: GroupType, members: [String], keepers: Set<String> = [],
-        confidence: Confidence = .normal
+        confidence: Confidence = .normal, dateNotes: [String: [DateReason]] = [:]
     ) {
         self.id = Self.stableID(type: type, members: members)
         self.type = type
         self.members = members
         self.keepers = keepers
         self.confidence = confidence
+        self.dateNotes = dateNotes
     }
 
     public static func stableID(type: GroupType, members: [String]) -> String {

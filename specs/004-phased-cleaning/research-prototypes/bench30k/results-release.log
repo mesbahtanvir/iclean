@@ -1,0 +1,260 @@
+### build n=5000 runs=2
+BUILD n=5000 run=1 wall=0.084s rssBefore=20MB rssAfter=28MB peak=28MB | duplicates=181g/400m similar=287g/1606m blurry=60g/60m screenshots=184g/184m largeVideos=50g/50m
+BUILD n=5000 run=2 wall=0.079s rssBefore=28MB rssAfter=28MB peak=28MB | duplicates=181g/400m similar=287g/1606m blurry=60g/60m screenshots=184g/184m largeVideos=50g/50m
+### build n=10000 runs=2
+BUILD n=10000 run=1 wall=0.164s rssBefore=29MB rssAfter=52MB peak=52MB | duplicates=363g/800m similar=585g/3400m blurry=113g/113m screenshots=398g/398m largeVideos=49g/49m
+BUILD n=10000 run=2 wall=0.163s rssBefore=52MB rssAfter=57MB peak=57MB | duplicates=363g/800m similar=585g/3400m blurry=113g/113m screenshots=398g/398m largeVideos=49g/49m
+### build n=20000 runs=2
+BUILD n=20000 run=1 wall=0.396s rssBefore=47MB rssAfter=84MB peak=84MB | duplicates=727g/1603m similar=1148g/6679m blurry=250g/250m screenshots=733g/733m largeVideos=50g/50m
+BUILD n=20000 run=2 wall=0.381s rssBefore=84MB rssAfter=84MB peak=84MB | duplicates=727g/1603m similar=1148g/6679m blurry=250g/250m screenshots=733g/733m largeVideos=50g/50m
+### build n=30000 runs=2
+BUILD n=30000 run=1 wall=0.668s rssBefore=65MB rssAfter=120MB peak=120MB | duplicates=1090g/2402m similar=1722g/10077m blurry=374g/374m screenshots=1195g/1195m largeVideos=50g/50m
+BUILD n=30000 run=2 wall=0.661s rssBefore=120MB rssAfter=120MB peak=120MB | duplicates=1090g/2402m similar=1722g/10077m blurry=374g/374m screenshots=1195g/1195m largeVideos=50g/50m
+### dup n=5000
+DUPINDEX n=5000 photos=4602 indexWall=0.006s innerVisits=2155399 candidatePairs=264 passCheapFilters(=thumbprint evaluations)=263
+DUPDETECT n=5000 clustered=0 wall=0.017s groups=181 members=400 rssBefore=24MB peak=25MB
+### dup n=10000
+DUPINDEX n=10000 photos=9161 indexWall=0.023s innerVisits=8536357 candidatePairs=523 passCheapFilters(=thumbprint evaluations)=522
+DUPDETECT n=10000 clustered=0 wall=0.044s groups=363 members=800 rssBefore=39MB peak=40MB
+### dup n=20000
+DUPINDEX n=20000 photos=18385 indexWall=0.088s innerVisits=34370482 candidatePairs=1047 passCheapFilters(=thumbprint evaluations)=1045
+DUPDETECT n=20000 clustered=0 wall=0.133s groups=727 members=1603 rssBefore=62MB peak=64MB
+### dup n=30000
+DUPINDEX n=30000 photos=27457 indexWall=0.190s innerVisits=76597553 candidatePairs=1561 passCheapFilters(=thumbprint evaluations)=1560
+DUPDETECT n=30000 clustered=0 wall=0.266s groups=1090 members=2402 rssBefore=86MB peak=91MB
+### detectors n=30000
+DETECT n=30000 duplicates wall=0.265s groups=1090 rssBefore=72MB peak=79MB
+DETECT n=30000 similar wall=0.333s groups=2183 rssBefore=79MB peak=80MB
+DETECT n=30000 blurry wall=0.001s groups=682 rssBefore=80MB peak=80MB
+DETECT n=30000 screenshots wall=0.001s groups=1217 rssBefore=80MB peak=80MB
+DETECT n=30000 duplicateVideos wall=0.001s groups=0 rssBefore=80MB peak=80MB
+DETECT n=30000 largeVideos wall=0.001s groups=50 rssBefore=80MB peak=80MB
+### similar n=30000
+SIMILAR n=30000 dense=0 fpPool=0 windowPairs=48827 wall=0.331s groups=2183 members=11462 rssBefore=85MB rssAfter=67MB peak=87MB
+### similar n=30000 pool=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/pool.bin
+SIMILAR n=30000 dense=0 fpPool=1000 windowPairs=49861 wall=0.557s groups=2229 members=11527 rssBefore=89MB rssAfter=118MB peak=138MB
+### similar n=30000 dense=3000
+SIMILAR n=30000 dense=3000 fpPool=0 windowPairs=4701954 wall=42.816s groups=2251 members=10864 rssBefore=85MB rssAfter=67MB peak=87MB
+### planner n=30000
+PLAN n=30000 kind=quickCheck run=1 wall=0.0228s gone=300 refreshed=857 toAnalyze=915 rssBefore=177MB peak=203MB
+PLAN n=30000 kind=quickCheck run=2 wall=0.0194s gone=300 refreshed=857 toAnalyze=915 rssBefore=203MB peak=203MB
+PLAN n=30000 kind=quickCheck run=3 wall=0.0185s gone=300 refreshed=857 toAnalyze=915 rssBefore=203MB peak=203MB
+PLAN n=30000 kind=full run=1 wall=0.0188s gone=300 refreshed=852 toAnalyze=1214 rssBefore=203MB peak=203MB
+PLAN n=30000 kind=full run=2 wall=0.0194s gone=300 refreshed=852 toAnalyze=1214 rssBefore=203MB peak=203MB
+PLAN n=30000 kind=full run=3 wall=0.0236s gone=300 refreshed=852 toAnalyze=1214 rssBefore=203MB peak=203MB
+### dup n=10000 clustered=0.15
+DUPINDEX n=10000 photos=9146 indexWall=0.024s innerVisits=8552881 candidatePairs=8920 passCheapFilters(=thumbprint evaluations)=4856
+DUPDETECT n=10000 clustered=0.15 wall=0.169s groups=363 members=800 rssBefore=39MB peak=40MB
+### dup n=30000 clustered=0.05
+DUPINDEX n=30000 photos=27491 indexWall=0.197s innerVisits=76821997 candidatePairs=9682 passCheapFilters(=thumbprint evaluations)=5441
+DUPDETECT n=30000 clustered=0.05 wall=0.385s groups=1090 members=2402 rssBefore=87MB peak=89MB
+### dup n=30000 clustered=0.15
+DUPINDEX n=30000 photos=27498 indexWall=0.203s innerVisits=77318044 candidatePairs=77027 passCheapFilters(=thumbprint evaluations)=38562
+DUPDETECT n=30000 clustered=0.15 wall=1.361s groups=1090 members=2402 rssBefore=87MB peak=89MB
+### build n=30000 pool=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/pool.bin
+BUILD n=30000 run=1 wall=0.854s rssBefore=69MB rssAfter=145MB peak=159MB | duplicates=1090g/2402m similar=1778g/10133m blurry=358g/358m screenshots=1135g/1135m largeVideos=50g/50m
+BUILD n=30000 run=2 wall=0.860s rssBefore=145MB rssAfter=148MB peak=162MB | duplicates=1090g/2402m similar=1778g/10133m blurry=358g/358m screenshots=1135g/1135m largeVideos=50g/50m
+### store-write n=30000 folder=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/stores/upsert mode=upsert pool=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/pool.bin
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1053 checkpointed: 1053
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1076 checkpointed: 1076
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1062 checkpointed: 1062
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1038 checkpointed: 1038
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1074 checkpointed: 1074
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1013 checkpointed: 1013
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1056 checkpointed: 1056
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1046 checkpointed: 1046
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1077 checkpointed: 1077
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1060 checkpointed: 1060
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1079 checkpointed: 1079
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1090 checkpointed: 1090
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1003 checkpointed: 1003
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1037 checkpointed: 1037
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1098 checkpointed: 1098
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1028 checkpointed: 1028
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1093 checkpointed: 1093
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1031 checkpointed: 1031
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1023 checkpointed: 1023
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1025 checkpointed: 1025
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1060 checkpointed: 1060
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1032 checkpointed: 1032
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1019 checkpointed: 1019
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1053 checkpointed: 1053
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1044 checkpointed: 1044
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1035 checkpointed: 1035
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1056 checkpointed: 1056
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1065 checkpointed: 1065
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1054 checkpointed: 1054
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1071 checkpointed: 1071
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1059 checkpointed: 1059
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1052 checkpointed: 1052
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1073 checkpointed: 1073
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1039 checkpointed: 1039
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1092 checkpointed: 1092
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1061 checkpointed: 1061
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1088 checkpointed: 1088
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1047 checkpointed: 1047
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1065 checkpointed: 1065
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1036 checkpointed: 1036
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1071 checkpointed: 1071
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1058 checkpointed: 1058
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1069 checkpointed: 1069
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1070 checkpointed: 1070
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1084 checkpointed: 1084
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1002 checkpointed: 1002
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1094 checkpointed: 1094
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1027 checkpointed: 1027
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1091 checkpointed: 1091
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1086 checkpointed: 1086
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1079 checkpointed: 1079
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1040 checkpointed: 1040
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1064 checkpointed: 1064
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1100 checkpointed: 1100
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1040 checkpointed: 1040
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1002 checkpointed: 1002
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1017 checkpointed: 1017
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1068 checkpointed: 1068
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1006 checkpointed: 1006
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1068 checkpointed: 1068
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1010 checkpointed: 1010
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1097 checkpointed: 1097
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1058 checkpointed: 1058
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1003 checkpointed: 1003
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1075 checkpointed: 1075
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1098 checkpointed: 1098
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1050 checkpointed: 1050
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1102 checkpointed: 1102
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1109 checkpointed: 1109
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1004 checkpointed: 1004
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1044 checkpointed: 1044
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1096 checkpointed: 1096
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1080 checkpointed: 1080
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1078 checkpointed: 1078
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1009 checkpointed: 1009
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1003 checkpointed: 1003
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1024 checkpointed: 1024
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1004 checkpointed: 1004
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1020 checkpointed: 1020
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1020 checkpointed: 1020
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1103 checkpointed: 1103
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1020 checkpointed: 1020
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1092 checkpointed: 1092
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1090 checkpointed: 1090
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1070 checkpointed: 1070
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1053 checkpointed: 1053
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1099 checkpointed: 1099
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1003 checkpointed: 1003
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1010 checkpointed: 1010
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1014 checkpointed: 1014
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1088 checkpointed: 1088
+STOREWRITE mode=upsert n=30000 chunks=938 total=5.66s meanChunk=6.0ms first100=5.9ms last100=6.1ms p99=14.4ms max=15.7ms disk=181MB rss=92MB peak=112MB
+### store-read folder=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/stores/upsert
+START rss=9MB peak=9MB disk=181MB
+STOREREAD run=1 n=30000 wall=1.249s rssBefore=15MB rssAfter=567MB peak=567MB
+STOREREAD run=2 n=30000 wall=1.245s rssBefore=567MB rssAfter=762MB peak=762MB
+LAUNCHBUILD n=30000 wall=0.898s rssBefore=762MB rssAfter=853MB peak=853MB | duplicates=1090g/2402m similar=1778g/10133m blurry=358g/358m screenshots=1135g/1135m largeVideos=50g/50m
+### store-write n=30000 folder=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/stores/ckpt mode=checkpoint pool=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/pool.bin
+STORE createJob(938 chunks) 0.158s
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1048 checkpointed: 1048
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1027 checkpointed: 1027
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1026 checkpointed: 1026
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1005 checkpointed: 1005
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1054 checkpointed: 1054
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1011 checkpointed: 1011
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1090 checkpointed: 1090
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1045 checkpointed: 1045
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1061 checkpointed: 1061
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1059 checkpointed: 1059
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1002 checkpointed: 1002
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1004 checkpointed: 1004
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1027 checkpointed: 1027
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1003 checkpointed: 1003
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1029 checkpointed: 1029
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1027 checkpointed: 1027
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1030 checkpointed: 1030
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1034 checkpointed: 1034
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1059 checkpointed: 1059
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1037 checkpointed: 1037
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1068 checkpointed: 1068
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1051 checkpointed: 1051
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1072 checkpointed: 1072
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1088 checkpointed: 1088
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1051 checkpointed: 1051
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1068 checkpointed: 1068
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1036 checkpointed: 1036
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1050 checkpointed: 1050
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1100 checkpointed: 1100
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1094 checkpointed: 1094
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1077 checkpointed: 1077
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1063 checkpointed: 1063
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1057 checkpointed: 1057
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1082 checkpointed: 1082
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1060 checkpointed: 1060
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1089 checkpointed: 1089
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1093 checkpointed: 1093
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1089 checkpointed: 1089
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1082 checkpointed: 1082
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1092 checkpointed: 1092
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1062 checkpointed: 1062
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1094 checkpointed: 1094
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1091 checkpointed: 1091
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1108 checkpointed: 1108
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1116 checkpointed: 1116
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1074 checkpointed: 1074
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1034 checkpointed: 1034
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1098 checkpointed: 1098
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1008 checkpointed: 1008
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1035 checkpointed: 1035
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1108 checkpointed: 1108
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1104 checkpointed: 1104
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1079 checkpointed: 1079
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1076 checkpointed: 1076
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1021 checkpointed: 1021
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1010 checkpointed: 1010
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1111 checkpointed: 1111
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1120 checkpointed: 1120
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1019 checkpointed: 1019
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1009 checkpointed: 1009
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1084 checkpointed: 1084
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1110 checkpointed: 1110
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1072 checkpointed: 1072
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1083 checkpointed: 1083
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1104 checkpointed: 1104
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1096 checkpointed: 1096
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1017 checkpointed: 1017
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1083 checkpointed: 1083
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1001 checkpointed: 1001
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1045 checkpointed: 1045
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1008 checkpointed: 1008
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1031 checkpointed: 1031
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1066 checkpointed: 1066
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1002 checkpointed: 1002
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1031 checkpointed: 1031
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1025 checkpointed: 1025
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1007 checkpointed: 1007
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1029 checkpointed: 1029
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1090 checkpointed: 1090
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1011 checkpointed: 1011
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1100 checkpointed: 1100
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1097 checkpointed: 1097
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1009 checkpointed: 1009
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1107 checkpointed: 1107
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1098 checkpointed: 1098
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1091 checkpointed: 1091
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1004 checkpointed: 1004
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1037 checkpointed: 1037
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1000 checkpointed: 1000
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1008 checkpointed: 1008
+CoreData: debug: WAL checkpoint: Database did checkpoint. Log size: 1043 checkpointed: 1043
+STOREWRITE mode=checkpoint n=30000 chunks=938 total=6.51s meanChunk=6.8ms first100=6.7ms last100=6.5ms p99=16.0ms max=23.6ms disk=186MB rss=108MB peak=128MB
+### store-read folder=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/stores/ckpt
+START rss=9MB peak=9MB disk=184MB
+STOREREAD run=1 n=30000 wall=1.220s rssBefore=15MB rssAfter=569MB peak=569MB
+STOREREAD run=2 n=30000 wall=1.208s rssBefore=569MB rssAfter=762MB peak=762MB
+LAUNCHBUILD n=30000 wall=0.872s rssBefore=762MB rssAfter=853MB peak=853MB | duplicates=1090g/2402m similar=1778g/10133m blurry=358g/358m screenshots=1135g/1135m largeVideos=50g/50m
+### DONE

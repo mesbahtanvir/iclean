@@ -9,7 +9,9 @@
 **Input**: User description: "Clean up blurry and duplicate pictures in your phone's photo library, to free up cloud storage space and declutter the Photos app."
 
 **Scope note**: Clarification expanded v1 to also cover screenshots, duplicate videos,
-and large videos (Stories 4–6).
+and large videos (Stories 4–6). Duplicate videos (Story 5) are Pro only since 2026-10-18:
+the free app does not analyze videos; video analysis is a one-time $2 Pro feature (the
+purchase is not built yet, see specs/004-phased-cleaning/spec.md FR-004a).
 
 ## Clarifications
 
@@ -25,11 +27,11 @@ and large videos (Stories 4–6).
 - Q: How should removal be confirmed? → A: One summary sheet, broken down by category, confirmed with one tap.
 - Q: Which duplicate copy should be suggested as the keeper? → A: Best quality first; if tied, the oldest.
 - Q: Should photos that are blurry on purpose be left out of blur detection? → A: Skip portrait-mode and long-exposure photos; still check night and motion shots.
-- Q: Which extra kinds of clutter should v1 handle? → A: Screenshots, duplicate videos, and large videos.
+- Q: Which extra kinds of clutter should v1 handle? → A: Screenshots, duplicate videos, and large videos. (Duplicate videos are Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a.)
 - Q: Which devices should v1 support? → A: iPhone only.
 - Q: Which screenshots should be shown, and should they start selected? → A: All screenshots, pre-selected.
 - Q: Which videos should Large Videos show, and should they start selected? → A: The 50 largest videos, none pre-selected.
-- Q: How will iclean make money? → A: v1 is fully free; pricing is decided later.
+- Q: How will iclean make money? → A: v1 is fully free; pricing is decided later. (Amended 2026-10-18: video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a.)
 - Q: Which languages and accessibility support should v1 have? → A: English only, with full accessibility support.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -138,6 +140,11 @@ the result.
 
 ### User Story 5 - Remove duplicate videos (Priority: P5)
 
+**Pro only since 2026-10-18**: the free app does not analyze videos, so it does not detect
+duplicate videos; video analysis is a one-time $2 Pro feature (the purchase is not built
+yet, see specs/004-phased-cleaning/spec.md FR-004a). The text below describes the
+behavior with Pro.
+
 The user has the same video saved more than once. iclean groups duplicate videos like
 duplicate photos, suggests a keeper, and removes the rest after confirmation.
 
@@ -194,10 +201,12 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
   naming its albums, since removing it also removes it from them. Edited versions are not treated as duplicates of their
   original (FR-002).
 - **Item in several categories**: a photo can appear in only one category at a time, in
-  this order: Duplicates, Similar, Blurry, Screenshots. It is listed where it first
-  matches.
+  this order: Duplicates, Similar, Blurry, Screenshots, Large Videos (with Pro, Duplicate
+  Videos sits between Screenshots and Large Videos). It is listed where it first matches.
 - **Videos stored only in the cloud**: as with photos, only what is already on the phone
-  is analyzed (FR-014); nothing is downloaded.
+  is analyzed (FR-014); nothing is downloaded. *Since 2026-10-18, in the free app videos are
+  not analyzed at all: only their library information is used to rank them (Pro analyzes them
+  as described here).*
 - **Live Photos and photo bursts**: a Live Photo is treated as one photo. Burst photos are
   handled as similar shots (Story 3).
 - **Library changes during review**: if a photo is deleted or changed elsewhere while the
@@ -230,7 +239,9 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 - **FR-004a**: System MUST list all screenshots in a Screenshots category, newest first,
   all pre-selected (Story 4).
 - **FR-004b**: System MUST detect duplicate videos (the same video at any size, quality,
-  or format) and group them like duplicate photos (Story 5).
+  or format) and group them like duplicate photos (Story 5). *Pro only since 2026-10-18:
+  the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not
+  built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
 - **FR-004c**: System MUST list the 50 largest videos in a Large Videos category,
   largest first, with size and length. None start selected (Story 6).
 - **FR-005**: System MUST show scan progress and allow the user to pause, stop, and
@@ -244,11 +255,19 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 **Review**
 
 - **FR-007**: System MUST show results in separate categories (Duplicates, Similar,
-  Blurry, Screenshots, Duplicate Videos, Large Videos) with the number of photos and the estimated space each category would free.
-- **FR-008**: For each duplicate group (photo or video), system MUST suggest a keeper:
+  Blurry, Screenshots, Large Videos) with the number of photos and the estimated space each category would free.
+  (Duplicate Videos, a sixth category, is Pro only since 2026-10-18: the free app does not
+  analyze videos, see specs/004-phased-cleaning/spec.md FR-004a.)
+- **FR-008**: For each duplicate group, system MUST suggest a keeper:
   favorited first, then highest resolution and file quality; if still tied, the oldest.
+  *Amended 2026-10-18 by specs/006-date-aware-keepers/spec.md: among copies with different dates,
+  the copy whose date is most probably the real capture date is kept (impossible dates lose first,
+  then resolution, then dates and details that look less reliable, then the earliest date, then file
+  size, then the oldest).*
   For similar-shots groups, the suggested best shot is the favorited one, else the
-  sharpest.
+  sharpest. (The video half of this requirement, "photo or video", is Pro only since
+  2026-10-18: the free app does not analyze videos, see specs/004-phased-cleaning/spec.md
+  FR-004a.)
 - **FR-009**: Users MUST be able to view any flagged photo full screen and compare
   photos within a group side by side.
 - **FR-010**: Users MUST be able to change selections: change the keeper, unselect
@@ -295,6 +314,8 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 - **Duplicate Group**: two or more photos showing the same image. Has one suggested
   keeper; the rest are candidates for removal.
 - **Duplicate-Video Group**: two or more copies of the same video, with one keeper.
+  *Pro only since 2026-10-18: the free app does not analyze videos (see
+  specs/004-phased-cleaning/spec.md FR-004a).*
 - **Similar-Shots Group**: two or more photos of the same moment that are not
   duplicates. Has one suggested best shot; the user may keep several.
 - **Blur Result**: a photo's likelihood of being blurry, used to flag and order the
@@ -331,16 +352,20 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 - The phone is an iPhone and the library is the built-in Photos app library, which may
   be synced with iCloud Photos. "Freeing cloud space" happens because Photos syncs the
   removal; iclean itself never talks to the cloud.
-- v1 includes all six stories: duplicate photos, blurry photos, similar shots,
-  screenshots, duplicate videos, and large videos. Documents and other file types are
-  out of scope.
+- v1 includes five of the six stories in the free app: duplicate photos, blurry photos,
+  similar shots, screenshots, and large videos. Story 5 (duplicate videos) is Pro only
+  since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2
+  Pro feature (the purchase is not built yet, see specs/004-phased-cleaning/spec.md
+  FR-004a). Documents and other file types are out of scope.
 - Every removal is reviewed by the user; there is no automatic or scheduled deletion.
 - The user can recover removed photos only through the Photos app's "Recently Deleted"
   area for as long as the Photos app keeps them there; iclean keeps no backups.
 - Blur detection sensitivity uses a sensible default; an adjustable sensitivity setting
   may be added but is not required for v1.
 - Shared albums and photos shared with the user by others are out of scope for removal.
-- v1 is fully free with no paid features or limits. Pricing is decided later.
+- v1 is fully free with no paid features or limits. Pricing is decided later. (Amended
+  2026-10-18: video analysis is a one-time $2 Pro feature, not built yet, see
+  specs/004-phased-cleaning/spec.md FR-004a.)
 - Accounts and sign-in are out of scope; the app needs no account
   (Constitution Principle I).
 - v1 is in English only; all text is ready for translation later.

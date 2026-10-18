@@ -7,7 +7,8 @@ final class EdgeCaseTests: XCTestCase {
 
     func testLimitedAccessShowsBanner() {
         let app = launchApp(scenario: "limited")
-        XCTAssertTrue(app.descendants(matching: .any)["home.limitedAccess"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["home.limitedAccess"].waitForExistence(timeout: 5))
     }
 
     func testDeniedAccessScansNothing() {
@@ -41,16 +42,40 @@ final class EdgeCaseTests: XCTestCase {
     }
 
     func testInterruptedScanResumesAfterRelaunch() {
-        var app = launchApp(scenario: "slow", extraArguments: ["-PersistStore", "-ResetStore"])
+        // Four items per chunk, so the 23 demo items span several chunks and a kill after
+        // a few seconds leaves some of them saved (003).
+        var app = launchApp(
+            scenario: "slow", extraArguments: ["-PersistStore", "-ResetStore", "-ChunkSize", "4"])
         app.buttons["home.scan"].tap()
         XCTAssertTrue(app.buttons["scan.pause"].waitForExistence(timeout: 5))
-        sleep(3)
+        sleep(5)
         app.terminate()
-        app = launchApp(scenario: "slow", extraArguments: ["-PersistStore"])
+        app = launchApp(scenario: "slow", extraArguments: ["-PersistStore", "-ChunkSize", "4"])
         let resume = app.buttons["home.resume"]
         XCTAssertTrue(resume.waitForExistence(timeout: 10))
         resume.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["results.category.duplicates"].waitForExistence(timeout: 60))
+        // The first count shown after Resume is the saved one, not zero.
+        let counter = app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "\\d+ of 23 checked")
+        ).firstMatch
+        XCTAssertTrue(counter.waitForExistence(timeout: 10))
+        let resumedAt = Int(counter.label.split(separator: " ").first ?? "") ?? 0
+        XCTAssertGreaterThanOrEqual(resumedAt, 4, "Resume continues from the saved chunks")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["results.category.duplicates"].waitForExistence(
+                timeout: 60))
+    }
+
+    func testRecentScansListsTheFinishedScan() {
+        let app = launchApp()
+        scan(app)
+        app.buttons["home.settings"].tap()
+        let link = app.descendants(matching: .any)["settings.recentScans"].firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        link.tap()
+        let row = app.descendants(matching: .any)["settings.session"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("Completed"))
     }
 
     func testDeleteAllData() {

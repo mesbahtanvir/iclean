@@ -8,14 +8,25 @@ struct ResultsView: View {
     var body: some View {
         let results = model.results
         if results.categories.isEmpty {
-            if model.lastScanDate != nil, !model.isScanning {
+            if model.isBuildingResults {
+                Section {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Updating results…")
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("results.updating")
+                }
+            } else if model.lastScanDate != nil, !model.isScanning {
                 Section {
                     Label("Your library looks clean", systemImage: "checkmark.seal")
                         .accessibilityIdentifier("results.empty")
                 } footer: {
                     if results.notScannedCount > 0 {
-                        Text("\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos.")
-                            .accessibilityIdentifier("results.notScanned")
+                        Text(
+                            "\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos."
+                        )
+                        .accessibilityIdentifier("results.notScanned")
                     }
                 }
             }
@@ -32,8 +43,10 @@ struct ResultsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if results.notScannedCount > 0 {
-                        Text("\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos.")
-                            .accessibilityIdentifier("results.notScanned")
+                        Text(
+                            "\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos."
+                        )
+                        .accessibilityIdentifier("results.notScanned")
                     }
                     Text("Removed items go to Recently Deleted in the Photos app.")
                 }
@@ -54,7 +67,8 @@ struct CategoryRow: View {
         let totals = model.results.totals(for: category)
         let shown = model.results.category(category)?.allMembers.count ?? 0
         // Side by side normally; stacked at accessibility text sizes so nothing is cut off.
-        let layout = typeSize.isAccessibilitySize
+        let layout =
+            typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout())
         layout {

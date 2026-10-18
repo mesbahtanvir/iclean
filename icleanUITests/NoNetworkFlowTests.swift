@@ -9,7 +9,7 @@ final class NoNetworkFlowTests: XCTestCase {
     func testFullFlowMakesNoNetworkRequests() {
         let app = launchApp(extraArguments: ["-NetworkTripwire"])
         scan(app)
-        for category in ["duplicates", "similar", "blurry", "screenshots", "duplicateVideos", "largeVideos"] {
+        for category in ["duplicates", "similar", "blurry", "screenshots", "largeVideos"] {
             openCategory(app, category)
             XCTAssertTrue(app.buttons["category.removeSelected"].waitForExistence(timeout: 5))
             app.navigationBars.buttons.element(boundBy: 0).tap()

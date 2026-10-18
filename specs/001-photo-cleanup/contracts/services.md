@@ -29,6 +29,14 @@ public enum PreviewResult: Sendable {
   `isNetworkAccessAllowed = false` (research R2); a unit test asserts this on every
   request-options object it builds.
 - `remove` only moves items to Recently Deleted and reports per-item success.
+- In the free app a video is not analyzed: no preview is requested for it. Its metadata is
+  still stored, marked `analysisSource == .metadataOnly` with a nil `Analysis`, so Large
+  Videos can rank it by size. `.metadataOnly` is not a failure: it is not counted in
+  `notScanned` and is not retried (amended 2026-10-18, see
+  specs/004-phased-cleaning/spec.md FR-004a).
+- With Pro (`ProFeatures.videoAnalysis`, off by default in every release build) a video is
+  analyzed from its poster frame, and the next full scan analyzes videos the free app
+  stored as `.metadataOnly`; a quick check never starts that work.
 
 ## Analyzer — pure functions over a preview
 
@@ -74,7 +82,9 @@ public protocol ResultsBuilder: Sendable {
 
 public struct CleanupResults: Sendable {
     public let categories: [CategoryResult]     // order: Duplicates, Similar, Blurry,
-                                                // Screenshots, Duplicate Videos, Large Videos
+                                                // Screenshots, Large Videos
+                                                // (Pro adds Duplicate Videos between
+                                                // Screenshots and Large Videos)
     public let defaultSelection: Set<String>    // FR-010a
     public let notScannedCount: Int
 }
@@ -86,6 +96,8 @@ public struct CleanupResults: Sendable {
   and never flagged.
 - Every group has ≥ 1 keeper; keepers are never in `defaultSelection`.
 - Large Videos items are never in `defaultSelection`.
+- Duplicate Videos is Pro only since 2026-10-18: the free app does not analyze videos, so
+  the free app has no such category (see specs/004-phased-cleaning/spec.md FR-004a).
 - Edited items are never grouped with unedited items.
 
 ## Remover

@@ -35,11 +35,23 @@ final class DuplicatesFlowTests: XCTestCase {
         XCTAssertTrue(groupLink.waitForExistence(timeout: 5))
         groupLink.tap()
         XCTAssertTrue(app.descendants(matching: .any)["group.compare"].waitForExistence(timeout: 5))
-        app.buttons["group.makeKeeper"].firstMatch.tap()
+        // The columns load lazily in a horizontal scroller: wait for the button to be
+        // there and tappable before using it.
+        let keepThisOne = app.buttons["group.makeKeeper"].firstMatch
+        XCTAssertTrue(keepThisOne.waitForExistence(timeout: 5))
+        keepThisOne.tap()
+        // On this screen the previous keeper's "Remove" switch turns on. Waiting for it
+        // proves the change happened before leaving; without that the test failed about
+        // half the runs, also before the 002/003 work.
+        let previousKeeper = app.switches["group.toggle.dup1-a"]
+        expectation(for: NSPredicate(format: "value == '1'"), evaluatedWith: previousKeeper)
+        waitForExpectations(timeout: 8)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        // The previous keeper is now selected for removal.
+        // The previous keeper is now selected for removal in the list as well.
         XCTAssertTrue(item(app, "dup1-a").waitForExistence(timeout: 5))
-        XCTAssertTrue(item(app, "dup1-a").isSelected)
+        expectation(
+            for: NSPredicate(format: "isSelected == true"), evaluatedWith: item(app, "dup1-a"))
+        waitForExpectations(timeout: 5)
     }
 
     func testCancellingRemovesNothing() {

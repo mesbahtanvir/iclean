@@ -2,16 +2,9 @@ import CleanupKit
 
 /// The detectors each user story adds, and the analyzer they need.
 enum Detectors {
-    static var all: [any CategoryDetector] {
-        [
-            DuplicatePhotoDetector(),
-            SimilarShotsDetector(),
-            BlurDetector(),
-            ScreenshotsCategory(),
-            DuplicateVideoDetector(),
-            LargeVideosCategory(),
-        ]
+    static func all(_ features: ProFeatures) -> [any CategoryDetector] {
+        StandardPipeline.detectors(features)
     }
 
-    static var analyzer: Analyzer { DefaultAnalyzer() }
+    static var analyzer: Analyzer { StandardPipeline.analyzer }
 }

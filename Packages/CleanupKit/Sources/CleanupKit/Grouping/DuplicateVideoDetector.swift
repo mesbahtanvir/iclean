@@ -20,12 +20,15 @@ public struct DuplicateVideoDetector: CategoryDetector {
             guard let da = a.metadata.duration, let db = b.metadata.duration else { return false }
             return abs(da - db) <= DuplicateVideoThresholds.duration
         }
+        let context = DateContext(items: items)
         return groups.map { members in
-            let keepers = KeeperRules.duplicateKeepers(members)
+            let keepers = KeeperRules.duplicateKeepers(members, context: context)
             return ResultGroup(
                 type: .duplicateVideos, members: KeeperRules.ordered(members, keepers: keepers),
                 keepers: keepers,
-                confidence: members.contains { $0.analysisSource == .cloudPreview } ? .lower : .normal)
+                confidence: members.contains { $0.analysisSource == .cloudPreview }
+                    ? .lower : .normal,
+                dateNotes: KeeperRules.dateNotes(members, context: context))
         }
     }
 }

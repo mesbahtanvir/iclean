@@ -1,0 +1,61 @@
+import BaselineKit
+import Foundation
+import Testing
+
+@testable import CleanupKit
+
+/// The baseline library on the development machine. The catalog is calibrated here, with
+/// the real analyzer and detectors, so that a failure on a device points at the device.
+@Suite struct BaselineHostTests {
+    let catalog = BaselineCatalogV4.make()
+
+    @Test func theCatalogIsConsistent() {
+        let ids = catalog.assets.map(\.id)
+        #expect(Set(ids).count == ids.count, "asset ids are unique")
+        let names = catalog.assets.map(\.filename)
+        #expect(Set(names).count == names.count, "file names are unique")
+        #expect(
+            names.allSatisfy { $0.hasPrefix("BASE\(catalog.version)_") },
+            "file names carry the catalog version, so an older import is never reused")
+        #expect(catalog.assets.count >= 60)
+        for category in [BaselineCategory.duplicates, .similar] {
+            for (group, members) in catalog.groups(category) {
+                #expect(members.count >= 2, "\(group) has at least two members")
+                let checked = catalog.assets.filter { members.contains($0.id) && $0.checkKeeper }
+                if !checked.isEmpty {
+                    #expect(checked.filter(\.keeper).count == 1, "\(group) has exactly one keeper")
+                }
+            }
+        }
+        // Every category is covered.
+        for category in [
+            BaselineCategory.duplicates, .similar, .blurry, .screenshots, .largeVideos, .none,
+        ] {
+            #expect(catalog.assets.contains { $0.expected == category }, "\(category) is covered")
+        }
+    }
+
+    @Test func theCatalogRendersTheSameBytesTwice() async throws {
+        let sample = catalog.assets.filter { ["dup-A2", "sim-A-3"].contains($0.id) }
+        for asset in sample {
+            let a = try BaselineRenderer.image(for: asset.recipe)
+            let b = try BaselineRenderer.image(for: asset.recipe)
+            #expect(a.width == b.width && a.height == b.height)
+            #expect(a.dataProvider?.data == b.dataProvider?.data, "\(asset.id) renders identically")
+        }
+    }
+
+    @Test func theBaselineLibraryPassesOnThisMachine() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appending(path: "iclean-baseline-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rendered = try await BaselineRenderer.renderAll(catalog, to: folder)
+        let library = RenderedPhotoLibrary(catalog: catalog, rendered: rendered)
+        let mapping = Dictionary(uniqueKeysWithValues: catalog.assets.map { ($0.id, $0.id) })
+        let report = try await BaselineRunner.run(
+            catalog: catalog, rendered: rendered, library: library, mapping: mapping)
+        print(report.summary())
+        print(report.metrics.sorted { $0.key < $1.key }.map { "\($0.key)=\(String(format: "%.2f", $0.value))" }.joined(separator: " "))
+        #expect(report.failed.isEmpty, "\n\(report.summary())")
+    }
+}

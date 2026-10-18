@@ -69,6 +69,25 @@
             return items
         }
 
+        public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
+            guard !assetIDs.isEmpty else { return [] }
+            var assets: [PHAsset] = []
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil).enumerateObjects {
+                asset, _, _ in
+                if asset.mediaType == .image || asset.mediaType == .video { assets.append(asset) }
+            }
+            return assets.map { asset in
+                var names: [String] = []
+                PHAssetCollection.fetchAssetCollectionsContaining(asset, with: .album, options: nil)
+                    .enumerateObjects { album, _, _ in
+                        if album.assetCollectionSubtype == .albumRegular {
+                            names.append(album.localizedTitle ?? "")
+                        }
+                    }
+                return Self.metadata(for: asset, albums: names)
+            }
+        }
+
         static func metadata(for asset: PHAsset, albums: [String]) -> AssetMetadata {
             let subtypes = asset.mediaSubtypes
             let kind: ItemKind =
@@ -89,7 +108,14 @@
                 isFavorite: asset.isFavorite, hasAdjustments: asset.hasAdjustments,
                 isPortrait: subtypes.contains(.photoDepthEffect),
                 isLongExposure: LongExposure.isLongExposure(asset),
-                burstID: asset.burstIdentifier, albumNames: albums)
+                burstID: asset.burstIdentifier, albumNames: albums,
+                addedDate: Self.addedDate(of: asset), hasLocation: asset.location != nil)
+        }
+
+        /// When the asset was added to the library, where the system says (iOS 26 and later).
+        private static func addedDate(of asset: PHAsset) -> Date? {
+            if #available(iOS 26.0, *) { return asset.addedDate }
+            return nil
         }
 
         /// Names of the user's own albums for each asset.

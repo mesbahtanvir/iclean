@@ -18,7 +18,14 @@ final class FakePhotoLibrary: PhotoLibrary, @unchecked Sendable {
     var failingRemovals: Set<String> = []
     var cancelRemoval = false
     var previewDelay: Duration = .zero
+    /// Previews for these ids never return (003 FR-007 tests).
+    var hangIDs: Set<String> = []
+    /// Extra delay for the previews of these ids (a slow item next to fast ones).
+    var slowIDs: [String: Duration] = [:]
     private(set) var previewRequests: [String] = []
+    private(set) var fetchAllItemsCalls = 0
+    /// How many full enumerations had happened when the first preview was requested.
+    private(set) var fetchAllItemsCallsAtFirstPreview: Int?
     private var listeners: [AsyncStream<LibraryChange>.Continuation] = []
 
     func add(_ metadata: AssetMetadata, preview: PreviewResult, size: Int64? = 1_000) {
@@ -50,12 +57,26 @@ final class FakePhotoLibrary: PhotoLibrary, @unchecked Sendable {
     func requestAuthorization() async -> LibraryAccess { access }
 
     func fetchAllItems() async -> [AssetMetadata] {
-        lock.withLock { order.compactMap { assets[$0]?.metadata } }
+        lock.withLock {
+            fetchAllItemsCalls += 1
+            return order.compactMap { assets[$0]?.metadata }
+        }
+    }
+
+    func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
+        lock.withLock { assetIDs.compactMap { assets[$0]?.metadata } }
     }
 
     func preview(for assetID: String, maxPixels: Int) async -> PreviewResult {
+        if lock.withLock({ hangIDs.contains(assetID) }) {
+            // Never returns (until cancelled, which the scan does not wait for).
+            while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+            return .unavailable
+        }
         if previewDelay > .zero { try? await Task.sleep(for: previewDelay) }
+        if let extra = lock.withLock({ slowIDs[assetID] }) { try? await Task.sleep(for: extra) }
         return lock.withLock {
+            if previewRequests.isEmpty { fetchAllItemsCallsAtFirstPreview = fetchAllItemsCalls }
             previewRequests.append(assetID)
             return assets[assetID]?.preview ?? .unavailable
         }
@@ -95,6 +116,33 @@ final class FakePhotoLibrary: PhotoLibrary, @unchecked Sendable {
 struct StubAnalyzer: Analyzer {
     func analyze(_ image: CGImage, metadata: AssetMetadata) async throws -> Analysis {
         Analysis(dHash: UInt64(image.width), featurePrint: Data(), sharpness: 100)
+    }
+}
+
+struct AnalysisFailed: Error {}
+
+/// Fails the first `failuresPerItem` calls for each item, and always for `alwaysFail`
+/// (003 retry tests).
+final class FlakyAnalyzer: Analyzer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String: Int] = [:]
+    let failuresPerItem: Int
+    let alwaysFail: Set<String>
+
+    init(failuresPerItem: Int = 0, alwaysFail: Set<String> = []) {
+        self.failuresPerItem = failuresPerItem
+        self.alwaysFail = alwaysFail
+    }
+
+    func callCount(_ id: String) -> Int { lock.withLock { calls[id] ?? 0 } }
+
+    func analyze(_ image: CGImage, metadata: AssetMetadata) async throws -> Analysis {
+        let n = lock.withLock {
+            calls[metadata.assetID, default: 0] += 1
+            return calls[metadata.assetID]!
+        }
+        if alwaysFail.contains(metadata.assetID) || n <= failuresPerItem { throw AnalysisFailed() }
+        return Analysis(dHash: UInt64(image.width), featurePrint: Data(), sharpness: 100)
     }
 }
 

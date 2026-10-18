@@ -31,12 +31,16 @@ public struct DuplicatePhotoDetector: CategoryDetector {
             ($0.metadata.kind == .photo || $0.metadata.kind == .livePhoto) && $0.analysis != nil
         }
         let groups = DuplicateGrouping.group(photos)
+        // How many photos share each timestamp, over everything that is being examined.
+        let context = DateContext(items: items)
         return groups.map { members in
-            let keepers = KeeperRules.duplicateKeepers(members)
+            let keepers = KeeperRules.duplicateKeepers(members, context: context)
             return ResultGroup(
                 type: .duplicatePhotos, members: KeeperRules.ordered(members, keepers: keepers),
                 keepers: keepers,
-                confidence: members.contains { $0.analysisSource == .cloudPreview } ? .lower : .normal)
+                confidence: members.contains { $0.analysisSource == .cloudPreview }
+                    ? .lower : .normal,
+                dateNotes: KeeperRules.dateNotes(members, context: context))
         }
     }
 }

@@ -47,7 +47,7 @@
 
 From DESIGN.md §3, binding on every design decision below:
 
-1. **Thumbnail-only.** Photo analysis runs on ~500 px thumbnails requested with `isNetworkAccessAllowed = false`. Originals are touched only when verifiably local. Videos: one poster frame without the file; multi-frame analysis only for locally-available videos.
+1. **Thumbnail-only.** Photo analysis runs on ~500 px thumbnails requested with `isNetworkAccessAllowed = false`. Originals are touched only when verifiably local. The free app does not analyze videos (video analysis is a Pro feature, one-time $2, not built yet; see specs/004-phased-cleaning/spec.md FR-004a): no poster frame or other frame is opened for analysis, hashed or compared, and analysis reads only metadata. A poster frame or preview shown to the user for display is not analysis.
 2. **No public file-size API.** Sizes come from the `PHAssetResource` `"fileSize"` KVC key with a dimensions×format fallback estimate.
 3. **Camera/exposure EXIF requires original bytes** — not available for evicted assets. Free substitutes: smart-album membership, `originalFilename` patterns, UTI.
 4. **"Eyes open" is derived**, not an Apple output (eye-landmark geometry).
@@ -211,13 +211,13 @@ User-created albums only: `PHAssetCollection.fetchAssetCollections(with: .album,
 ### S2 — Thumbnail fetch + cheap pixel math
 
 - `PHCachingImageManager.requestImage` with `targetSize ≈ 512×512` (aspect-fit), `deliveryMode = .highQualityFormat` (single callback), `resizeMode = .fast`, `isNetworkAccessAllowed = false`, batched 32 assets at a time — dupe-fast-path groups first, then bucket-driven order (S0).
-- With `.highQualityFormat` there is no degraded delivery: the failure mode is a single callback with `nil` plus `PHImageResultIsInCloudKey`, which sets `thumbAvailability = needsConnection` (rare — Photos usually retains small derivatives even for evicted originals). **This probes only the derivative; a successful thumbnail says nothing about the original.** `originalAvailability` is probed separately and lazily — `requestImageDataAndOrientation` (photos) / `requestAVAsset` (videos) with network disabled, checking the in-cloud key — and only for assets whose detectors actually need original bytes: byte-hash verification (§6.2), EXIF confirmation, frame sampling, transcodes.
+- With `.highQualityFormat` there is no degraded delivery: the failure mode is a single callback with `nil` plus `PHImageResultIsInCloudKey`, which sets `thumbAvailability = needsConnection` (rare — Photos usually retains small derivatives even for evicted originals). **This probes only the derivative; a successful thumbnail says nothing about the original.** `originalAvailability` is probed separately and lazily — `requestImageDataAndOrientation` (photos) with network disabled, checking the in-cloud key (`requestAVAsset` for videos, only ahead of a transcode: the free app does not analyze videos) — and only for assets whose detectors actually need original bytes: byte-hash verification (§6.2), EXIF confirmation, transcodes.
 - Per thumbnail, computed in one pass over a grayscale downsample (vImage/vDSP; all trivial at 512 px):
   - **dHash (64-bit)** on 9×8, **pHash (64-bit)** via 32×32 DCT — persisted on the wide signal row; bands go straight into the in-memory index (§6.2)
   - **Laplacian variance** (blur), normalized for thumbnail scale
   - **Mean luminance + histogram concentration** (dark), **pixel variance** (blank)
   - Corner-anchored uniform-blob heuristic (finger-over-lens candidate flag)
-- Videos: the poster frame flows through the same math (dark/blank pocket-video signals); frame *sampling* is deferred to an S4 sub-stage gated on `originalAvailability == local` (probed via `requestAVAsset` with network disabled).
+- Videos (free app): not analyzed. No poster frame is requested for analysis, so none flows through this math, and there is no S4 frame-sampling sub-stage. A video keeps its S1 and S3 metadata (size included) and is marked "metadata only", which is not `.notScanned` (a photo that could not be analyzed because only iCloud has it), is not a failure and is not retried by the free app. Video analysis is a Pro feature (one-time $2, not built yet): with Pro on, the next full scan the user starts analyzes videos stored as metadata only, and a quick check never starts that work.
 
 Cheap detectors fire as soon as their signals land: exact/near-dupe candidates (§6.2), blur/dark/blank/pocket verdicts.
 
@@ -275,7 +275,7 @@ Layered, cheapest-first:
 4. **Near-dupe search at scale** avoids O(n²) via **multi-index hashing**: each 64-bit pHash is split into **8 bands of 8 bits**, each band indexed **in memory** (rebuilt at launch from the `phash` column — 200k × 8 B ≈ 1.6 MB of source data, sub-second). By pigeonhole, any pair within Hamming distance ≤ 7 shares at least one identical band, so lookup = 8 map probes + Hamming verification of the candidate union. **≤ 7 is the candidate search radius (the index's recall bound), not a verdict**: each action applies its own threshold on top — Near-Duplicate Copy Collapse confirms at ≤ 2 (DESIGN.md §4.1). **The band index serves dupe candidacy only.** Similarity clustering (§6.3) computes its own pairwise gates within session windows — genuinely similar-but-distinct shots routinely sit far beyond Hamming 7, so an index-served similarity gate would silently reduce "Similar" to near-dupes.
 5. Guard rails from DESIGN.md §4.1: matching dimensions *ratio* + edited flag checked before calling something a "copy" rather than an edit; keeper preference order = favorite > in-album > richest metadata > highest resolution.
 
-Duplicate videos: candidate key = `(duration rounded to 0.5 s, fileSize)`; poster-frame pHash confirms; frame-sampled confirmation only when both are local.
+Duplicate videos: candidate key = `(duration rounded to 0.5 s, fileSize)`; poster-frame pHash confirms; frame-sampled confirmation only when both are local. **Pro only since 2026-10-18:** the free app does not analyze videos, so it has no duplicate-video pass; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
 
 ### 6.3 Similar clusters (the flagship) — transient embeddings
 
@@ -297,7 +297,7 @@ Embeddings are the pipeline's biggest storage/compute liability (a feature print
 
 - **Original + Edited Pair Collapse (MVP):** edited flag (S3) + pHash proximity + `creationDate` equality — a free `PHAsset` field, so no EXIF needed. EXIF match is an optional confidence boost when originals are local.
 - **Re-received Chat Copy Dedup:** the §6.2 band index finds the pHash cluster; non-camera filenames/UTIs (S3) + multi-day date spread classify it. No new machinery.
-- **Frame-Grab Dedup:** requires frame-sampling kept videos — local-only and post-MVP; lands with the v1.x video family.
+- **Frame-Grab Dedup:** requires frame-sampling kept videos — local-only and post-MVP; lands with the v1.x video family. **Not in the free app since 2026-10-18:** the free app does not analyze videos, so no video frames are sampled; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
 
 ## 7. Scoring & Confidence
 
@@ -401,7 +401,7 @@ Swift Concurrency, actor-isolated:
 4. **`deleteAssets` chunking threshold** (with DESIGN.md §14.5) — find the largest reliably-atomic batch on device; each chunk costs a system dialog, so this directly shapes commit UX.
 5. **Session-window θ and the 10-min gap** — both need tuning against real labeled libraries; the fixture set must include narrative sequences (the known false-positive trap).
 6. **Launch-time band-index rebuild at 200k** — a full `phash` column scan + 8 map inserts per asset; budget < 1 s, validate on A13-class hardware (if it misses, persist a serialized snapshot invalidated by row count + max rowid).
-7. **Poster-frame representativeness** for pocket-video detection (frame 0 vs mid-file poster) — PhotoKit chooses the poster; measure false-negative rate on real pocket videos.
+7. **Poster-frame representativeness** for pocket-video detection (frame 0 vs mid-file poster) — PhotoKit chooses the poster; measure false-negative rate on real pocket videos. **Not in the free app since 2026-10-18:** the free app does not analyze videos, so this question is not open there; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
 8. **Marked-faces protection mechanism (v1.x).** iOS exposes no face-identity API (Vision has no recognition; Photos' People data is private). Sketch: feature prints on face *crops* matched against user-labeled anchor crops, with a deliberately loose threshold — over-protecting is safe, false negatives are the risk to measure. Needs a signal home (face-crop embeddings persisted for anchors only) and a labeled fixture set before DESIGN.md §9.3's "protect these people" flow can ship.
 
 ## 15. Build Order

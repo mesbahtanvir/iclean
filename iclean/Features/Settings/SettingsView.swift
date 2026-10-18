@@ -1,3 +1,4 @@
+import CleanupKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -8,7 +9,9 @@ struct SettingsView: View {
         List {
             Section {
                 Label {
-                    Text("Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing.")
+                    Text(
+                        "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
+                    )
                 } icon: {
                     Image(systemName: "lock.shield")
                 }
@@ -25,15 +28,29 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.deleteAllData")
             } footer: {
-                Text("Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.")
+                Text(
+                    "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched."
+                )
             }
+            Section {
+                NavigationLink("Recent Scans") { RecentScansView() }
+                    .accessibilityIdentifier("settings.recentScans")
+            }
+            #if DEBUG
+                Section {
+                    NavigationLink("Baseline Library (Debug)") { BaselineView(autoRun: false) }
+                        .accessibilityIdentifier("settings.baseline")
+                }
+            #endif
         }
         .navigationTitle("Settings")
         .confirmationDialog(
             "Delete all iclean data?", isPresented: $confirmDelete, titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) { Task { await model.deleteAllData() } }
-                .accessibilityIdentifier("settings.confirmDelete")
+            Button("Delete", role: .destructive) {
+                Task { await model.deleteAllData() }
+            }
+            .accessibilityIdentifier("settings.confirmDelete")
         }
     }
 }

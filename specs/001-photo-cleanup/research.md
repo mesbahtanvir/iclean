@@ -125,12 +125,16 @@ third-party runtime code.
     (FR-004a).
   - **Duplicate videos**: candidates have the same duration (± 0.5 s) and aspect ratio;
     confirmed by dHash + feature print of the local poster-frame thumbnail
-    (FR-004b). Keeper: favorite, else largest pixel size, else oldest.
+    (FR-004b). Keeper: favorite, else largest pixel size, else oldest. *Pro only since
+    2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro
+    feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
   - **Large videos**: top 50 by size (FR-004c), never pre-selected.
-- **Rationale**: All of this works from metadata and local thumbnails, so cloud-only
-  videos never need downloading.
+- **Rationale**: Screenshots and Large Videos work from metadata alone, so cloud-only
+  videos never need downloading. (The original rationale also covered local thumbnails,
+  used only by the duplicate-video decision, which is Pro only.)
 - **Alternatives considered**: Sampling several frames with AVFoundation (needs the full
-  local video; impossible for cloud-only videos without downloading).
+  local video; impossible for cloud-only videos without downloading). This was weighed
+  for the duplicate-video decision (Pro only); the free app does not analyze videos at all.
 
 ## R7. Measuring "space freed"
 
@@ -227,8 +231,10 @@ third-party runtime code.
 - **Decision**: Build a labeled fixture set (≈ 500 images: duplicate pairs/triples at
   different sizes and formats, edited versions, burst sequences, sharp/blurry/portrait/
   night shots, screenshots, short duplicate videos), stored in the repo under
-  `Fixtures/`. A seeding tool imports it into a simulator's photo library. Accuracy tests
-  report recall and false-flag rates for SC-002 and SC-003.
+  `Fixtures/`. (Duplicate videos are Pro only since 2026-10-18: the free app does not
+  analyze videos, see specs/004-phased-cleaning/spec.md FR-004a.) A seeding tool imports it
+  into a simulator's photo library. Accuracy tests report recall and false-flag rates for
+  SC-002 and SC-003.
 - **Rationale**: Thresholds (R3–R5) need calibration, and the success criteria need a
   repeatable measurement.
 - **Alternatives considered**: Public datasets downloaded at test time (adds a network

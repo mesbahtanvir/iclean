@@ -3,17 +3,21 @@ import Foundation
 
 public protocol Scanner: Sendable {
     /// Full scan: analyzes every item that is new or changed since it was last analyzed.
-    /// Continues an interrupted session if one exists.
+    /// Continues an unfinished job if one exists.
     func startFullScan() async -> AsyncStream<ScanProgress>
     /// Quick check for new or changed items, run on app open (FR-005a).
     func quickCheck() async -> ScanProgress
-    func pause() async
+    /// Pauses losslessly: when this returns, everything processed so far is saved
+    /// (002 G1). `reason` decides whether the scan resumes by itself later.
+    func pause(reason: ScanPauseReason) async
     func resume() async
     func stop() async
 }
 
-/// Scans the library in the foreground, saving progress so it can resume
-/// (FR-005, FR-006, research R10, R11).
+/// Runs a scan as a durable job of small chunks (003): each chunk is leased, run, and
+/// checkpointed with its results in one transaction, so a crash loses at most the
+/// unfinished part of one chunk and the next launch continues from the first
+/// unfinished chunk without comparing the whole library again.
 public actor ScanPipeline: Scanner {
     public static let previewSize = 512
 
@@ -21,17 +25,50 @@ public actor ScanPipeline: Scanner {
     private let store: Store
     private let analyzer: Analyzer
     private let concurrency: Int
-    private let saveEvery: Int
+    private let progressEvery: Int
+    private let policy: ScanRetryPolicy
+    private let features: ProFeatures
+    private let pauseWaitLimit: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
+    /// Identifies this process. A chunk leased by another incarnation was left behind
+    /// by a process that died (003 FR-005).
+    private let incarnation = UUID()
 
     private var task: Task<Void, Never>?
     private var isPaused = false
+    private var pauseReason: ScanPauseReason?
+    /// Set once a paused scan has saved everything it processed.
+    private var pausedAndSaved = false
+    /// How many `pause()` calls returned because the run loop acknowledged the pause,
+    /// not because the wait limit ran out or the scan was resumed. Lets tests prove
+    /// acknowledgement without timing.
+    private(set) var pauseAcknowledgements = 0
     private var stopRequested = false
     private var session: ScanSession?
+    private var chunks: [ScanChunk] = []
+    private var sinceProgress = 0
+    /// What the store holds for the running job. `pause()` writes this, never the
+    /// in-memory counters, which run ahead of the saved results while a chunk is in
+    /// flight (review fix: a kill after a pause must not leave counters above the results).
+    private var storedSession: ScanSession?
+    /// The chunk this process leased, as last saved.
+    private var storedLeased: ScanChunk?
+    /// Set when a job is resumed from the store: items added or changed while it was
+    /// interrupted are picked up before it completes (003 FR-011).
+    private var needsCatchUp = false
 
+    /// - Parameters:
+    ///   - chunkSize: items per chunk, the unit of durability (1…64).
+    ///   - progressEvery: analyzed items between two progress events (002 R4).
+    ///   - policy: retry, timeout and crash limits (003).
+    ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
+    ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
+    ///     acknowledge; tests raise it so a slow machine cannot hit it.
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
-        concurrency: Int = 4, saveEvery: Int = 100,
+        concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
+        policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
+        pauseWaitLimit: Duration = .seconds(2),
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         }
@@ -40,7 +77,12 @@ public actor ScanPipeline: Scanner {
         self.store = store
         self.analyzer = analyzer
         self.concurrency = max(1, concurrency)
-        self.saveEvery = max(1, saveEvery)
+        self.progressEvery = max(1, progressEvery)
+        var policy = policy
+        policy.chunkSize = min(max(1, chunkSize), ScanChunk.maxSize)
+        self.policy = policy
+        self.features = features
+        self.pauseWaitLimit = pauseWaitLimit
         self.thermalState = thermalState
     }
 
@@ -53,18 +95,33 @@ public actor ScanPipeline: Scanner {
             return stream
         }
         isPaused = false
+        pauseReason = nil
+        pausedAndSaved = false
         stopRequested = false
         task = Task { [weak self] in
             _ = await self?.run(kind: .full) { continuation.yield($0) }
-            continuation.finish()
+            // Free the run slot before the stream ends, so a scan started right after the
+            // last event is not refused.
             await self?.clearTask()
+            continuation.finish()
         }
         return stream
     }
 
     public func quickCheck() async -> ScanProgress {
         guard task == nil else { return snapshot() }
+        // Take the run slot before the first await: a full scan started meanwhile is
+        // refused instead of running alongside this check.
+        task = Task {}
+        if let s = try? await store.currentSession(), s.isActive {
+            task = nil
+            // An unfinished job waits for the user's Resume (001 FR-005a).
+            return ScanProgress(
+                processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
+                state: s.state, failed: s.failedItems)
+        }
         isPaused = false
+        pauseReason = nil
         stopRequested = false
         let work = Task { await self.run(kind: .quickCheck) { _ in } }
         task = Task { _ = await work.value }
@@ -73,28 +130,61 @@ public actor ScanPipeline: Scanner {
         return result
     }
 
-    public func pause() async {
+    public func pause(reason: ScanPauseReason) async {
         guard task != nil else { return }
+        let alreadyPaused = isPaused
         isPaused = true
-        if var s = session {
-            s.state = .paused
-            session = s
-            try? await store.saveSession(s)
+        // A pause the user asked for is never turned into an automatic one.
+        if !alreadyPaused || pauseReason != .user { pauseReason = reason }
+        if !alreadyPaused { pausedAndSaved = false }
+        if session != nil {
+            session?.state = .paused
+            await persistPaused()
         }
+        // Give the run loop a moment to release the chunk in flight and save what it
+        // processed (002 G1, 003 FR-010), so the app can be suspended right after this.
+        let deadline = ContinuousClock.now + pauseWaitLimit
+        while isPaused, !pausedAndSaved, session != nil, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        if isPaused, pausedAndSaved { pauseAcknowledgements += 1 }
     }
 
     public func resume() async {
         isPaused = false
-        if var s = session, s.state == .paused {
-            s.state = .running
-            session = s
-            try? await store.saveSession(s)
+        pauseReason = nil
+        pausedAndSaved = false
+        if session?.state == .paused {
+            session?.state = .running
+            if var s = storedSession, s.state == .paused {
+                s.state = .running
+                if (try? await store.saveSession(s)) != nil { storedSession = s }
+            }
+        }
+    }
+
+    /// Saves the paused state together with what the store already holds: the saved
+    /// counters and the leased chunk released, so a death while in-flight items finish
+    /// is an interruption, not a crash (003 FR-010).
+    private func persistPaused() async {
+        guard var s = storedSession else { return }
+        s.state = .paused
+        if var leased = storedLeased, leased.state == .running {
+            leased.state = .pending
+            leased.owner = nil
+            if (try? await store.saveChunks([leased], session: s)) != nil {
+                storedLeased = leased
+                storedSession = s
+            }
+        } else if (try? await store.saveSession(s)) != nil {
+            storedSession = s
         }
     }
 
     public func stop() async {
         stopRequested = true
         isPaused = false
+        pauseReason = nil
         await task?.value
     }
 
@@ -103,106 +193,421 @@ public actor ScanPipeline: Scanner {
     // MARK: Run
 
     @discardableResult
-    private func run(kind: ScanKind, progress: @Sendable (ScanProgress) -> Void) async -> ScanProgress {
-        let metadata = await library.fetchAllItems()
-        let stored = (try? await store.items()) ?? []
-        let storedByID = Dictionary(stored.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
-        let currentIDs = Set(metadata.map(\.assetID))
-
-        // Forget items that are no longer in the library.
-        try? await store.deleteItems(Set(storedByID.keys).subtracting(currentIDs))
-
-        // Refresh metadata that can change without re-analysis (favorites, albums).
-        var refreshed: [LibraryItem] = []
-        var toAnalyze: [AssetMetadata] = []
-        for m in metadata {
-            if let existing = storedByID[m.assetID], existing.metadata.modificationDate == m.modificationDate {
-                if existing.metadata != m {
-                    var updated = existing
-                    updated.metadata = m
-                    refreshed.append(updated)
-                }
-            } else {
-                toAnalyze.append(m)
-            }
-        }
-        try? await store.upsert(refreshed)
-
-        // Continue an interrupted session, or start a new one.
-        var s: ScanSession
-        if let previous = try? await store.currentSession(), previous.isActive {
-            s = previous
-            s.kind = kind == .full ? .full : previous.kind
-            s.state = .running
-            s.totalItems = previous.processedItems + toAnalyze.count
-        } else {
-            s = ScanSession(kind: kind, state: .running, totalItems: toAnalyze.count)
-        }
-        session = s
-        try? await store.saveSession(s)
+    private func run(kind: ScanKind, progress: @Sendable (ScanProgress) -> Void) async
+        -> ScanProgress
+    {
+        sinceProgress = 0
+        storedSession = nil
+        storedLeased = nil
+        needsCatchUp = false
+        guard await loadJob(kind: kind) else { return await finish(progress: progress) }
         progress(snapshot())
-
-        var pending: [LibraryItem] = []
-        var index = 0
-        await withTaskGroup(of: LibraryItem?.self) { group in
-            func addNext() -> Bool {
-                guard index < toAnalyze.count else { return false }
-                let m = toAnalyze[index]
-                index += 1
-                group.addTask(priority: .userInitiated) { [library, analyzer] in
-                    await Self.analyze(m, library: library, analyzer: analyzer)
-                }
-                return true
-            }
-            for _ in 0..<concurrency where !addNext() { break }
-
-            while let result = await group.next() {
-                if let item = result {
-                    pending.append(item)
-                    session?.processedItems += 1
-                    if item.analysisSource == .notScanned { session?.notScannedCount += 1 }
-                    session?.lastProcessedAssetID = item.assetID
-                }
-                if pending.count >= saveEvery {
-                    await flush(&pending)
-                    progress(snapshot())
-                }
-                if stopRequested {
-                    group.cancelAll()
+        var caughtUp = false
+        while !stopRequested {
+            await waitWhilePaused(progress: progress)
+            if stopRequested { break }
+            guard let index = nextEligibleIndex() else {
+                if let wakeAt = earliestRetryTime() {
+                    await sleep(until: wakeAt)
                     continue
                 }
-                await waitWhilePaused(progress: progress)
-                if stopRequested {
-                    group.cancelAll()
+                if kind == .full, !caughtUp, needsCatchUp {
+                    // The library may have changed while this job was interrupted.
+                    caughtUp = true
+                    await catchUp()
                     continue
                 }
-                _ = addNext()
+                break
             }
+            await runChunk(at: index, progress: progress)
         }
-        await flush(&pending)
+        return await finish(progress: progress)
+    }
 
+    /// Loads the unfinished job, adopts one from an older app version, or plans a new
+    /// one. Returns false when there is nothing to run.
+    private func loadJob(kind: ScanKind) async -> Bool {
+        if let previous = try? await store.currentSession(), previous.isActive {
+            let stored = (try? await store.chunks(job: previous.id)) ?? []
+            if stored.isEmpty {
+                // Started by an app version without chunks: keep its count (003 FR-014).
+                return await plan(kind: .full, adopting: previous)
+            }
+            let reclaimed = ScanReclaim.reclaim(
+                stored, session: previous, owner: incarnation, policy: policy)
+            var s = reclaimed.session
+            // Items the app died on twice are recorded first, also when the crash budget
+            // ends the job.
+            var poisonedItems: [LibraryItem] = []
+            if !reclaimed.poisoned.isEmpty {
+                poisonedItems = await library.fetchItems(withIDs: reclaimed.poisoned).map {
+                    LibraryItem(
+                        metadata: $0, analysisSource: .notScanned, analysis: nil,
+                        scanFailure: .crashed)
+                }
+                await stampAttempts(&poisonedItems)
+            }
+            if s.state == .stopped {
+                // Crash budget used up: keep what was done, end the job. Saving the ended
+                // session also removes its chunks, in the same transaction.
+                try? await store.upsert(poisonedItems)
+                try? await store.saveSession(s)
+                session = s
+                chunks = []
+                return false
+            }
+            s.state = .running
+            if kind == .full { s.kind = .full }
+            // Write only what changed: for a large job that is one chunk, not thousands.
+            let storedByID = Dictionary(
+                stored.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            var changed = reclaimed.chunks.filter { storedByID[$0.id] != $0 }
+            var saved = false
+            if !poisonedItems.isEmpty,
+                let k = changed.firstIndex(where: {
+                    !Set($0.assetIDs).isDisjoint(with: reclaimed.poisoned)
+                })
+            {
+                // One transaction: the set-aside items with the chunk that records them, so
+                // a death in between cannot count them twice.
+                let holder = changed.remove(at: k)
+                saved =
+                    (try? await store.checkpoint(items: poisonedItems, chunk: holder, session: s))
+                    != nil
+                if saved, !changed.isEmpty { try? await store.saveChunks(changed, session: nil) }
+            } else {
+                saved = (try? await store.saveChunks(changed, session: s)) != nil
+            }
+            if saved { storedSession = s }
+            session = s
+            chunks = reclaimed.chunks
+            needsCatchUp = true
+            return true
+        }
+        return await plan(kind: kind, adopting: nil)
+    }
+
+    private func plan(kind: ScanKind, adopting previous: ScanSession?) async -> Bool {
+        let library = await self.library.fetchAllItems()
+        let stored = (try? await store.items()) ?? []
+        let plan = ScanPlanner.plan(
+            library: library, stored: stored, kind: kind, policy: policy, features: features)
+        try? await store.deleteItems(plan.gone)
+        await writeRefreshed(plan.refreshed)
+        var s: ScanSession
+        if var previous {
+            previous.kind = kind == .full ? .full : previous.kind
+            previous.state = .running
+            previous.baseProcessed = previous.processedItems
+            previous.totalItems = previous.processedItems + plan.toAnalyze.count
+            s = previous
+        } else {
+            s = ScanSession(kind: kind, state: .running, totalItems: plan.toAnalyze.count)
+        }
+        let new = ScanPlanner.chunks(
+            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize)
+        if (try? await store.createJob(s, chunks: new)) != nil { storedSession = s }
+        session = s
+        chunks = new
+        return true
+    }
+
+    /// Saves refreshed metadata in slices, so a library whose every item changed at once (the first
+    /// scan after an update that reads a new property) never needs one long transaction or holds
+    /// every record in memory together. Each slice is complete on its own, so a stop in the middle
+    /// keeps what was written and the next check writes the rest.
+    private func writeRefreshed(_ items: [LibraryItem]) async {
+        for start in stride(from: 0, to: items.count, by: 500) {
+            try? await store.upsert(Array(items[start..<min(start + 500, items.count)]))
+        }
+    }
+
+    /// After a job was resumed from the store, items added or changed meanwhile become
+    /// new chunks (003 FR-011).
+    private func catchUp() async {
+        guard let jobID = session?.id else { return }
+        let library = await self.library.fetchAllItems()
+        let stored = (try? await store.items()) ?? []
+        // A quick-check diff: only new or changed items, never a retry of items this job
+        // already gave up on.
+        let plan = ScanPlanner.plan(
+            library: library, stored: stored, kind: .quickCheck, policy: policy)
+        try? await store.deleteItems(plan.gone)
+        await writeRefreshed(plan.refreshed)
+        // Items still waiting in an unfinished chunk are covered. Items in finished chunks
+        // that changed since are not, and must be analyzed again.
+        let covered = Set(
+            chunks.filter { $0.state != .done }.flatMap { c in
+                c.undoneIndices.map { c.assetIDs[$0] }
+            })
+        let ids = plan.toAnalyze.map(\.assetID).filter { !covered.contains($0) }
+        guard !ids.isEmpty else { return }
+        let new = ScanPlanner.chunks(
+            jobID: jobID, assetIDs: ids, size: policy.chunkSize,
+            firstSequence: (chunks.map(\.sequence).max() ?? -1) + 1)
+        session?.totalItems += ids.count
+        chunks += new
+        if let s = session, (try? await store.saveChunks(new, session: s)) != nil {
+            storedSession = s
+        }
+    }
+
+    private func finish(progress: @Sendable (ScanProgress) -> Void) async -> ScanProgress {
         if var final = session {
-            final.state = stopRequested ? .stopped : .completed
+            if final.state != .stopped { final.state = stopRequested ? .stopped : .completed }
             final.finishedAt = .now
             session = final
+            // Saving an ended session also removes its chunks, in one transaction.
             try? await store.saveSession(final)
         }
-        let final = snapshot()
+        // A pause that arrives while the job ends must not turn the last event into
+        // "paused".
+        let final = snapshot(ignoringPause: true)
         progress(final)
+        isPaused = false
+        pauseReason = nil
         session = nil
+        chunks = []
+        storedSession = nil
+        storedLeased = nil
         return final
     }
 
+    // MARK: Chunks
+
+    private func nextEligibleIndex() -> Int? {
+        let now = Date.now
+        return chunks.firstIndex { $0.isEligible(at: now) }
+    }
+
+    private func earliestRetryTime() -> Date? {
+        chunks.filter { $0.state == .pending }.compactMap(\.notBefore).min()
+    }
+
+    private enum ItemOutcome: Sendable {
+        case item(LibraryItem)
+        case failed(ScanFailure)
+    }
+
+    private func runChunk(at index: Int, progress: @Sendable (ScanProgress) -> Void) async {
+        guard index < chunks.count, session != nil else { return }
+        var chunk = chunks[index]
+        // Lease: written before any work, so a death during the chunk is visible.
+        chunk.state = .running
+        chunk.owner = incarnation
+        chunk.notBefore = nil
+        chunk.inFlightIndex = nil
+        chunks[index] = chunk
+        if (try? await store.saveChunks([chunk], session: nil)) != nil { storedLeased = chunk }
+
+        let undone = chunk.undoneIndices
+        let fresh = await library.fetchItems(withIDs: undone.map { chunk.assetIDs[$0] })
+        let byID = Dictionary(fresh.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
+        var work: [Int] = []
+        for i in undone {
+            if byID[chunk.assetIDs[i]] == nil {
+                // No longer in the library: it leaves the job, finished and no longer
+                // counted in the total (003 FR-011).
+                chunk.markDone(i)
+                // Read first: assigning through `session?` starts the write before the
+                // right-hand side runs, and that side reads `session` too.
+                if let total = session?.totalItems { session?.totalItems = max(0, total - 1) }
+            } else {
+                work.append(i)
+            }
+        }
+
+        var results: [LibraryItem] = []
+        var failures: [(index: Int, failure: ScanFailure)] = []
+        // Items that were not started because of a pause, a stop or heat.
+        var cutShort = false
+        let limit = policy.itemTimeout
+        // Metadata per work index, captured by value so the task closures do not touch
+        // the chunk that the code below mutates.
+        let metadata: [Int: AssetMetadata] = Dictionary(
+            uniqueKeysWithValues: work.map { ($0, byID[chunk.assetIDs[$0]]!) })
+
+        if chunk.isolate {
+            // After a crash: one item at a time. The item is saved as in flight before it
+            // starts, so a death is blamed on exactly that item, and the chunk is saved
+            // after every item (003 FR-006).
+            for i in work {
+                if stopRequested || isPaused || isTooHot {
+                    cutShort = true
+                    break
+                }
+                chunk.inFlightIndex = i
+                chunks[index] = chunk
+                if (try? await store.saveChunks([chunk], session: nil)) != nil {
+                    storedLeased = chunk
+                }
+                let outcome = await Self.analyze(
+                    metadata[i]!, library: library, analyzer: analyzer, limit: limit,
+                    analyzeVideos: features.videoAnalysis)
+                chunk.inFlightIndex = nil
+                record(
+                    i, outcome, chunk: &chunk, results: &results, failures: &failures,
+                    index: index, progress: progress)
+                if case .item = outcome, let s = session {
+                    await stampAttempts(&results)
+                    if (try? await store.checkpoint(items: results, chunk: chunk, session: s))
+                        != nil
+                    {
+                        storedSession = s
+                        storedLeased = chunk
+                        results.removeAll()
+                    }
+                } else if (try? await store.saveChunks([chunk], session: nil)) != nil {
+                    storedLeased = chunk
+                }
+            }
+        } else {
+            await withTaskGroup(of: (Int, ItemOutcome).self) { group in
+                var next = 0
+                func addNext() -> Bool {
+                    guard !stopRequested, !isPaused, !isTooHot, next < work.count else {
+                        return false
+                    }
+                    let i = work[next]
+                    next += 1
+                    let m = metadata[i]!
+                    let analyzeVideos = features.videoAnalysis
+                    group.addTask(priority: .userInitiated) { [library, analyzer] in
+                        (
+                            i,
+                            await Self.analyze(
+                                m, library: library, analyzer: analyzer, limit: limit,
+                                analyzeVideos: analyzeVideos)
+                        )
+                    }
+                    return true
+                }
+                for _ in 0..<concurrency where !addNext() { break }
+                while let (i, outcome) = await group.next() {
+                    record(
+                        i, outcome, chunk: &chunk, results: &results, failures: &failures,
+                        index: index, progress: progress)
+                    // On pause, stop or heat: add no more work, let in-flight items finish.
+                    _ = addNext()
+                }
+                cutShort = next < work.count
+            }
+        }
+
+        let interrupted = stopRequested || isPaused || isTooHot || cutShort
+        if chunk.isComplete {
+            chunk.state = .done
+            chunk.owner = nil
+        } else if interrupted {
+            // Release before waiting, and also when the pause or heat has already passed:
+            // items that were not started must run again, never be skipped. No attempt is
+            // counted (003 FR-010).
+            chunk.state = .pending
+            chunk.owner = nil
+        } else if failures.isEmpty {
+            // Not expected (incomplete, nothing failed, not cut short); run again.
+            chunk.state = .pending
+            chunk.owner = nil
+        } else {
+            chunk.attempts += 1
+            chunk.lastError = failures.first.map(\.failure.rawValue)
+            if chunk.attempts >= policy.maxAttempts {
+                // Give up on the failing items; everything else goes on (003 FR-006).
+                for (i, failure) in failures {
+                    let id = chunk.assetIDs[i]
+                    results.append(
+                        LibraryItem(
+                            metadata: byID[id]!, analysisSource: .notScanned, analysis: nil,
+                            scanFailure: failure))
+                    chunk.markDone(i)
+                    session?.processedItems += 1
+                    session?.notScannedCount += 1
+                    session?.failedItems += 1
+                }
+                chunk.state = .done
+                chunk.owner = nil
+            } else {
+                chunk.state = .pending
+                chunk.owner = nil
+                chunk.notBefore = Date.now.addingTimeInterval(
+                    Self.seconds(policy.delay(forAttempt: chunk.attempts)))
+            }
+        }
+        chunk.inFlightIndex = nil
+        chunks[index] = chunk
+        await stampAttempts(&results)
+        if let s = session,
+            (try? await store.checkpoint(items: results, chunk: chunk, session: s)) != nil
+        {
+            storedSession = s
+            storedLeased = nil
+        }
+        if isPaused { pausedAndSaved = true }
+        progress(snapshot())
+    }
+
+    /// Records one finished item. `session` is read and written in place: pause() may
+    /// change its state while a chunk is draining, and that must not be lost.
+    private func record(
+        _ i: Int, _ outcome: ItemOutcome, chunk: inout ScanChunk, results: inout [LibraryItem],
+        failures: inout [(index: Int, failure: ScanFailure)], index: Int,
+        progress: @Sendable (ScanProgress) -> Void
+    ) {
+        switch outcome {
+        case .item(let item):
+            results.append(item)
+            chunk.markDone(i)
+            session?.processedItems += 1
+            if item.analysisSource == .notScanned { session?.notScannedCount += 1 }
+            session?.lastProcessedAssetID = item.assetID
+        case .failed(let failure):
+            failures.append((i, failure))
+        }
+        chunks[index] = chunk
+        sinceProgress += 1
+        // While pausing or stopping, the only progress event comes after the release
+        // checkpoint, so a paused event always means "saved" (002 G1).
+        if sinceProgress >= progressEvery, !isPaused, !stopRequested {
+            sinceProgress = 0
+            progress(snapshot())
+        }
+    }
+
+    /// Items that end a scan unanalyzed carry how many scans have tried them (003 FR-008).
+    private func stampAttempts(_ items: inout [LibraryItem]) async {
+        let ids = items.filter { $0.analysisSource == .notScanned }.map(\.assetID)
+        guard !ids.isEmpty else { return }
+        let stored = (try? await store.scanAttempts(for: ids)) ?? [:]
+        for i in items.indices where items[i].analysisSource == .notScanned {
+            items[i].scanAttempts = (stored[items[i].assetID] ?? 0) + 1
+        }
+    }
+
+    // MARK: Waiting
+
     private func waitWhilePaused(progress: @Sendable (ScanProgress) -> Void) async {
-        var reported = false
+        var last: ScanProgress?
         while !stopRequested, isPaused || isTooHot {
-            if !reported {
-                progress(snapshot())
-                reported = true
+            // Nothing is in flight here, so the store is already complete. Checked on
+            // every pass: a pause requested during a heat wait must still be reported
+            // and acknowledged (review fix).
+            pausedAndSaved = true
+            let now = snapshot()
+            if now != last {
+                progress(now)
+                last = now
             }
             try? await Task.sleep(for: .milliseconds(250))
         }
-        if reported { progress(snapshot()) }
+        if last != nil { progress(snapshot()) }
+    }
+
+    /// Waits for a retry time; ends at once on pause or stop (003 FR-010).
+    private func sleep(until date: Date) async {
+        while !stopRequested, !isPaused, !isTooHot, Date.now < date {
+            let remaining = date.timeIntervalSinceNow
+            try? await Task.sleep(for: .milliseconds(Int(min(250, max(1, remaining * 1000)))))
+        }
     }
 
     private var isTooHot: Bool {
@@ -210,33 +615,49 @@ public actor ScanPipeline: Scanner {
         return state == .serious || state == .critical
     }
 
-    private func flush(_ pending: inout [LibraryItem]) async {
-        guard !pending.isEmpty else { return }
-        try? await store.upsert(pending)
-        pending.removeAll(keepingCapacity: true)
-        if let s = session { try? await store.saveSession(s) }
-    }
-
-    private func snapshot() -> ScanProgress {
+    private func snapshot(ignoringPause: Bool = false) -> ScanProgress {
         guard let s = session else {
             return ScanProgress(processed: 0, total: 0, notScanned: 0, state: .idle)
         }
+        let paused = isPaused && !ignoringPause
         return ScanProgress(
             processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
-            state: isPaused ? .paused : s.state, isThermalPaused: !isPaused && isTooHot)
+            state: paused ? .paused : s.state, isThermalPaused: !paused && isTooHot,
+            pauseReason: paused ? pauseReason : nil, failed: s.failedItems)
     }
 
-    static func analyze(
-        _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer
-    ) async -> LibraryItem? {
-        guard !Task.isCancelled else { return nil }
-        let preview = await library.preview(for: m.assetID, maxPixels: previewSize)
-        guard let image = preview.image else {
-            return LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil)
+    static func seconds(_ d: Duration) -> TimeInterval {
+        Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+    }
+
+    /// One item: preview plus analysis, under the per-item time limit (003 FR-007).
+    /// A failed analysis is retried by the chunk; a missing preview is a result.
+    /// Without Pro, videos are not analyzed (004 FR-004a): no frame is requested, and the item
+    /// is stored with its metadata only so Large Videos can rank it.
+    private static func analyze(
+        _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
+        analyzeVideos: Bool
+    ) async -> ItemOutcome {
+        if m.kind.isVideo, !analyzeVideos {
+            return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
         }
-        guard let analysis = try? await analyzer.analyze(image, metadata: m) else {
-            return LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil)
+        let outcome: Timeout.Outcome<ItemOutcome> = await Timeout.run(limit) {
+            guard !Task.isCancelled else { return .failed(.transient) }
+            let preview = await library.preview(for: m.assetID, maxPixels: previewSize)
+            guard let image = preview.image else {
+                return .item(LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil))
+            }
+            do {
+                let analysis = try await analyzer.analyze(image, metadata: m)
+                return .item(
+                    LibraryItem(metadata: m, analysisSource: preview.source, analysis: analysis))
+            } catch {
+                return .failed(.transient)
+            }
         }
-        return LibraryItem(metadata: m, analysisSource: preview.source, analysis: analysis)
+        switch outcome {
+        case .finished(let result): return result
+        case .timedOut: return .failed(.timeout)
+        }
     }
 }
