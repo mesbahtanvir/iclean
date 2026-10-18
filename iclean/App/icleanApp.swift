@@ -13,18 +13,41 @@ struct icleanApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(model)
-                .task {
-                    #if DEBUG
-                        await DebugSeeding.runIfRequested()
-                    #endif
-                    await model.onLaunch()
+            #if DEBUG
+                // `-BaselineRun` shows only the baseline check and leaves the app's own
+                // library, store and results alone.
+                if BaselineMode.isRequested {
+                    BaselineView(autoRun: true)
+                } else {
+                    appRoot
                 }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { Task { await model.onForeground() } }
-                }
+            #else
+                appRoot
+            #endif
         }
+    }
+
+    private var appRoot: some View {
+        RootView()
+            .environment(model)
+            .task {
+                #if DEBUG
+                    await DebugSeeding.runIfRequested()
+                #endif
+                await model.onLaunch()
+                #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-AutoScan") {
+                        model.startScan()
+                    }
+                #endif
+            }
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active: Task { await model.onForeground() }
+                case .background: model.onBackground()
+                default: break
+                }
+            }
     }
 }
 

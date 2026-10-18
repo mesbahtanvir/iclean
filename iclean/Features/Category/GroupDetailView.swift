@@ -41,6 +41,13 @@ struct GroupDetailView: View {
                 if let date = m.captureDate {
                     Text(date.formatted(date: .abbreviated, time: .shortened))
                 }
+                // Why this copy's date or details look less reliable than another copy's.
+                ForEach(group.dateNotes[id] ?? [], id: \.self) { reason in
+                    Label(reason.explanation, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("group.dateNote.\(id).\(reason.rawValue)")
+                }
             }
             if let item {
                 Text(Format.bytes(item.effectiveByteSize, estimate: item.sizeIsEstimate))
@@ -48,6 +55,12 @@ struct GroupDetailView: View {
             if isKeeper {
                 Label("Suggested to keep", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
+                if !group.dateNotes.isEmpty, group.dateNotes[id] == nil {
+                    Text("Its date shows no sign of being wrong.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("group.dateLikely.\(id)")
+                }
             } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {
                 Button("Keep This One") { model.makeKeeper(id) }
                     .buttonStyle(.bordered)

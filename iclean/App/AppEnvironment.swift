@@ -9,6 +9,8 @@ struct AppEnvironment: Sendable {
     let resultsBuilder: ResultsBuilder
     let remover: Remover
     let sizeMeasurer: SizeMeasurer
+    /// What Pro unlocks for this run. Free for everyone until the purchase exists.
+    let features: ProFeatures
 
     static func live() -> AppEnvironment {
         #if DEBUG
@@ -21,13 +23,18 @@ struct AppEnvironment: Sendable {
         return make(library: library, store: store)
     }
 
-    static func make(library: PhotoLibrary, store: Store) -> AppEnvironment {
+    static func make(
+        library: PhotoLibrary, store: Store, features: ProFeatures = LaunchArguments.features
+    ) -> AppEnvironment {
         AppEnvironment(
             library: library, store: store,
-            scanner: ScanPipeline(library: library, store: store, analyzer: Detectors.analyzer),
-            resultsBuilder: DefaultResultsBuilder(detectors: Detectors.all),
+            scanner: ScanPipeline(
+                library: library, store: store, analyzer: Detectors.analyzer,
+                chunkSize: LaunchArguments.chunkSize, features: features),
+            resultsBuilder: DefaultResultsBuilder(detectors: Detectors.all(features)),
             remover: DefaultRemover(library: library),
-            sizeMeasurer: SizeMeasurer(library: library, store: store))
+            sizeMeasurer: SizeMeasurer(library: library, store: store),
+            features: features)
     }
 
     #if DEBUG
@@ -47,6 +54,30 @@ struct AppEnvironment: Sendable {
 
 enum LaunchArguments {
     static var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-UITesting") }
+
+    /// DEBUG only: `-ChunkSize N` makes the small demo library span several chunks, so
+    /// tests can prove that a resume continues from saved chunks (003).
+    static var chunkSize: Int {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-ChunkSize"), i + 1 < args.count,
+                let n = Int(args[i + 1])
+            {
+                return n
+            }
+        #endif
+        return 32
+    }
+
+    /// What Pro unlocks. Always free in a release build: the one-time Pro purchase is not
+    /// built yet, and this is the single place it will plug into. DEBUG only:
+    /// `-ProVideoAnalysis` turns video analysis on, so the Pro path can be tested.
+    static var features: ProFeatures {
+        #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ProVideoAnalysis") { return .pro }
+        #endif
+        return .free
+    }
 
     static var demoScenario: String {
         let args = ProcessInfo.processInfo.arguments

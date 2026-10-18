@@ -21,6 +21,11 @@ targets:
       - path: iclean
     dependencies:
       - package: CleanupKit
+      # Developer tooling: the baseline test photo library. It is linked in every configuration
+      # (XcodeGen cannot scope a package dependency by configuration), but the app only references
+      # it from `#if DEBUG` code, so a Release build cannot reach it.
+      - package: CleanupKit
+        product: BaselineKit
     info:
       path: iclean/Info.plist
       properties:
@@ -29,6 +34,10 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: "iclean looks at your photos on this iPhone to find duplicates and blurry shots. Nothing ever leaves your phone."
         ITSAppUsesNonExemptEncryption: false
+        # 002: a user-started scan may continue after the user leaves the app
+        # (continued processing task, iOS 26+). Not a network entitlement.
+        BGTaskSchedulerPermittedIdentifiers: ["com.mesbahtanvir.iclean.scan.*"]
+        UIBackgroundModes: [processing]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.iclean

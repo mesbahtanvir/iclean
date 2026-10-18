@@ -1,7 +1,8 @@
 import CleanupKit
 import SwiftUI
 
-/// Scan progress with pause, resume and stop.
+/// Scan progress with pause, resume and stop (001), plus what happens when you leave
+/// the app and why a scan is paused (002 contracts/ui.md).
 struct ScanningView: View {
     @Environment(AppModel.self) private var model
 
@@ -10,6 +11,7 @@ struct ScanningView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(statusText(p))
                 .font(.headline)
+                .accessibilityIdentifier("scan.status")
             ProgressView(value: p?.fraction ?? 0)
                 .accessibilityIdentifier("scan.progress")
                 .accessibilityValue(Text("\(p?.processed ?? 0) of \(p?.total ?? 0)"))
@@ -20,6 +22,12 @@ struct ScanningView: View {
                 Text("\(notScanned) not scanned (only in iCloud)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+            if let failed = p?.failed, failed > 0 {
+                Text("\(failed) couldn't be checked")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("scan.failed")
             }
             HStack {
                 if p?.state == .paused {
@@ -34,14 +42,41 @@ struct ScanningView: View {
                     .accessibilityIdentifier("scan.stop")
             }
             .buttonStyle(.bordered)
+            if p?.state != .paused, let note = whenYouLeave {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("scan.whenYouLeave")
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    private var whenYouLeave: String? {
+        switch model.continuation.allowance {
+        case .unknown:
+            nil
+        case .continues:
+            String(
+                localized:
+                    "Keeps scanning while you use other apps. Progress shows in the Dynamic Island and on the Lock Screen."
+            )
+        case .pausesOnLeave:
+            String(localized: "Pauses when you leave iclean and continues when you come back.")
+        }
     }
 
     private func statusText(_ p: ScanProgress?) -> String {
         guard let p else { return String(localized: "Starting…") }
         if p.isThermalPaused { return String(localized: "Paused to let your iPhone cool down") }
-        if p.state == .paused { return String(localized: "Paused") }
+        if p.state == .paused {
+            switch p.pauseReason {
+            case .stoppedOutsideApp: return String(localized: "Stopped from outside iclean")
+            case .backgroundLimit: return String(localized: "Paused while you were away")
+            case .user, nil: return String(localized: "Paused")
+            }
+        }
         return String(localized: "Scanning your library…")
     }
 }

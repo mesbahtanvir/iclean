@@ -7,6 +7,9 @@ public protocol PhotoLibrary: Sendable {
     func requestAuthorization() async -> LibraryAccess
     /// Metadata for every item in the user's own library. No pixels.
     func fetchAllItems() async -> [AssetMetadata]
+    /// Current metadata for these items only; items no longer in the library are left
+    /// out (003: a chunk fetches its own items without enumerating the library).
+    func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata]
     func preview(for assetID: String, maxPixels: Int) async -> PreviewResult
     /// Size of the item's files on the phone, or nil when not stored locally.
     func localByteSize(for assetID: String) async -> Int64?
@@ -14,6 +17,13 @@ public protocol PhotoLibrary: Sendable {
     func remove(_ assetIDs: [String]) async -> RemovalResult
     /// Changes made to the library while the app is running.
     func changes() -> AsyncStream<LibraryChange>
+}
+
+extension PhotoLibrary {
+    public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
+        let wanted = Set(assetIDs)
+        return await fetchAllItems().filter { wanted.contains($0.assetID) }
+    }
 }
 
 public enum PreviewResult: @unchecked Sendable {

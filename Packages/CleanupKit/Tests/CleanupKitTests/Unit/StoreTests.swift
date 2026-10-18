@@ -14,6 +14,28 @@ import Testing
         #expect(items[0].metadata.albumNames == ["Trip"])
     }
 
+    @Test func theDateAddedAndTheLocationRoundTripAndAreUpdated() async throws {
+        let store = try InMemoryStore.make()
+        var m = Make.meta("a")
+        m.addedDate = Date(timeIntervalSince1970: 1_700_000_000)
+        m.hasLocation = true
+        try await store.upsert([Make.item(m)])
+        var back = try #require(try await store.items().first)
+        #expect(back.metadata.addedDate == Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(back.metadata.hasLocation == true)
+        // A refreshed value replaces the stored one, and "no location" is kept as no, not unknown.
+        m.addedDate = Date(timeIntervalSince1970: 1_800_000_000)
+        m.hasLocation = false
+        try await store.upsert([Make.item(m)])
+        back = try #require(try await store.items().first)
+        #expect(back.metadata.addedDate == Date(timeIntervalSince1970: 1_800_000_000))
+        #expect(back.metadata.hasLocation == false)
+        // An item never given either stays unknown.
+        try await store.upsert([Make.item(Make.meta("b"))])
+        let b = try #require(try await store.items().first { $0.assetID == "b" })
+        #expect(b.metadata.addedDate == nil && b.metadata.hasLocation == nil)
+    }
+
     @Test func assetIDIsUnique() async throws {
         let store = try InMemoryStore.make()
         try await store.upsert([Make.item(Make.meta("a"), sharpness: 1)])

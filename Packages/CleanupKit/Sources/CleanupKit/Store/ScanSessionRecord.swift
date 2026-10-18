@@ -12,6 +12,11 @@ final class ScanSessionRecord {
     var processedItems: Int
     var notScannedCount: Int
     var lastProcessedAssetID: String?
+    // 003: optional so stores written by earlier versions open unchanged.
+    var baseProcessed: Int?
+    var failedItems: Int?
+    var crashCount: Int?
+    var interruptedCount: Int?
 
     init(_ session: ScanSession) {
         id = session.id
@@ -33,6 +38,10 @@ final class ScanSessionRecord {
         processedItems = s.processedItems
         notScannedCount = s.notScannedCount
         lastProcessedAssetID = s.lastProcessedAssetID
+        baseProcessed = s.baseProcessed
+        failedItems = s.failedItems
+        crashCount = s.crashCount
+        interruptedCount = s.interruptedCount
     }
 
     var session: ScanSession {
@@ -40,6 +49,8 @@ final class ScanSessionRecord {
             id: id, kind: ScanKind(rawValue: kindRaw) ?? .full,
             state: ScanState(rawValue: stateRaw) ?? .stopped, startedAt: startedAt,
             finishedAt: finishedAt, totalItems: totalItems, processedItems: processedItems,
-            notScannedCount: notScannedCount, lastProcessedAssetID: lastProcessedAssetID)
+            notScannedCount: notScannedCount, lastProcessedAssetID: lastProcessedAssetID,
+            baseProcessed: baseProcessed ?? 0, failedItems: failedItems ?? 0,
+            crashCount: crashCount ?? 0, interruptedCount: interruptedCount ?? 0)
     }
 }

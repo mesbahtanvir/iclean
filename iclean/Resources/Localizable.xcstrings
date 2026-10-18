@@ -240,7 +240,30 @@
           }
         }
       }
-    }
+    },
+    "Scanning your library": {},
+    "Starting\u2026": {},
+    "%lld of %lld checked": {},
+    "Paused to let your iPhone cool down": {},
+    "Keeps scanning while you use other apps. Progress shows in the Dynamic Island and on the Lock Screen.": {},
+    "Pauses when you leave iclean and continues when you come back.": {},
+    "Stopped from outside iclean": {},
+    "Paused while you were away": {},
+    "%lld couldn't be checked": {},
+    "Recent scans": {},
+    "Completed": {},
+    "Stopped": {},
+    "Unfinished": {},
+    "Not started": {},
+    "Quick check": {},
+    "Scan": {},
+    "%lld items couldn't be checked.": {},
+    "%lld scans were interrupted and resumed.": {},
+    "Scans resume where they left off.": {},
+    "%lld of %lld": {},
+    "Recent Scans": {},
+    "No scans yet.": {},
+    "Updating results\u2026": {}
   },
   "version": "1.0"
 }

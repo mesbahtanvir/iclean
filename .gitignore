@@ -10,3 +10,6 @@ Fixtures/generated/
 *.xcworkspace
 xcuserdata/
 Package.resolved
+# Baseline library reports from devices (scripts/run-baseline.sh)
+Fixtures/baseline-reports/
+build/

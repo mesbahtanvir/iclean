@@ -6,7 +6,7 @@ import SwiftData
 @ModelActor
 public actor SwiftDataStore: Store {
     static let schema = Schema([
-        LibraryItemRecord.self, KeepMarkRecord.self, ScanSessionRecord.self,
+        LibraryItemRecord.self, KeepMarkRecord.self, ScanSessionRecord.self, ScanChunkRecord.self,
     ])
 
     /// The on-disk store: `Application Support/iclean/iclean.store`.
@@ -15,7 +15,8 @@ public actor SwiftDataStore: Store {
         let config = ModelConfiguration(
             schema: schema, url: folder.appending(path: "iclean.store"),
             cloudKitDatabase: .none)
-        return SwiftDataStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+        return SwiftDataStore(
+            modelContainer: try ModelContainer(for: schema, configurations: config))
     }
 
     /// A store at a custom folder (tests).
@@ -24,13 +25,15 @@ public actor SwiftDataStore: Store {
         let config = ModelConfiguration(
             schema: schema, url: folder.appending(path: "iclean.store"),
             cloudKitDatabase: .none)
-        return SwiftDataStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+        return SwiftDataStore(
+            modelContainer: try ModelContainer(for: schema, configurations: config))
     }
 
     public static func inMemory() throws -> SwiftDataStore {
         let config = ModelConfiguration(
             schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        return SwiftDataStore(modelContainer: try ModelContainer(for: schema, configurations: config))
+        return SwiftDataStore(
+            modelContainer: try ModelContainer(for: schema, configurations: config))
     }
 
     public static func storeFolder() throws -> URL {
@@ -62,7 +65,24 @@ public actor SwiftDataStore: Store {
         try modelContext.fetch(FetchDescriptor<LibraryItemRecord>()).map(\.item)
     }
 
+    /// Runs the writes and saves them together; on any error nothing is kept, so a
+    /// failed write can never leave half of its changes to be committed by a later save.
+    private func transaction(_ body: () throws -> Void) throws {
+        do {
+            try body()
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
+    }
+
     public func upsert(_ items: [LibraryItem]) throws {
+        try transaction { try put(items) }
+    }
+
+    /// Upserts without saving (callers group writes into one transaction).
+    private func put(_ items: [LibraryItem]) throws {
         guard !items.isEmpty else { return }
         let ids = items.map(\.assetID)
         let existing = try modelContext.fetch(
@@ -77,15 +97,24 @@ public actor SwiftDataStore: Store {
                 byID[item.assetID] = record
             }
         }
-        try modelContext.save()
+    }
+
+    public func scanAttempts(for assetIDs: [String]) throws -> [String: Int] {
+        guard !assetIDs.isEmpty else { return [:] }
+        let ids = assetIDs
+        let records = try modelContext.fetch(
+            FetchDescriptor<LibraryItemRecord>(predicate: #Predicate { ids.contains($0.assetID) }))
+        return Dictionary(
+            records.map { ($0.assetID, $0.scanAttempts ?? 0) }, uniquingKeysWith: { a, _ in a })
     }
 
     public func deleteItems(_ assetIDs: Set<String>) throws {
         guard !assetIDs.isEmpty else { return }
         let ids = Array(assetIDs)
-        try modelContext.delete(
-            model: LibraryItemRecord.self, where: #Predicate { ids.contains($0.assetID) })
-        try modelContext.save()
+        try transaction {
+            try modelContext.delete(
+                model: LibraryItemRecord.self, where: #Predicate { ids.contains($0.assetID) })
+        }
     }
 
     // MARK: Keep marks
@@ -95,24 +124,30 @@ public actor SwiftDataStore: Store {
     }
 
     public func setKeep(_ assetID: String, _ keep: Bool) throws {
-        let existing = try modelContext.fetch(
-            FetchDescriptor<KeepMarkRecord>(predicate: #Predicate { $0.assetID == assetID }))
-        if keep, existing.isEmpty {
-            modelContext.insert(KeepMarkRecord(assetID: assetID))
-        } else if !keep {
-            existing.forEach(modelContext.delete)
+        try transaction {
+            let existing = try modelContext.fetch(
+                FetchDescriptor<KeepMarkRecord>(predicate: #Predicate { $0.assetID == assetID }))
+            if keep, existing.isEmpty {
+                modelContext.insert(KeepMarkRecord(assetID: assetID))
+            } else if !keep {
+                existing.forEach(modelContext.delete)
+            }
         }
-        try modelContext.save()
     }
 
     public func clearKeepMarks() throws {
-        try modelContext.delete(model: KeepMarkRecord.self)
-        try modelContext.save()
+        try transaction { try modelContext.delete(model: KeepMarkRecord.self) }
     }
 
     // MARK: Sessions
 
     public func saveSession(_ session: ScanSession) throws {
+        try transaction { try putSession(session) }
+    }
+
+    /// Upserts the session and prunes old ones, without saving. An ended session takes
+    /// its chunks with it, in the same transaction, so a job never ends half-way.
+    private func putSession(_ session: ScanSession) throws {
         let id = session.id
         let all = try modelContext.fetch(FetchDescriptor<ScanSessionRecord>())
         if session.isActive,
@@ -125,10 +160,13 @@ public actor SwiftDataStore: Store {
         } else {
             modelContext.insert(ScanSessionRecord(session))
         }
-        // Keep only the latest few sessions.
+        if !session.isActive { try removeChunks(job: id) }
+        // Keep only the latest few sessions, and no chunks of the pruned ones.
         let old = all.filter { $0.id != id }.sorted { $0.startedAt > $1.startedAt }.dropFirst(4)
-        old.forEach(modelContext.delete)
-        try modelContext.save()
+        for record in old {
+            try removeChunks(job: record.id)
+            modelContext.delete(record)
+        }
     }
 
     public func currentSession() throws -> ScanSession? {
@@ -138,12 +176,75 @@ public actor SwiftDataStore: Store {
         return try modelContext.fetch(descriptor).first?.session
     }
 
+    public func sessions() throws -> [ScanSession] {
+        let descriptor = FetchDescriptor<ScanSessionRecord>(
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        return try modelContext.fetch(descriptor).map(\.session)
+    }
+
+    // MARK: Scan jobs (003)
+
+    public func createJob(_ session: ScanSession, chunks: [ScanChunk]) throws {
+        try transaction {
+            try putSession(session)
+            try removeChunks(job: session.id)
+            for chunk in chunks { modelContext.insert(ScanChunkRecord(chunk)) }
+        }
+    }
+
+    public func chunks(job: UUID) throws -> [ScanChunk] {
+        try modelContext.fetch(
+            FetchDescriptor<ScanChunkRecord>(
+                predicate: #Predicate { $0.jobID == job }, sortBy: [SortDescriptor(\.sequence)])
+        ).map(\.chunk)
+    }
+
+    public func saveChunks(_ chunks: [ScanChunk], session: ScanSession?) throws {
+        try transaction {
+            try putChunks(chunks)
+            if let session { try putSession(session) }
+        }
+    }
+
+    public func checkpoint(items: [LibraryItem], chunk: ScanChunk, session: ScanSession) throws {
+        try transaction {
+            try put(items)
+            try putChunks([chunk])
+            try putSession(session)
+        }
+    }
+
+    private func putChunks(_ chunks: [ScanChunk]) throws {
+        guard !chunks.isEmpty else { return }
+        let keys = chunks.map(\.id)
+        let existing = try modelContext.fetch(
+            FetchDescriptor<ScanChunkRecord>(predicate: #Predicate { keys.contains($0.key) }))
+        let byKey = Dictionary(existing.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        for chunk in chunks {
+            if let record = byKey[chunk.id] {
+                record.update(from: chunk)
+            } else {
+                modelContext.insert(ScanChunkRecord(chunk))
+            }
+        }
+    }
+
+    public func deleteChunks(job: UUID) throws {
+        try transaction { try removeChunks(job: job) }
+    }
+
+    private func removeChunks(job: UUID) throws {
+        try modelContext.delete(model: ScanChunkRecord.self, where: #Predicate { $0.jobID == job })
+    }
+
     // MARK: Delete all
 
     public func deleteAllData() throws {
-        try modelContext.delete(model: LibraryItemRecord.self)
-        try modelContext.delete(model: KeepMarkRecord.self)
-        try modelContext.delete(model: ScanSessionRecord.self)
-        try modelContext.save()
+        try transaction {
+            try modelContext.delete(model: LibraryItemRecord.self)
+            try modelContext.delete(model: KeepMarkRecord.self)
+            try modelContext.delete(model: ScanSessionRecord.self)
+            try modelContext.delete(model: ScanChunkRecord.self)
+        }
     }
 }

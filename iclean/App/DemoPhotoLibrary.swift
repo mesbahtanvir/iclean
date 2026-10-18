@@ -22,7 +22,11 @@
 
         init(scenario: String) {
             self.scenario = scenario
-            if scenario != "empty" { buildStandard() }
+            if scenario == "dates" {
+                buildDates()
+            } else if scenario != "empty" {
+                buildStandard()
+            }
         }
 
         // MARK: Content
@@ -31,15 +35,38 @@
             _ id: String, kind: ItemKind = .photo, image: CGImage?, minutes: Double,
             width: Int = 4032, height: Int = 3024, favorite: Bool = false, edited: Bool = false,
             portrait: Bool = false, duration: Double? = nil, burst: String? = nil,
-            albums: [String] = [], cloudOnly: Bool = false, size: Int64? = nil
+            albums: [String] = [], cloudOnly: Bool = false, size: Int64? = nil,
+            date explicitDate: Date? = nil, added: Date? = nil, location: Bool = false
         ) {
-            let date = Date(timeIntervalSince1970: 1_700_000_000 + minutes * 60)
+            let date = explicitDate ?? Date(timeIntervalSince1970: 1_700_000_000 + minutes * 60)
             let m = AssetMetadata(
                 assetID: id, kind: kind, captureDate: date, modificationDate: date,
                 pixelWidth: width, pixelHeight: height, duration: duration, isFavorite: favorite,
-                hasAdjustments: edited, isPortrait: portrait, burstID: burst, albumNames: albums)
+                hasAdjustments: edited, isPortrait: portrait, burstID: burst, albumNames: albums,
+                addedDate: added, hasLocation: location)
             assets[id] = Asset(metadata: m, image: image, cloudOnly: cloudOnly, size: size)
             order.append(id)
+        }
+
+        /// Copies of one photo that carry different dates (date-aware keepers).
+        private func buildDates() {
+            // Exact copies. The original keeps the date it was taken (and its location); the other
+            // was saved from a message much later, dated that moment, with a bigger file.
+            let a = DemoImages.scene(seed: 41)
+            let saved = Date(timeIntervalSince1970: 1_694_347_200)  // 10 Sep 2023 12:00 UTC
+            add(
+                "date-orig", image: a, minutes: 0, size: 3_000_000,
+                date: Date(timeIntervalSince1970: 1_559_402_441),  // 1 Jun 2019 15:20:41 UTC
+                added: saved.addingTimeInterval(60), location: true)
+            add("date-resaved", image: a, minutes: 0, size: 3_400_000, date: saved, added: saved)
+            // A larger copy whose date is the start of 1970, and a smaller one with a real date.
+            let b = DemoImages.scene(seed: 42)
+            add(
+                "date-default", image: b, minutes: 0, size: 4_000_000,
+                date: Date(timeIntervalSince1970: 0))
+            add(
+                "date-real", image: DemoImages.resized(b, 0.5), minutes: 0, width: 2016, height: 1512,
+                size: 900_000, date: Date(timeIntervalSince1970: 1_580_000_000))
         }
 
         private func buildStandard() {
@@ -72,7 +99,8 @@
                     "shot\(i)", kind: .screenshot, image: DemoImages.stripes(seed: UInt64(100 + i)),
                     minutes: 9000 + Double(i) * 100, width: 1206, height: 2622, size: 400_000)
             }
-            // Duplicate videos (same clip, two qualities) and a large video.
+            // Two copies of one clip and a large video. Free: no video is analyzed, so all three
+            // are listed by size. Pro (-ProVideoAnalysis): the two copies are grouped.
             let v = DemoImages.scene(seed: 99)
             add("vid-hd", kind: .video, image: v, minutes: 10000, width: 1920, height: 1080, duration: 12, size: 24_000_000)
             add("vid-sd", kind: .video, image: DemoImages.resized(v, 0.5), minutes: 10100, width: 1280, height: 720, duration: 12.2, size: 9_000_000)
@@ -104,8 +132,19 @@
             return lock.withLock { order.compactMap { assets[$0]?.metadata } }
         }
 
+        func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
+            lock.withLock { assetIDs.compactMap { assets[$0]?.metadata } }
+        }
+
         func preview(for assetID: String, maxPixels: Int) async -> PreviewResult {
+            if scenario == "poison", assetID == "blur1" {
+                // Never returns: exercises the per-item time limit (003 FR-007).
+                while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+                return .unavailable
+            }
             if scenario == "slow" { try? await Task.sleep(for: .milliseconds(1500)) }
+            // Long enough to leave the app and watch the scan continue (002 quickstart).
+            if scenario == "verySlow" { try? await Task.sleep(for: .seconds(6)) }
             guard let asset = lock.withLock({ assets[assetID] }), let image = asset.image else {
                 return .unavailable
             }

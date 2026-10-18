@@ -71,9 +71,23 @@ public struct CleanupResults: Sendable, Hashable {
                 var g = g
                 g.members.removeAll { assetIDs.contains($0) }
                 g.keepers.subtract(assetIDs)
+                g.dateNotes = g.dateNotes.filter { g.members.contains($0.key) }
                 if g.type == .single { return g.members.isEmpty ? nil : g }
                 if g.members.count < 2 || g.removable.isEmpty { return nil }
-                if g.keepers.isEmpty, let first = g.members.first { g.keepers = [first] }
+                if g.keepers.isEmpty {
+                    // The keeper is gone: suggest the best of what is left, by the same rules.
+                    let rest = g.members.compactMap { items[$0] }
+                    switch g.type {
+                    case .duplicatePhotos, .duplicateVideos:
+                        g.keepers = KeeperRules.duplicateKeepers(rest)
+                        g.dateNotes = KeeperRules.dateNotes(rest)
+                    case .similarShots:
+                        g.keepers = KeeperRules.similarKeepers(rest)
+                    case .single:
+                        break
+                    }
+                    if g.keepers.isEmpty, let first = g.members.first { g.keepers = [first] }
+                }
                 return g
             }
             return r.groups.isEmpty ? nil : r
@@ -96,7 +110,16 @@ public struct DefaultResultsBuilder: ResultsBuilder {
         self.detectors = detectors.sorted { $0.category < $1.category }
     }
 
-    public func buildResults(items: [LibraryItem], keepMarks: Set<String>) -> CleanupResults {
+    public func buildResults(items unordered: [LibraryItem], keepMarks: Set<String>)
+        -> CleanupResults
+    {
+        // The store returns items in no particular order. A fixed order (oldest first,
+        // then identifier) keeps groups and lists from reshuffling between launches.
+        let items = unordered.sorted { a, b in
+            let da = a.metadata.captureDate ?? .distantPast
+            let db = b.metadata.captureDate ?? .distantPast
+            return da != db ? da < db : a.assetID < b.assetID
+        }
         let byID = Dictionary(items.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
         // Favorites and keep-marked items are protected: they may appear only as keepers.
         let protected = Set(items.filter { $0.metadata.isFavorite }.map(\.assetID))
@@ -107,7 +130,7 @@ public struct DefaultResultsBuilder: ResultsBuilder {
         for detector in detectors {
             let candidates = items.filter { item in
                 !assigned.contains(item.assetID)
-                    && (!detector.needsAnalysis || item.analysisSource != .notScanned)
+                    && (!detector.needsAnalysis || item.analysisSource.hasAnalysis)
             }
             var groups: [ResultGroup] = []
             for var group in detector.detect(items: candidates) {

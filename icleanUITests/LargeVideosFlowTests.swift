@@ -12,8 +12,9 @@ final class LargeVideosFlowTests: XCTestCase {
         let big = item(app, "vid-big")
         XCTAssertTrue(big.waitForExistence(timeout: 5))
         XCTAssertFalse(big.isSelected)
-        // Videos already in a duplicate group are not listed again.
-        XCTAssertFalse(item(app, "vid-sd").exists)
+        // Free: videos are not analyzed, so two copies of one clip are not grouped: both are listed.
+        XCTAssertTrue(item(app, "vid-hd").exists)
+        XCTAssertTrue(item(app, "vid-sd").exists)
         XCTAssertFalse(app.buttons["category.removeSelected"].isEnabled)
         big.tap()
         confirmRemoval(app)

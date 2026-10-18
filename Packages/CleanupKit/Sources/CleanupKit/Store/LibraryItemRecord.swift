@@ -29,6 +29,13 @@ final class LibraryItemRecord {
     var byteSize: Int64?
     var isSizeEstimated: Bool
     var analyzedAt: Date
+    // 003: optional so stores written by earlier versions open unchanged.
+    var scanFailureRaw: String?
+    var scanAttempts: Int?
+    // Date-aware keepers: optional so stores written by earlier versions open unchanged. They
+    // fill in the next time the item's metadata is refreshed.
+    var addedDate: Date?
+    var hasLocation: Bool?
 
     init(_ item: LibraryItem) {
         assetID = item.assetID
@@ -62,9 +69,11 @@ final class LibraryItemRecord {
         isLongExposure = m.isLongExposure
         burstID = m.burstID
         albumNames = m.albumNames
+        addedDate = m.addedDate
+        hasLocation = m.hasLocation
         analysisSourceRaw = item.analysisSource.rawValue
-        // dHash, featurePrint and sharpness are nil when analysisSource == .notScanned.
-        let a = item.analysisSource == .notScanned ? nil : item.analysis
+        // dHash, featurePrint and sharpness are nil unless the item was analyzed.
+        let a = item.analysisSource.hasAnalysis ? item.analysis : nil
         dHashBits = a.map { Int64(bitPattern: $0.dHash) }
         thumbprint = a?.thumbprint
         featurePrint = a?.featurePrint
@@ -74,6 +83,8 @@ final class LibraryItemRecord {
         byteSize = item.byteSize
         isSizeEstimated = item.isSizeEstimated
         analyzedAt = item.analyzedAt
+        scanFailureRaw = item.scanFailure?.rawValue
+        scanAttempts = item.scanAttempts
     }
 
     var item: LibraryItem {
@@ -82,7 +93,8 @@ final class LibraryItemRecord {
             captureDate: captureDate, modificationDate: modificationDate,
             pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration,
             isFavorite: isFavorite, hasAdjustments: hasAdjustments, isPortrait: isPortrait,
-            isLongExposure: isLongExposure, burstID: burstID, albumNames: albumNames)
+            isLongExposure: isLongExposure, burstID: burstID, albumNames: albumNames,
+            addedDate: addedDate, hasLocation: hasLocation)
         var analysis: Analysis?
         if let dHashBits, let featurePrint, let sharpness {
             analysis = Analysis(
@@ -95,6 +107,8 @@ final class LibraryItemRecord {
             metadata: metadata,
             analysisSource: AnalysisSource(rawValue: analysisSourceRaw) ?? .notScanned,
             analysis: analysis, byteSize: byteSize, isSizeEstimated: isSizeEstimated,
-            analyzedAt: analyzedAt)
+            analyzedAt: analyzedAt,
+            scanFailure: scanFailureRaw.flatMap(ScanFailure.init(rawValue:)),
+            scanAttempts: scanAttempts ?? 0)
     }
 }

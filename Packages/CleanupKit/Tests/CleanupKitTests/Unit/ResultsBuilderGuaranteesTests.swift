@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import CleanupKit
@@ -42,6 +43,31 @@ struct StubDetector: CategoryDetector {
         #expect(results.categories.map(\.category) == [.duplicates, .blurry])
     }
 
+    /// The store returns items in no particular order; the review list must not
+    /// reshuffle between launches because of it (this made a UI test fail about half the
+    /// time, also before the 002/003 work).
+    @Test func groupOrderDoesNotDependOnTheOrderOfTheInput() {
+        let pairs = StubDetector(category: .duplicates) { items in
+            stride(from: 0, to: items.count - 1, by: 2).map { i in
+                ResultGroup(
+                    type: .duplicatePhotos, members: [items[i].assetID, items[i + 1].assetID],
+                    keepers: [items[i].assetID])
+            }
+        }
+        let all = (0..<6).map {
+            Make.item(Make.meta("p\($0)", date: Date(timeIntervalSince1970: Double($0) * 100)))
+        }
+        let builder = DefaultResultsBuilder(detectors: [pairs])
+        let forward = builder.buildResults(items: all, keepMarks: [])
+        let backward = builder.buildResults(items: Array(all.reversed()), keepMarks: [])
+        let shuffled = builder.buildResults(
+            items: [all[3], all[0], all[5], all[1], all[4], all[2]], keepMarks: [])
+        let order = forward.category(.duplicates)?.groups.map(\.members)
+        #expect(order == [["p0", "p1"], ["p2", "p3"], ["p4", "p5"]])
+        #expect(backward.category(.duplicates)?.groups.map(\.members) == order)
+        #expect(shuffled.category(.duplicates)?.groups.map(\.members) == order)
+    }
+
     @Test func protectedItemsAreNeverSelected() {
         let builder = DefaultResultsBuilder(detectors: [everythingDuplicate, singles(.blurry)])
         let results = builder.buildResults(items: items, keepMarks: ["kept"])
@@ -63,8 +89,10 @@ struct StubDetector: CategoryDetector {
         let analyzed = DefaultResultsBuilder(detectors: [singles(.blurry)])
             .buildResults(items: items, keepMarks: [])
         #expect(!analyzed.category(.blurry)!.allMembers.contains("cloud"))
-        let metadataOnly = DefaultResultsBuilder(detectors: [singles(.screenshots, needsAnalysis: false)])
-            .buildResults(items: items, keepMarks: [])
+        let metadataOnly = DefaultResultsBuilder(detectors: [
+            singles(.screenshots, needsAnalysis: false)
+        ])
+        .buildResults(items: items, keepMarks: [])
         #expect(metadataOnly.category(.screenshots)!.allMembers.contains("cloud"))
         #expect(analyzed.notScannedCount == 1)
     }
@@ -78,15 +106,17 @@ struct StubDetector: CategoryDetector {
     }
 
     @Test func largeVideosAreNeverPreselected() {
-        let results = DefaultResultsBuilder(detectors: [singles(.largeVideos, needsAnalysis: false)])
-            .buildResults(items: items, keepMarks: [])
+        let results = DefaultResultsBuilder(detectors: [singles(.largeVideos, needsAnalysis: false)]
+        )
+        .buildResults(items: items, keepMarks: [])
         #expect(!results.category(.largeVideos)!.allMembers.isEmpty)
         #expect(results.defaultSelection.isEmpty)
     }
 
     @Test func everythingElseIsPreselected() {
-        let results = DefaultResultsBuilder(detectors: [singles(.screenshots, needsAnalysis: false)])
-            .buildResults(items: items, keepMarks: [])
+        let results = DefaultResultsBuilder(detectors: [singles(.screenshots, needsAnalysis: false)]
+        )
+        .buildResults(items: items, keepMarks: [])
         #expect(results.defaultSelection == Set(results.category(.screenshots)!.allMembers))
     }
 
@@ -94,7 +124,8 @@ struct StubDetector: CategoryDetector {
         let noKeeper = StubDetector(category: .similar) { items in
             [ResultGroup(type: .similarShots, members: ["a", "b"])]
         }
-        let results = DefaultResultsBuilder(detectors: [noKeeper]).buildResults(items: items, keepMarks: [])
+        let results = DefaultResultsBuilder(detectors: [noKeeper]).buildResults(
+            items: items, keepMarks: [])
         #expect(results.category(.similar)!.groups[0].keepers.count == 1)
     }
 

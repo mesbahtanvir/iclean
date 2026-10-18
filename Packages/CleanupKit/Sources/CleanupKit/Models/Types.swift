@@ -16,6 +16,14 @@ public enum AnalysisSource: String, Sendable, Codable {
     case cloudPreview
     /// No usable preview on the phone; the item was not analyzed.
     case notScanned
+    /// Not analyzed on purpose: in the free app videos are listed by file size only and no
+    /// frame of a video is opened (video analysis is a Pro feature, `ProFeatures`). Unlike
+    /// `notScanned` this is not a failure and is not counted as "not scanned". It is not
+    /// retried either, until Pro is on and a full scan picks the video up (`ScanPlanner`).
+    case metadataOnly
+
+    /// Whether items from this source can carry an analysis.
+    public var hasAnalysis: Bool { self != .notScanned && self != .metadataOnly }
 }
 
 public enum LibraryAccess: String, Sendable {
@@ -58,13 +66,19 @@ public struct AssetMetadata: Sendable, Hashable {
     public var isLongExposure: Bool
     public var burstID: String?
     public var albumNames: [String]
+    /// When the item was added to the Photos library (iOS 26 and later; nil before). A copy
+    /// whose capture date equals this date was probably dated by when it was saved.
+    public var addedDate: Date?
+    /// Whether the item has a location (nil: not known yet, for items stored by an earlier version).
+    /// Copies re-saved by messaging apps lose it.
+    public var hasLocation: Bool?
 
     public init(
         assetID: String, kind: ItemKind, captureDate: Date? = nil,
         modificationDate: Date? = nil, pixelWidth: Int, pixelHeight: Int,
         duration: Double? = nil, isFavorite: Bool = false, hasAdjustments: Bool = false,
         isPortrait: Bool = false, isLongExposure: Bool = false, burstID: String? = nil,
-        albumNames: [String] = []
+        albumNames: [String] = [], addedDate: Date? = nil, hasLocation: Bool? = nil
     ) {
         self.assetID = assetID
         self.kind = kind
@@ -79,6 +93,8 @@ public struct AssetMetadata: Sendable, Hashable {
         self.isLongExposure = isLongExposure
         self.burstID = burstID
         self.albumNames = albumNames
+        self.addedDate = addedDate
+        self.hasLocation = hasLocation
     }
 
     public var pixelCount: Int { pixelWidth * pixelHeight }
@@ -113,6 +129,16 @@ public struct Analysis: Sendable, Hashable {
 }
 
 /// Cached analysis of one library item (data-model.md "LibraryItem").
+/// Why an item could not be checked (003 FR-006 to FR-008).
+public enum ScanFailure: String, Sendable, Codable {
+    /// Analysis threw or the preview could not be produced.
+    case transient
+    /// Analysis took longer than the per-item limit.
+    case timeout
+    /// The app died twice while this item was being analyzed.
+    case crashed
+}
+
 public struct LibraryItem: Sendable, Hashable, Identifiable {
     public var metadata: AssetMetadata
     public var analysisSource: AnalysisSource
@@ -120,21 +146,28 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
     public var byteSize: Int64?
     public var isSizeEstimated: Bool
     public var analyzedAt: Date
+    /// Set when the item was given up on after repeated failures (003 FR-008).
+    public var scanFailure: ScanFailure?
+    /// How many scans have ended with this item not analyzed (003 FR-008).
+    public var scanAttempts: Int
 
     public var id: String { metadata.assetID }
     public var assetID: String { metadata.assetID }
 
-    /// Analysis is always nil for items that were not scanned.
+    /// Analysis is always nil for items that were not scanned or are metadata only.
     public init(
         metadata: AssetMetadata, analysisSource: AnalysisSource, analysis: Analysis?,
-        byteSize: Int64? = nil, isSizeEstimated: Bool = false, analyzedAt: Date = .now
+        byteSize: Int64? = nil, isSizeEstimated: Bool = false, analyzedAt: Date = .now,
+        scanFailure: ScanFailure? = nil, scanAttempts: Int = 0
     ) {
         self.metadata = metadata
         self.analysisSource = analysisSource
-        self.analysis = analysisSource == .notScanned ? nil : analysis
+        self.analysis = analysisSource.hasAnalysis ? analysis : nil
         self.byteSize = byteSize
         self.isSizeEstimated = isSizeEstimated
         self.analyzedAt = analyzedAt
+        self.scanFailure = analysisSource == .notScanned ? scanFailure : nil
+        self.scanAttempts = scanAttempts
     }
 
     /// Measured size if known, otherwise an estimate.
@@ -155,11 +188,23 @@ public struct ScanSession: Sendable, Hashable, Identifiable {
     public var processedItems: Int
     public var notScannedCount: Int
     public var lastProcessedAssetID: String?
+    /// Items counted as processed before this job's chunks existed (a scan started by
+    /// an app version without chunks, 003 FR-014).
+    public var baseProcessed: Int
+    /// Items given up on after repeated failures (003 FR-006).
+    public var failedItems: Int
+    /// Times the app died while a chunk of this job was running (003 FR-005).
+    public var crashCount: Int
+    /// Times this job was resumed after the app died; a catch-up for library changes
+    /// runs when it is above zero (003 FR-011).
+    public var interruptedCount: Int
 
     public init(
         id: UUID = UUID(), kind: ScanKind, state: ScanState, startedAt: Date = .now,
         finishedAt: Date? = nil, totalItems: Int = 0, processedItems: Int = 0,
-        notScannedCount: Int = 0, lastProcessedAssetID: String? = nil
+        notScannedCount: Int = 0, lastProcessedAssetID: String? = nil,
+        baseProcessed: Int = 0, failedItems: Int = 0, crashCount: Int = 0,
+        interruptedCount: Int = 0
     ) {
         self.id = id
         self.kind = kind
@@ -168,11 +213,26 @@ public struct ScanSession: Sendable, Hashable, Identifiable {
         self.finishedAt = finishedAt
         self.totalItems = totalItems
         self.processedItems = processedItems
+        self.baseProcessed = baseProcessed
+        self.failedItems = failedItems
+        self.crashCount = crashCount
+        self.interruptedCount = interruptedCount
         self.notScannedCount = notScannedCount
         self.lastProcessedAssetID = lastProcessedAssetID
     }
 
     public var isActive: Bool { state == .running || state == .paused }
+}
+
+/// Why a scan is paused (002 data-model.md).
+public enum ScanPauseReason: String, Sendable, Codable {
+    /// The user tapped Pause inside the app.
+    case user
+    /// The system's progress display was stopped, by the user or by the system, while
+    /// the app was in the background. Stays paused until the user taps Resume.
+    case stoppedOutsideApp
+    /// The app ran out of background time. Resumes by itself when the app is back.
+    case backgroundLimit
 }
 
 public struct ScanProgress: Sendable, Hashable {
@@ -182,17 +242,28 @@ public struct ScanProgress: Sendable, Hashable {
     public var state: ScanState
     /// True while the scan waits for the phone to cool down.
     public var isThermalPaused: Bool
+    /// Non-nil only while `state == .paused`.
+    public var pauseReason: ScanPauseReason?
+    /// Items that could not be checked after repeated failures; a subset of
+    /// `notScanned` (003 FR-008).
+    public var failed: Int
 
     public init(
         processed: Int, total: Int, notScanned: Int, state: ScanState,
-        isThermalPaused: Bool = false
+        isThermalPaused: Bool = false, pauseReason: ScanPauseReason? = nil, failed: Int = 0
     ) {
         self.processed = processed
         self.total = total
         self.notScanned = notScanned
         self.state = state
         self.isThermalPaused = isThermalPaused
+        self.pauseReason = pauseReason
+        self.failed = failed
     }
 
     public var fraction: Double { total == 0 ? 1 : Double(processed) / Double(total) }
+
+    /// A scan paused only because the app lost background time continues by itself
+    /// when the app returns to the foreground (002 FR-009).
+    public var resumesOnForeground: Bool { state == .paused && pauseReason == .backgroundLimit }
 }
