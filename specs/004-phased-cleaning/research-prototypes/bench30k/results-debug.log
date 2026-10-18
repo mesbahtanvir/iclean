@@ -1,0 +1,22 @@
+### pair n=5000
+GEN n=5000 time=0.38s span=6.6y rss=20MB peak=20MB
+PAIR per-pair detailSimilarity=12029.0us meanAbsDiff=237.4us similarity=457.8us (sink 1720089.8)
+### build n=10000 runs=1
+GEN n=10000 time=0.78s span=6.9y rss=29MB peak=29MB
+BUILD n=10000 run=1 wall=17.728s rssBefore=29MB rssAfter=54MB peak=54MB | duplicates=363g/800m similar=585g/3400m blurry=113g/113m screenshots=398g/398m largeVideos=49g/49m
+### build n=30000 runs=1
+GEN n=30000 time=2.33s span=7.1y rss=65MB peak=65MB
+BUILD n=30000 run=1 wall=94.804s rssBefore=65MB rssAfter=102MB peak=108MB | duplicates=1090g/2402m similar=1722g/10077m blurry=374g/374m screenshots=1195g/1195m largeVideos=50g/50m
+### dup n=30000
+GEN n=30000 time=2.30s span=7.1y rss=66MB peak=66MB
+DUPINDEX n=30000 photos=27457 indexWall=61.965s innerVisits=76597553 candidatePairs=1561 passCheapFilters(=thumbprint evaluations)=1560
+DUPDETECT n=30000 clustered=0 wall=80.088s groups=1090 members=2402 rssBefore=64MB peak=79MB
+### similar n=30000
+GEN n=30000 time=2.28s span=7.1y rss=65MB peak=65MB
+SIMILAR n=30000 dense=0 fpPool=0 windowPairs=48827 wall=15.482s groups=2183 members=11462 rssBefore=76MB rssAfter=84MB peak=84MB
+### store-read folder=/private/tmp/claude-501/-Users-mesbahtanvir-src-github-com-mesbahtanvir-iclean/d8b18188-f1db-409e-a1e7-959f5d6b8f51/scratchpad/bench30k/stores/ckpt
+START rss=9MB peak=9MB disk=184MB
+STOREREAD run=1 n=30000 wall=1.703s rssBefore=15MB rssAfter=569MB peak=569MB
+STOREREAD run=2 n=30000 wall=1.284s rssBefore=569MB rssAfter=765MB peak=765MB
+LAUNCHBUILD n=30000 wall=93.528s rssBefore=765MB rssAfter=571MB peak=802MB | duplicates=1090g/2402m similar=1778g/10133m blurry=358g/358m screenshots=1135g/1135m largeVideos=50g/50m
+### DONE

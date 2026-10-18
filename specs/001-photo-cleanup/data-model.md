@@ -23,7 +23,9 @@ iclean stores only identifiers and analysis results.
 | `isPortrait`, `isLongExposure` | Bool | Excluded from blur (FR-003a) |
 | `burstID` | String? | PhotoKit burst identifier |
 | `albumNames` | [String] | User-made albums containing the item (album badge) |
-| `analysisSource` | enum `localPreview` / `cloudPreview` / `notScanned` | FR-014 |
+| `addedDate` | Date? | When the item was added to the library; read from iOS 26, nil before and in stores written by earlier versions. Used to judge which copy's date is real (added 2026-10-18, specs/006-date-aware-keepers/spec.md) |
+| `hasLocation` | Bool? | Whether the item has a location; nil means not known yet (earlier stores), never "none". Same use as `addedDate` |
+| `analysisSource` | enum `localPreview` / `cloudPreview` / `notScanned` / `metadataOnly` | FR-014. `metadataOnly` marks a video in the free app: it is stored with its metadata only, for ranking, and its `Analysis` is nil (added 2026-10-18, see specs/004-phased-cleaning/spec.md FR-004a). It is not `notScanned`, which means a photo that could not be analyzed because only iCloud has it: `metadataOnly` is not a failure, is not counted as not scanned, and is not retried. With Pro, the next full scan analyzes it. |
 | `dHash` | UInt64? | Duplicate candidate fingerprint (R3) |
 | `thumbprint` | Data? | 16×16 grayscale miniature; confirms duplicates (R3) |
 | `featurePrint` | Data? | Serialized Vision feature print (R3, R4) |
@@ -35,7 +37,8 @@ iclean stores only identifiers and analysis results.
 | `analyzedAt` | Date | |
 
 **Validation**
-- `dHash`, `featurePrint`, `sharpness` are nil when `analysisSource == .notScanned`.
+- `dHash`, `featurePrint`, `sharpness` are nil when `analysisSource == .notScanned` or
+  `.metadataOnly`.
 - Re-analysis is required when the asset's current `modificationDate` differs from the
   stored one.
 
@@ -59,7 +62,7 @@ individually or all at once.
 | `startedAt`, `finishedAt` | Date / Date? | |
 | `totalItems` | Int | |
 | `processedItems` | Int | Saved every 100 items (R10) |
-| `notScannedCount` | Int | Shown to the user (FR-014) |
+| `notScannedCount` | Int | Shown to the user (FR-014); videos stored as `metadataOnly` are not counted |
 | `lastProcessedAssetID` | String? | Resume point |
 
 **State transitions**
@@ -84,27 +87,35 @@ match the current library.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | String | Stable: hash of sorted member asset IDs |
-| `type` | enum `duplicatePhotos` / `similarShots` / `duplicateVideos` | |
+| `type` | enum `duplicatePhotos` / `similarShots` | `duplicateVideos` is Pro only since 2026-10-18: the free app does not analyze videos (see specs/004-phased-cleaning/spec.md FR-004a) |
 | `members` | [assetID] | ≥ 2 |
 | `keepers` | Set<assetID> | ≥ 1 unless the user selects all and confirms the warning (FR-016) |
 
 **Keeper rules**
-- Duplicate photos/videos (FR-008): every favorite is a keeper; otherwise highest
-  resolution and quality, tie → oldest `captureDate`.
+- Duplicate photos (FR-008): every favorite is a keeper; otherwise highest
+  resolution and quality, tie → oldest `captureDate`. *Amended 2026-10-18 by specs/006-date-aware-keepers/spec.md: among copies with different dates the copy whose date is most probably the real capture date is kept (impossible dates lose first, then resolution, then dates and details that look less reliable, then the earliest date, then file size, then the oldest).* (The video rule is Pro only since
+  2026-10-18: the free app does not analyze videos, see specs/004-phased-cleaning/spec.md
+  FR-004a.)
 - Similar shots: every favorite is a keeper; otherwise highest `sharpness`, tie-break on
   face capture quality (R4).
 
 ### Category
 
-`Duplicates`, `Similar`, `Blurry`, `Screenshots`, `Duplicate Videos`, `Large Videos`.
+`Duplicates`, `Similar`, `Blurry`, `Screenshots`, `Large Videos` (five in the free app).
+With Pro there are six: `Duplicate Videos` sits between `Screenshots` and `Large Videos`
+(Pro only since 2026-10-18: the free app does not analyze videos, see
+specs/004-phased-cleaning/spec.md FR-004a).
 
 **Category assignment** (an item appears in only one; first match wins):
-`Duplicates → Similar → Blurry → Screenshots`. Duplicate Videos and Large Videos apply to
-videos only; a video in a duplicate group is not listed again in Large Videos.
+`Duplicates → Similar → Blurry → Screenshots → Large Videos` (with Pro, Duplicate Videos
+sits between Screenshots and Large Videos). Large Videos applies to videos only and ranks
+them by file size, with no analysis.
 
 **Flagging exclusions** (apply to every category): favorites, KeepMarks, items in shared
 albums, items with `analysisSource == .notScanned` (except Screenshots and Large Videos,
-which need only metadata).
+which need only metadata). Items with `analysisSource == .metadataOnly` are videos and can
+appear only in Large Videos in the free app. With Pro, the next full scan analyzes them and
+they can then be grouped in Duplicate Videos.
 
 ### Selection (review state, kept in memory and saved with the session)
 

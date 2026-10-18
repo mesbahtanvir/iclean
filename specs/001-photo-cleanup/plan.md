@@ -6,14 +6,17 @@
 
 ## Summary
 
-An iPhone app that scans the Photos library on the device and offers six cleanup
-categories: duplicate photos, similar shots, blurry photos, screenshots, duplicate videos,
-and large videos. Removal always goes through one summary sheet and then to Recently
-Deleted. Built natively in Swift/SwiftUI. Analysis uses only Apple's on-device frameworks:
-PhotoKit for library access with network access always off, Vision feature prints for
-duplicates and similarity, and Laplacian sharpness plus Vision aesthetics for blur.
-Results are cached in a local SwiftData store that is excluded from backup. There are no
-third-party runtime dependencies and no network code (see [research.md](research.md)).
+An iPhone app that scans the Photos library on the device and offers five cleanup
+categories in the free app: duplicate photos, similar shots, blurry photos, screenshots, and
+large videos. (A sixth category, duplicate videos, is Pro only since 2026-10-18: the free
+app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet, see
+specs/004-phased-cleaning/spec.md FR-004a.) Removal always goes through one
+summary sheet and then to Recently Deleted. Built natively in Swift/SwiftUI. Analysis uses
+only Apple's on-device frameworks: PhotoKit for library access with network access always
+off, Vision feature prints for duplicates and similarity, and Laplacian sharpness plus
+Vision aesthetics for blur. Results are cached in a local SwiftData store that is
+excluded from backup. There are no third-party runtime dependencies and no network code
+(see [research.md](research.md)).
 
 ## Technical Context
 
@@ -39,7 +42,7 @@ iPhone 12-class device; repeat scan with no changes < 30 s; review grids scroll 
 download originals; foreground-only scanning; resumable; pause on serious thermal state;
 peak memory < 300 MB during scan
 
-**Scale/Scope**: libraries up to 100,000 items; 10 screens (contracts/ui.md); 6 categories
+**Scale/Scope**: libraries up to 100,000 items; 10 screens (contracts/ui.md); 5 categories in the free app (6 with Pro)
 
 ## Constitution Check
 
@@ -107,7 +110,7 @@ Packages/CleanupKit/            # All logic; no UI
 ├── Sources/CleanupKit/
 │   ├── Library/                # PhotoLibrary protocol + PhotoKit implementation
 │   ├── Analysis/               # dHash, sharpness, feature print, aesthetics
-│   ├── Grouping/               # duplicates, similar, duplicate videos
+│   ├── Grouping/               # duplicates, similar (duplicate videos: Pro only since 2026-10-18)
 │   ├── Results/                # categories, keepers, default selection
 │   ├── Scanning/               # scan pipeline, sessions, resume
 │   ├── Removal/                # summary + removal

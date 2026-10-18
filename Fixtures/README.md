@@ -31,3 +31,11 @@ add photos you have the rights to under `Fixtures/` and describe them in
 ```
 
 When `labels.json` exists, the accuracy tests also run against these photos.
+
+## Baseline library (the same check on every device)
+
+`BaselineKit` draws 73 labelled photos and videos from recipes, adds them to the
+Photos library of a simulator or device, and checks that the real pipeline finds exactly
+what is expected in the free app (videos are listed by size and never analyzed). Reports
+land in `Fixtures/baseline-reports/` (git-ignored), one per device, and can be lined up with
+`scripts/compare-baseline-reports.py`. See `docs/BASELINE_LIBRARY.md`.

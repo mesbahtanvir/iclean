@@ -67,8 +67,8 @@ engine, and the shared review screens. Every story plugs a detector into this.
 
 ### Domain types and storage
 
-- [X] T010 [P] Create value types in `Packages/CleanupKit/Sources/CleanupKit/Models/Types.swift`: `ItemKind` (enum `photo` / `screenshot` / `video` / `livePhoto`), `AnalysisSource` (enum `localPreview` / `cloudPreview` / `notScanned`), `LibraryAccess` (`full` / `limited` / `denied` / `notDetermined`), `ScanState` (`idle` / `running` / `paused` / `stopped` / `completed`), `ScanKind` (`full` / `quickCheck`), `CleanupCategory` (ordered: `duplicates`, `similar`, `blurry`, `screenshots`, `duplicateVideos`, `largeVideos`), `AssetMetadata` (assetID, kind, captureDate, modificationDate, pixelWidth, pixelHeight, duration, isFavorite, hasAdjustments, isPortrait, isLongExposure, burstID, albumNames), and `Analysis` per contracts/services.md. All `Sendable`.
-- [X] T011 [P] Create SwiftData model `Packages/CleanupKit/Sources/CleanupKit/Store/LibraryItemRecord.swift` with every LibraryItem field from data-model.md: `assetID` String **unique**, `kind`, `captureDate` Date?, `modificationDate` Date?, `pixelWidth`/`pixelHeight` Int, `duration` Double? (videos only), `isFavorite`, `hasAdjustments`, `isPortrait`, `isLongExposure` Bool, `burstID` String?, `albumNames` [String], `analysisSource`, `dHash` UInt64?, `featurePrint` Data?, `sharpness` Double?, `aestheticsScore` Double?, `faceQuality` Double?, `byteSize` Int64?, `isSizeEstimated` Bool, `analyzedAt` Date. Rule (enforce in an initializer/validate method): "`dHash`, `featurePrint`, `sharpness` are nil when `analysisSource == .notScanned`".
+- [X] T010 [P] Create value types in `Packages/CleanupKit/Sources/CleanupKit/Models/Types.swift`: `ItemKind` (enum `photo` / `screenshot` / `video` / `livePhoto`), `AnalysisSource` (enum `localPreview` / `cloudPreview` / `notScanned` / `metadataOnly`), `LibraryAccess` (`full` / `limited` / `denied` / `notDetermined`), `ScanState` (`idle` / `running` / `paused` / `stopped` / `completed`), `ScanKind` (`full` / `quickCheck`), `CleanupCategory` (ordered; the free app's five: `duplicates`, `similar`, `blurry`, `screenshots`, `largeVideos`), `AssetMetadata` (assetID, kind, captureDate, modificationDate, pixelWidth, pixelHeight, duration, isFavorite, hasAdjustments, isPortrait, isLongExposure, burstID, albumNames), and `Analysis` per contracts/services.md. All `Sendable`. (Amended 2026-10-18: `metadataOnly` added to `AnalysisSource`, because the free app does not analyze videos; `duplicateVideos` is a Pro-only `CleanupCategory`, between `screenshots` and `largeVideos`, and video analysis is a one-time $2 Pro feature, not built yet; see specs/004-phased-cleaning/spec.md FR-004a.)
+- [X] T011 [P] Create SwiftData model `Packages/CleanupKit/Sources/CleanupKit/Store/LibraryItemRecord.swift` with every LibraryItem field from data-model.md: `assetID` String **unique**, `kind`, `captureDate` Date?, `modificationDate` Date?, `pixelWidth`/`pixelHeight` Int, `duration` Double? (videos only), `isFavorite`, `hasAdjustments`, `isPortrait`, `isLongExposure` Bool, `burstID` String?, `albumNames` [String], `analysisSource`, `dHash` UInt64?, `featurePrint` Data?, `sharpness` Double?, `aestheticsScore` Double?, `faceQuality` Double?, `byteSize` Int64?, `isSizeEstimated` Bool, `analyzedAt` Date. Rule (enforce in an initializer/validate method): "`dHash`, `featurePrint`, `sharpness` are nil when `analysisSource == .notScanned` or `.metadataOnly`" (the `.metadataOnly` case was added on 2026-10-18).
 - [X] T012 [P] Create SwiftData models `Packages/CleanupKit/Sources/CleanupKit/Store/KeepMarkRecord.swift` (`assetID` String **unique**, `createdAt` Date) and `Packages/CleanupKit/Sources/CleanupKit/Store/ScanSessionRecord.swift` (`id` UUID, `kind` ScanKind, `state` ScanState, `startedAt`, `finishedAt` Date?, `totalItems`, `processedItems`, `notScannedCount` Int, `lastProcessedAssetID` String?).
 - [X] T013 Create `Store` protocol (exact signatures from contracts/services.md) in `Packages/CleanupKit/Sources/CleanupKit/Store/Store.swift` and `SwiftDataStore` in `Packages/CleanupKit/Sources/CleanupKit/Store/SwiftDataStore.swift`: store file at `Application Support/iclean/iclean.store`, `ModelConfiguration(cloudKitDatabase: .none)`, set `URLResourceValues.isExcludedFromBackup = true` on the folder, file protection `.completeUntilFirstUserAuthentication`; enforce "only one session can be `running` or `paused` at a time"; `deleteAllData()` deletes the store files and recreates an empty store (FR-018). Depends on the three model tasks.
 
@@ -88,12 +88,12 @@ engine, and the shared review screens. Every story plugs a detector into this.
 
 ### Scan pipeline
 
-- [X] T022 Implement `Scanner` protocol and `ScanPipeline` in `Packages/CleanupKit/Sources/CleanupKit/Scanning/ScanPipeline.swift` (FR-005, FR-005a, FR-006, research R10, R11): fetch metadata; skip items whose stored `modificationDate` equals the current one; analyze previews (512 px) in a task group capped at 4 concurrent items at `.userInitiated`; record `analysisSource` from `PreviewResult` and count `.unavailable` as not scanned; upsert and save the session every 100 items with `lastProcessedAssetID`; support pause/resume/stop and resuming an interrupted `running` session after relaunch; pause automatically while `ProcessInfo.thermalState` is `.serious` or `.critical`; delete records for assets no longer in the library; `quickCheck()` runs the same diff limited to new/changed items. Emits `ScanProgress`.
+- [X] T022 Implement `Scanner` protocol and `ScanPipeline` in `Packages/CleanupKit/Sources/CleanupKit/Scanning/ScanPipeline.swift` (FR-005, FR-005a, FR-006, research R10, R11): fetch metadata; skip items whose stored `modificationDate` equals the current one; analyze previews (512 px) in a task group capped at 4 concurrent items at `.userInitiated`; record `analysisSource` from `PreviewResult` and count `.unavailable` as not scanned (exception: in the free app a video is not previewed or analyzed and is stored as metadata only, `analysisSource == .metadataOnly`, which is not counted as not scanned and is not retried; with Pro (`ProFeatures.videoAnalysis`) a video is analyzed as before, and the next full scan analyzes videos stored as metadata only, a quick check never does; see specs/004-phased-cleaning/spec.md FR-004a); upsert and save the session every 100 items with `lastProcessedAssetID`; support pause/resume/stop and resuming an interrupted `running` session after relaunch; pause automatically while `ProcessInfo.thermalState` is `.serious` or `.critical`; delete records for assets no longer in the library; `quickCheck()` runs the same diff limited to new/changed items. Emits `ScanProgress`.
 - [X] T023 Implement `SizeMeasurer` in `Packages/CleanupKit/Sources/CleanupKit/Scanning/SizeMeasurer.swift` (research R7): after analysis, fill `byteSize` from `localByteSize`; when nil, estimate (photos: `pixelWidth × pixelHeight × 0.35` bytes; videos: `duration × 1_000_000` bytes for ≤1080p, `× 3_000_000` above) and set `isSizeEstimated = true`. Cache by assetID + modificationDate.
 
 ### Results and removal engine
 
-- [X] T024 Create `CategoryDetector` protocol in `Packages/CleanupKit/Sources/CleanupKit/Results/CategoryDetector.swift`: `category: CleanupCategory`, `needsAnalysis: Bool` (false for metadata-only categories), `detect(items: [LibraryItem], alreadyAssigned: Set<String>) -> [ResultGroup]`; and `ResultGroup` (`id` = hash of sorted member IDs, `type` `duplicatePhotos` / `similarShots` / `duplicateVideos` / `single`, `members`, `keepers`, `confidence` `.normal` / `.lower`).
+- [X] T024 Create `CategoryDetector` protocol in `Packages/CleanupKit/Sources/CleanupKit/Results/CategoryDetector.swift`: `category: CleanupCategory`, `needsAnalysis: Bool` (false for metadata-only categories), `detect(items: [LibraryItem], alreadyAssigned: Set<String>) -> [ResultGroup]`; and `ResultGroup` (`id` = hash of sorted member IDs, `type` `duplicatePhotos` / `similarShots` / `single`, `members`, `keepers`, `confidence` `.normal` / `.lower`). (`duplicateVideos` is a Pro-only `type`, Pro only since 2026-10-18: the free app does not analyze videos, see specs/004-phased-cleaning/spec.md FR-004a.)
 - [X] T025 Implement `ResultsBuilder` protocol and `DefaultResultsBuilder` in `Packages/CleanupKit/Sources/CleanupKit/Results/ResultsBuilder.swift` (data-model.md "Derived"): runs registered detectors in `CleanupCategory` order passing already-assigned IDs so "an item appears in at most one category"; before detection removes favorites (they may only appear as keepers), keep-marked items, and items with `analysisSource == .notScanned` unless the detector has `needsAnalysis == false`; builds `defaultSelection` = every non-keeper member of every category except `largeVideos` (FR-010a); totals count and bytes per category (FR-007); exposes `notScannedCount`. Detectors are injected so stories add them independently.
 - [X] T026 Implement `Remover` protocol and `DefaultRemover` in `Packages/CleanupKit/Sources/CleanupKit/Removal/Remover.swift`: `summary` returns count and bytes per category and an `isEstimate` flag; `remove` returns an error without removing anything if any group would lose all members unless `confirmRemoveAll` is true (FR-016); calls `PhotoLibrary.remove`; builds `CleanupSummary` (data-model.md) with `bytesFreed` counting only items actually removed and `failedAssetIDs`.
 
@@ -134,7 +134,7 @@ found with the right keeper, remove extras, and check the count and space report
 ### Tests for User Story 1 (write first) ⚠️
 
 - [X] T042 [P] [US1] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/DuplicatePhotoDetectorTests.swift`: resized/recompressed/format-changed copies group together; an edited item (`hasAdjustments == true`) is never grouped with an unedited one (FR-002); look-alike but different photos are not grouped; aspect-ratio mismatch never groups.
-- [X] T043 [P] [US1] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/KeeperRulesTests.swift`: duplicate keeper order "favorited first, then highest resolution and file quality; if still tied, the oldest"; several favorites in one group are all keepers.
+- [X] T043 [P] [US1] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/KeeperRulesTests.swift`: duplicate keeper order "favorited first, then highest resolution and file quality; if still tied, the oldest"; several favorites in one group are all keepers. *Amended 2026-10-18 by specs/006-date-aware-keepers/spec.md: among copies with different dates the copy whose date is most probably the real capture date is kept (impossible dates lose first, then resolution, then dates and details that look less reliable, then the earliest date, then file size, then the oldest).*
 - [X] T044 [P] [US1] UI test in `icleanUITests/DuplicatesFlowTests.swift`: scan seeded library → open Duplicates → groups shown with one keeper each, non-keepers selected → change keeper in group detail → Remove → Confirm sheet shows count/space → accept iOS prompt (via `addUIInterruptionMonitor`) → Done shows the same count; cancel path removes nothing.
 
 ### Implementation for User Story 1
@@ -220,17 +220,23 @@ are listed, remove a selection.
 
 ## Phase 7: User Story 5 - Remove duplicate videos (Priority: P5)
 
+**Pro only since 2026-10-18**: the free app does not analyze videos, so this phase's
+detector is off unless `ProFeatures.videoAnalysis` is on (default off in every release
+build; the debug launch argument `-ProVideoAnalysis` turns it on for tests). Video analysis
+is a one-time $2 Pro feature; the purchase is not built yet (see
+specs/004-phased-cleaning/spec.md FR-004a). The tasks below describe the Pro behavior.
+
 **Goal**: Group duplicate videos, keep the best copy, remove the rest.
 
 **Independent Test**: Seed duplicate video pairs, scan, confirm each pair is one group
 with the higher-quality copy kept, remove extras.
 
-- [X] T071 [P] [US5] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/DuplicateVideoDetectorTests.swift`: same duration (± 0.5 s), aspect ratio and matching poster frame group; different durations never group; keeper = favorite, else largest pixel size, else oldest (Story 5 scenario 1).
-- [ ] T072 [P] [US5] Add ≥ 6 short duplicate video pairs (same clip at 1080p and 720p, different container) to `Fixtures/videos/` with `"duplicateGroup"` labels in `Fixtures/labels.json`.
-- [X] T073 [US5] Implement `DuplicateVideoDetector` in `Packages/CleanupKit/Sources/CleanupKit/Grouping/DuplicateVideoDetector.swift` (FR-004b, research R6): candidates bucketed by duration (0.5 s buckets, check neighbours) and aspect ratio; confirm with dHash ≤ 4 and feature-print distance of the poster-frame preview; keepers via `KeeperRules.duplicateKeepers`; category `duplicateVideos`. Register it in `iclean/App/Detectors.swift`.
-- [X] T074 [US5] UI test in `icleanUITests/DuplicateVideosFlowTests.swift`: the pair appears as one group, higher quality is kept, removal removes only the other copy.
+- [X] T071 [P] [US5] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/DuplicateVideoDetectorTests.swift`: same duration (± 0.5 s), aspect ratio and matching poster frame group; different durations never group; keeper = favorite, else largest pixel size, else oldest (Story 5 scenario 1). *Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
+- [ ] T072 [P] [US5] Add ≥ 6 short duplicate video pairs (same clip at 1080p and 720p, different container) to `Fixtures/videos/` with `"duplicateGroup"` labels in `Fixtures/labels.json`. *Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
+- [X] T073 [US5] Implement `DuplicateVideoDetector` in `Packages/CleanupKit/Sources/CleanupKit/Grouping/DuplicateVideoDetector.swift` (FR-004b, research R6): candidates bucketed by duration (0.5 s buckets, check neighbours) and aspect ratio; confirm with dHash ≤ 4 and feature-print distance of the poster-frame preview; keepers via `KeeperRules.duplicateKeepers`; category `duplicateVideos`. Register it in `iclean/App/Detectors.swift` (registered only when `ProFeatures.videoAnalysis` is on). *Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
+- [X] T074 [US5] UI test in `icleanUITests/DuplicateVideosFlowTests.swift`: the pair appears as one group, higher quality is kept, removal removes only the other copy. *Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
 
-**Checkpoint**: Duplicate Videos works independently.
+**Checkpoint**: Duplicate Videos works independently. *Pro only since 2026-10-18 (see above).*
 
 ---
 
@@ -241,12 +247,12 @@ with the higher-quality copy kept, remove extras.
 **Independent Test**: Seed videos of known sizes, open Large Videos, confirm order and
 sizes, remove one chosen video.
 
-- [X] T075 [P] [US6] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/LargeVideosCategoryTests.swift`: at most 50 items; ordered by `byteSize` descending; none in `defaultSelection`; videos already in a duplicate-video group are not listed; included even when `notScanned` (metadata only); estimated sizes flagged.
+- [X] T075 [P] [US6] Test in `Packages/CleanupKit/Tests/CleanupKitTests/Unit/LargeVideosCategoryTests.swift`: at most 50 items; ordered by `byteSize` descending; none in `defaultSelection`; videos already in a duplicate-video group are not listed; included even when `notScanned` (metadata only); estimated sizes flagged. (Amended 2026-10-18: the free app has no duplicate-video groups, so that check does not apply there (with Pro, first-match order keeps a video in a duplicate-video group out of Large Videos); videos are included with `analysisSource == .metadataOnly`, since they need no analysis, and `notScanned` now means only a photo that could not be analyzed.)
 - [X] T076 [US6] Implement `LargeVideosCategory` (detector with `needsAnalysis == false`) in `Packages/CleanupKit/Sources/CleanupKit/Grouping/LargeVideosCategory.swift` (FR-004c) and register it in `iclean/App/Detectors.swift`.
 - [X] T077 [US6] Use the list layout in `iclean/Features/Category/CategoryView.swift` for `largeVideos`: thumbnail, size ("about" when estimated), duration, unselected by default.
 - [X] T078 [US6] UI test in `icleanUITests/LargeVideosFlowTests.swift`: list is ordered largest first, nothing selected; select one → remove → only that video removed.
 
-**Checkpoint**: All six stories work independently.
+**Checkpoint**: All five free-app stories work independently (Story 5 is Pro only since 2026-10-18).
 
 ---
 
@@ -284,7 +290,9 @@ sizes, remove one chosen video.
   so it works with or without US1.
 - **US4 (P4)**, **US6 (P6)**: Foundational only (metadata-only detectors).
 - **US5 (P5)**: Foundational only; reuses `KeeperRules.duplicateKeepers` (create it if US1
-  is not done).
+  is not done). Pro only since 2026-10-18: the free app does not analyze videos, so its
+  detector is off unless `ProFeatures.videoAnalysis` is on (see
+  specs/004-phased-cleaning/spec.md FR-004a).
 
 ### Within Each Story
 
@@ -342,7 +350,7 @@ Developer C: US4 + US6 (metadata-only categories)
 
 ### Incremental Delivery
 
-US1 → US2 → US3 → US4 → US5 → US6, validating each story's checkpoint before moving on.
+US1 → US2 → US3 → US4 → US5 → US6, validating each story's checkpoint before moving on (US5 is Pro only since 2026-10-18).
 US4 and US6 are small and can be slotted in early for quick wins.
 
 ---
@@ -354,7 +362,8 @@ Open tasks need a physical iPhone or real media:
 - **T054**: verify how PhotoKit reports Long Exposure Live Photos. A heuristic is in
   place (`Library/LongExposure.swift`) but unverified.
 - **T072**: real duplicate-video files. Covered for now by unit tests on poster frames
-  and by the demo library.
+  and by the demo library. Pro only since 2026-10-18 with Story 5 (the free app does not
+  analyze videos, see specs/004-phased-cleaning/spec.md FR-004a).
 - **T084**: performance on a 10,000-photo library on a physical iPhone 12-class device.
 - **T086**: quickstart run. Every scenario passed except Scenario 6 (performance,
   device only).

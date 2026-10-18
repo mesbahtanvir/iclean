@@ -58,7 +58,8 @@ scripts/seed-simulator.sh "iPhone 17 Pro"
 ```
 
 Imports `Fixtures/` (labeled duplicates, edits, bursts, sharp/blurry/portrait shots,
-screenshots, duplicate videos) into the simulator's Photos library.
+screenshots, duplicate videos (Pro only since 2026-10-18, see Scenario 4)) into the simulator's
+Photos library.
 
 ## Scenario 3 — Duplicates (Story 1)
 
@@ -67,7 +68,8 @@ screenshots, duplicate videos) into the simulator's Photos library.
 
 Expected:
 - Each labeled duplicate set appears as one group with one keeper (highest quality,
-  then oldest); edited versions are not grouped with their originals.
+  then oldest; since 2026-10-18 a copy with the most probable capture date is preferred, see
+  specs/006-date-aware-keepers/spec.md); edited versions are not grouped with their originals.
 - Non-keepers are pre-selected; the favorited fixture is never selected.
 - Confirm → the summary sheet shows count and space → iOS asks → **Done** shows the
   same count; items are in the Photos app's Recently Deleted.
@@ -79,7 +81,11 @@ Expected:
 - **Similar**: each burst fixture is one group with a suggested best shot; keeping 2 and
   confirming removes only the rest.
 - **Screenshots**: all screenshots, newest first, all pre-selected.
-- **Duplicate Videos**: the duplicate video pair is one group; higher quality is kept.
+- **Duplicate Videos** (Pro only): the duplicate video pair is one group; higher quality
+  is kept. *Pro only since 2026-10-18: the free app does not analyze videos, so it has no
+  Duplicate Videos category; video analysis is a one-time $2 Pro feature, not built yet (see
+  specs/004-phased-cleaning/spec.md FR-004a). To check this item, launch a debug build with
+  `-ProVideoAnalysis`.*
 - **Large Videos**: up to 50 videos, largest first, none selected.
 - An item never appears in two categories.
 
