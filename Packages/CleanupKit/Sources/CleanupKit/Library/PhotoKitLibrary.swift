@@ -72,8 +72,15 @@
         public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
             guard !assetIDs.isEmpty else { return [] }
             var assets: [PHAsset] = []
-            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil).enumerateObjects {
+            // The same view of the library as the full enumeration: the person's own library, bursts
+            // included, and nothing hidden. A photo that is hidden, in Recently Deleted or outside
+            // a limited selection is simply not returned, which is what a check before removing wants.
+            let options = PHFetchOptions()
+            options.includeAssetSourceTypes = [.typeUserLibrary]
+            options.includeAllBurstAssets = true
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
                 asset, _, _ in
+                guard !asset.isHidden else { return }
                 if asset.mediaType == .image || asset.mediaType == .video { assets.append(asset) }
             }
             return assets.map { asset in
@@ -86,6 +93,24 @@
                     }
                 return Self.metadata(for: asset, albums: names)
             }
+        }
+
+        public func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp] {
+            guard !assetIDs.isEmpty else { return [:] }
+            let options = PHFetchOptions()
+            options.includeAssetSourceTypes = [.typeUserLibrary]
+            options.includeAllBurstAssets = true
+            var out: [String: AssetStamp] = [:]
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
+                asset, _, _ in
+                guard !asset.isHidden, asset.mediaType == .image || asset.mediaType == .video
+                else { return }
+                out[asset.localIdentifier] = AssetStamp(
+                    modificationDate: asset.modificationDate, isFavorite: asset.isFavorite,
+                    hasAdjustments: asset.hasAdjustments, pixelWidth: asset.pixelWidth,
+                    pixelHeight: asset.pixelHeight)
+            }
+            return out
         }
 
         static func metadata(for asset: PHAsset, albums: [String]) -> AssetMetadata {
@@ -142,7 +167,8 @@
             guard let asset = asset(assetID) else { return .unavailable }
             let size = CGSize(width: maxPixels, height: maxPixels)
             let (image, inCloud) = await requestImage(
-                asset, size: size, options: NetworkOffOptions.image(deliveryMode: .highQualityFormat))
+                asset, size: size,
+                options: NetworkOffOptions.image(deliveryMode: .highQualityFormat))
             if let image { return .local(image) }
             guard inCloud else { return .unavailable }
             let (thumb, _) = await requestImage(

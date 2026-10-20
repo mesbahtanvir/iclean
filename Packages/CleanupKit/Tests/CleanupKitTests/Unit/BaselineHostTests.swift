@@ -55,7 +55,59 @@ import Testing
         let report = try await BaselineRunner.run(
             catalog: catalog, rendered: rendered, library: library, mapping: mapping)
         print(report.summary())
-        print(report.metrics.sorted { $0.key < $1.key }.map { "\($0.key)=\(String(format: "%.2f", $0.value))" }.joined(separator: " "))
+        print(
+            report.metrics.sorted { $0.key < $1.key }.map {
+                "\($0.key)=\(String(format: "%.2f", $0.value))"
+            }.joined(separator: " "))
         #expect(report.failed.isEmpty, "\n\(report.summary())")
     }
+
+    /// What the results builder produces for the baseline library, as a fingerprint of the groups
+    /// and the kept copy of each (only the parts the catalog asserts, so no borderline photo can
+    /// make it differ between machines). A saved snapshot is trusted only while
+    /// `BuilderVersion.current` is the version the builder had when it was saved, so a change of
+    /// behaviour that moves this fingerprint must bump the version, and this test makes you say
+    /// so by updating both numbers together.
+    @Test func theBuilderOutputOnTheBaselineIsPinnedToTheBuilderVersion() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appending(path: "iclean-golden-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let rendered = try await BaselineRenderer.renderAll(catalog, to: folder)
+        let library = RenderedPhotoLibrary(catalog: catalog, rendered: rendered)
+        let subset = SubsetPhotoLibrary(base: library, allowed: Set(catalog.assets.map(\.id)))
+        let store = try SwiftDataStore.inMemory()
+        let scanner = ScanPipeline(
+            library: subset, store: store, analyzer: StandardPipeline.analyzer, features: .free)
+        for await _ in await scanner.startFullScan() {}
+        var items = try await store.items()
+        _ = await SizeMeasurer(library: subset, store: store).measure(items)
+        items = try await store.items()
+        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors(.free))
+            .buildResults(items: items, keepMarks: [])
+
+        var lines: [String] = []
+        for c in results.categories
+        where [.duplicates, .similar, .largeVideos].contains(c.category) {
+            for g in c.groups {
+                lines.append(
+                    "\(c.category.rawValue)|\(g.members.sorted().joined(separator: ","))|"
+                        + g.keepers.sorted().joined(separator: ","))
+            }
+        }
+        lines.sort()
+        let fingerprint = StateCodec.checksum(Data(lines.joined(separator: "\n").utf8))
+            .map { String(format: "%02x", $0) }.joined().prefix(16).description
+        print("builder fingerprint \(fingerprint) for BuilderVersion \(BuilderVersion.current)")
+        #expect(
+            fingerprint == Self.pinnedFingerprint && BuilderVersion.current == Self.pinnedVersion,
+            """
+            The results builder's output on the baseline library changed, or the builder version did.
+            If the output changed on purpose, bump BuilderVersion.current so saved results built the
+            old way are never shown, then set pinnedVersion and pinnedFingerprint to the new values
+            printed above. Lines:\n\(lines.joined(separator: "\n"))
+            """)
+    }
+
+    static let pinnedVersion = 1
+    static let pinnedFingerprint = "d147a997dda94d41"
 }

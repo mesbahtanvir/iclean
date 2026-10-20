@@ -12,11 +12,15 @@ public actor SizeMeasurer {
         self.store = store
     }
 
-    /// Measures items without a measured size and saves them. Returns updated items.
+    /// Measures items without a measured size and saves just those sizes (never the rest of the
+    /// item: results hold slim items, and writing one back would wipe its stored fingerprints).
+    /// Returns the updated items.
     public func measure(_ items: [LibraryItem]) async -> [LibraryItem] {
         var updated: [LibraryItem] = []
+        var sizes: [String: MeasuredSize] = [:]
         for var item in items where item.byteSize == nil {
-            let key = "\(item.assetID)|\(item.metadata.modificationDate?.timeIntervalSince1970 ?? 0)"
+            let key =
+                "\(item.assetID)|\(item.metadata.modificationDate?.timeIntervalSince1970 ?? 0)"
             guard !measured.contains(key) else { continue }
             measured.insert(key)
             if let bytes = await library.localByteSize(for: item.assetID) {
@@ -26,9 +30,11 @@ public actor SizeMeasurer {
                 item.byteSize = SizeEstimator.estimate(item.metadata)
                 item.isSizeEstimated = true
             }
+            sizes[item.assetID] = MeasuredSize(
+                bytes: item.byteSize ?? 0, isEstimated: item.isSizeEstimated)
             updated.append(item)
         }
-        try? await store.upsert(updated)
+        try? await store.setSizes(sizes)
         return updated
     }
 }

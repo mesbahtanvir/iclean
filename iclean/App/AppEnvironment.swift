@@ -17,9 +17,13 @@ struct AppEnvironment: Sendable {
             if LaunchArguments.isUITesting { return uiTesting() }
         #endif
         let library = PhotoKitLibrary()
-        // The on-disk store only fails if Application Support is unusable; fall back to
-        // memory so the app still works (results are then not remembered).
-        let store: Store = (try? SwiftDataStore.onDisk()) ?? (try! SwiftDataStore.inMemory())
+        // The store opens itself off the main thread, on first use. If it cannot be opened the
+        // app runs on a memory store and says so (it never silently looks like an empty library),
+        // and the damaged files are left exactly as they are.
+        let store = DeferredStore(
+            opening: { try SwiftDataStore.onDisk() },
+            fallback: { try SwiftDataStore.inMemory() },
+            erase: { try SwiftDataStore.eraseStoreFiles(in: SwiftDataStore.storeFolder()) })
         return make(library: library, store: store)
     }
 
@@ -40,14 +44,22 @@ struct AppEnvironment: Sendable {
     #if DEBUG
         static func uiTesting() -> AppEnvironment {
             let args = ProcessInfo.processInfo.arguments
-            var store: Store = try! SwiftDataStore.inMemory()
+            let store: DeferredStore
             if args.contains("-PersistStore") {
                 // On disk in tmp, so a test can relaunch and resume (EdgeCaseTests).
                 let folder = FileManager.default.temporaryDirectory.appending(path: "iclean-uitest")
                 if args.contains("-ResetStore") { try? FileManager.default.removeItem(at: folder) }
-                store = try! SwiftDataStore.at(folder: folder)
+                store = DeferredStore(
+                    opening: { try SwiftDataStore.at(folder: folder) },
+                    fallback: { try SwiftDataStore.inMemory() },
+                    erase: { try SwiftDataStore.eraseStoreFiles(in: folder) })
+            } else {
+                store = DeferredStore(
+                    opening: { try SwiftDataStore.inMemory() },
+                    fallback: { try SwiftDataStore.inMemory() })
             }
-            return make(library: DemoPhotoLibrary(scenario: LaunchArguments.demoScenario), store: store)
+            return make(
+                library: DemoPhotoLibrary(scenario: LaunchArguments.demoScenario), store: store)
         }
     #endif
 }

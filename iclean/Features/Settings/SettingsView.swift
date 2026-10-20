@@ -35,11 +35,15 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Recent Scans") { RecentScansView() }
                     .accessibilityIdentifier("settings.recentScans")
+                NavigationLink("Saved on this iPhone") { SavedDataView() }
+                    .accessibilityIdentifier("settings.savedData")
             }
             #if DEBUG
                 Section {
-                    NavigationLink("Baseline Library (Debug)") { BaselineView(autoRun: false) }
-                        .accessibilityIdentifier("settings.baseline")
+                    NavigationLink("Baseline Library (Debug)") {
+                        BaselineView(autoRun: false, standalone: false)
+                    }
+                    .accessibilityIdentifier("settings.baseline")
                 }
             #endif
         }

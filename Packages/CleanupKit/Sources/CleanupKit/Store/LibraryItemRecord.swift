@@ -87,6 +87,34 @@ final class LibraryItemRecord {
         scanAttempts = item.scanAttempts
     }
 
+    /// Whether writing `item` over this record would change anything results are built from.
+    /// Bookkeeping (`analyzedAt`, `scanAttempts`, `scanFailure`) is not part of it, so a retry
+    /// counter or a re-save of identical values never makes saved results look stale.
+    func resultsProjectionDiffers(from item: LibraryItem) -> Bool {
+        let m = item.metadata
+        if kindRaw != m.kind.rawValue || captureDate != m.captureDate
+            || modificationDate != m.modificationDate || pixelWidth != m.pixelWidth
+            || pixelHeight != m.pixelHeight || duration != m.duration
+            || isFavorite != m.isFavorite || hasAdjustments != m.hasAdjustments
+            || isPortrait != m.isPortrait || isLongExposure != m.isLongExposure
+            || burstID != m.burstID || albumNames != m.albumNames || addedDate != m.addedDate
+            || hasLocation != m.hasLocation
+        {
+            return true
+        }
+        if analysisSourceRaw != item.analysisSource.rawValue { return true }
+        if byteSize != item.byteSize || isSizeEstimated != item.isSizeEstimated { return true }
+        let a = item.analysisSource.hasAnalysis ? item.analysis : nil
+        if dHashBits != a.map({ Int64(bitPattern: $0.dHash) }) { return true }
+        if thumbprint != a?.thumbprint || featurePrint != a?.featurePrint { return true }
+        if sharpness != a?.sharpness || aestheticsScore != a?.aestheticsScore
+            || faceQuality != a?.faceQuality
+        {
+            return true
+        }
+        return false
+    }
+
     var item: LibraryItem {
         let metadata = AssetMetadata(
             assetID: assetID, kind: ItemKind(rawValue: kindRaw) ?? .photo,
