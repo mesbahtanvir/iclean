@@ -19,6 +19,17 @@ struct CategoryView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
+                if model.pendingNewCount > 0 {
+                    // The list never changes under the person; new finds wait behind this (004 FR-010).
+                    Button {
+                        model.showPendingResults()
+                    } label: {
+                        Label("\(model.pendingNewCount) new results. Show", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.horizontal)
+                    .accessibilityIdentifier("category.showNew")
+                }
                 if let result {
                     if category == .largeVideos {
                         listLayout(result)
@@ -36,14 +47,22 @@ struct CategoryView: View {
             .padding(.vertical)
         }
         .navigationTitle(category.title)
+        .task { await model.measureSizes(in: category) }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { selectAllButton(result) }
+            ToolbarItem(placement: .primaryAction) { selectAllButton(result) }
         }
         .safeAreaInset(edge: .bottom) { removeBar }
         .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
-        .fullScreenCover(item: Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })) {
-            PhotoViewer(assetID: $0.id)
-        }
+        #if os(macOS)
+            // There is no full-screen cover on the Mac; the viewer is a sheet there.
+            .sheet(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+        #else
+            .fullScreenCover(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+        #endif
+    }
+
+    private var viewingBinding: Binding<Viewing?> {
+        Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })
     }
 
     // MARK: Layouts

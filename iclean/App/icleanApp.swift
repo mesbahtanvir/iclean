@@ -7,7 +7,16 @@ struct icleanApp: App {
 
     init() {
         #if DEBUG
+            #if os(macOS)
+                // AppKit opens every launch argument that is not a flag as a file, and a SwiftUI
+                // app asked to open a file shows no window. `-DemoScenario standard` would hide
+                // the window (and UI tests launch with such arguments), so this turns it off.
+                UserDefaults.standard.register(defaults: ["NSTreatUnknownArgumentsAsOpen": "NO"])
+            #endif
             NetworkTripwire.installIfRequested()
+            if BaselineMode.isRequested && !DebugSafety.allowsLibraryWrites {
+                DebugSafety.refuse("-BaselineRun")
+            }
         #endif
     }
 
@@ -15,8 +24,9 @@ struct icleanApp: App {
         WindowGroup {
             #if DEBUG
                 // `-BaselineRun` shows only the baseline check and leaves the app's own
-                // library, store and results alone.
-                if BaselineMode.isRequested {
+                // library, store and results alone. On a Mac it writes into the real library,
+                // so it also needs `-AllowRealLibrary`.
+                if BaselineMode.isRequested && DebugSafety.allowsLibraryWrites {
                     BaselineView(autoRun: true)
                 } else {
                     appRoot
@@ -25,6 +35,9 @@ struct icleanApp: App {
                 appRoot
             #endif
         }
+        #if os(macOS)
+            .defaultSize(width: 560, height: 780)
+        #endif
     }
 
     private var appRoot: some View {

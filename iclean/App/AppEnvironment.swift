@@ -7,6 +7,8 @@ struct AppEnvironment: Sendable {
     let store: Store
     let scanner: CleanupKit.Scanner
     let resultsBuilder: ResultsBuilder
+    /// Reads the store and builds results without holding every fingerprint (spec 008).
+    let resultsLoader: ResultsLoader
     let remover: Remover
     let sizeMeasurer: SizeMeasurer
     /// What Pro unlocks for this run. Free for everyone until the purchase exists.
@@ -26,12 +28,15 @@ struct AppEnvironment: Sendable {
     static func make(
         library: PhotoLibrary, store: Store, features: ProFeatures = LaunchArguments.features
     ) -> AppEnvironment {
-        AppEnvironment(
+        let builder = DefaultResultsBuilder(detectors: Detectors.all(features))
+        return AppEnvironment(
             library: library, store: store,
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
-                chunkSize: LaunchArguments.chunkSize, features: features),
-            resultsBuilder: DefaultResultsBuilder(detectors: Detectors.all(features)),
+                chunkSize: LaunchArguments.chunkSize, features: features,
+                minProgressInterval: .milliseconds(250)),
+            resultsBuilder: builder,
+            resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
             sizeMeasurer: SizeMeasurer(library: library, store: store),
             features: features)

@@ -170,6 +170,16 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
         self.scanAttempts = scanAttempts
     }
 
+    /// The item without its stored fingerprints (the miniature and the feature print), which only
+    /// detection reads. Results keep items this way: the fingerprints of a 30,000-photo library
+    /// are most of its memory, and the screens never look at them (spec 008).
+    public var withoutFingerprints: LibraryItem {
+        var copy = self
+        copy.analysis?.thumbprint = Data()
+        copy.analysis?.featurePrint = Data()
+        return copy
+    }
+
     /// Measured size if known, otherwise an estimate.
     public var effectiveByteSize: Int64 { byteSize ?? SizeEstimator.estimate(metadata) }
 
@@ -247,10 +257,15 @@ public struct ScanProgress: Sendable, Hashable {
     /// Items that could not be checked after repeated failures; a subset of
     /// `notScanned` (003 FR-008).
     public var failed: Int
+    /// Grows whenever the stored results changed enough to be worth showing again: the quick
+    /// wins were stored, or a block of photos was finished and saved (spec 008). A screen that
+    /// rebuilds results compares it with the last value it acted on.
+    public var publishedRevision: Int
 
     public init(
         processed: Int, total: Int, notScanned: Int, state: ScanState,
-        isThermalPaused: Bool = false, pauseReason: ScanPauseReason? = nil, failed: Int = 0
+        isThermalPaused: Bool = false, pauseReason: ScanPauseReason? = nil, failed: Int = 0,
+        publishedRevision: Int = 0
     ) {
         self.processed = processed
         self.total = total
@@ -259,6 +274,7 @@ public struct ScanProgress: Sendable, Hashable {
         self.isThermalPaused = isThermalPaused
         self.pauseReason = pauseReason
         self.failed = failed
+        self.publishedRevision = publishedRevision
     }
 
     public var fraction: Double { total == 0 ? 1 : Double(processed) / Double(total) }

@@ -64,12 +64,23 @@ struct ScanningView: View {
             )
         case .pausesOnLeave:
             String(localized: "Pauses when you leave iclean and continues when you come back.")
+        case .runsWhileOpen:
+            String(
+                localized:
+                    "Keeps scanning while iclean is open, even if its window is hidden. Pauses if your Mac goes to sleep and continues when it wakes."
+            )
         }
     }
 
     private func statusText(_ p: ScanProgress?) -> String {
         guard let p else { return String(localized: "Starting…") }
-        if p.isThermalPaused { return String(localized: "Paused to let your iPhone cool down") }
+        if p.isThermalPaused {
+            #if os(macOS)
+                return String(localized: "Paused to let your Mac cool down")
+            #else
+                return String(localized: "Paused to let your iPhone cool down")
+            #endif
+        }
         if p.state == .paused {
             switch p.pauseReason {
             case .stoppedOutsideApp: return String(localized: "Stopped from outside iclean")

@@ -1,7 +1,8 @@
 import Foundation
 
 /// Measures real sizes for items shown in results (research R7). Items whose files
-/// are not on the phone keep an estimate and are marked as such.
+/// are not on the phone keep an estimate and are marked as such. Reading a photo's size reads its
+/// whole file, so callers ask for a few items at a time, never for a whole library (spec 008).
 public actor SizeMeasurer {
     private let library: PhotoLibrary
     private let store: Store
@@ -15,6 +16,7 @@ public actor SizeMeasurer {
     /// Measures items without a measured size and saves them. Returns updated items.
     public func measure(_ items: [LibraryItem]) async -> [LibraryItem] {
         var updated: [LibraryItem] = []
+        var sizes: [String: MeasuredSize] = [:]
         for var item in items where item.byteSize == nil {
             let key = "\(item.assetID)|\(item.metadata.modificationDate?.timeIntervalSince1970 ?? 0)"
             guard !measured.contains(key) else { continue }
@@ -27,8 +29,12 @@ public actor SizeMeasurer {
                 item.isSizeEstimated = true
             }
             updated.append(item)
+            sizes[item.assetID] = MeasuredSize(
+                bytes: item.byteSize ?? 0, isEstimated: item.isSizeEstimated)
         }
-        try? await store.upsert(updated)
+        // Only the sizes are written: the items handed in come from the results, which carry no
+        // fingerprints, and writing them whole would erase the stored ones.
+        try? await store.saveSizes(sizes)
         return updated
     }
 }

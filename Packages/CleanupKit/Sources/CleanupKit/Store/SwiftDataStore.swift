@@ -48,7 +48,7 @@ public actor SwiftDataStore: Store {
     /// Creates the folder, excludes it from backup and sets file protection.
     static func prepare(_ folder: URL) throws {
         var attributes: [FileAttributeKey: Any] = [:]
-        #if os(iOS)
+        #if os(iOS) || os(visionOS)
             attributes[.protectionKey] = FileProtectionType.completeUntilFirstUserAuthentication
         #endif
         try FileManager.default.createDirectory(
@@ -63,6 +63,86 @@ public actor SwiftDataStore: Store {
 
     public func items() throws -> [LibraryItem] {
         try modelContext.fetch(FetchDescriptor<LibraryItemRecord>()).map(\.item)
+    }
+
+    public func itemSummaries() throws -> [StoredItemSummary] {
+        try page(properties: LibraryItemRecord.summaryKeyPaths) { $0.summary }
+    }
+
+    public func itemsWithoutFeaturePrints() throws -> [LibraryItem] {
+        try page(properties: LibraryItemRecord.withoutFeaturePrintKeyPaths) {
+            $0.itemWithoutFeaturePrint
+        }
+    }
+
+    /// Reads a slice at a time, so the records of a large library are never all alive at once,
+    /// and only the named properties: the fingerprints stay in the database. A single fetch of
+    /// 30,000 records needed more than 600 MB (spec 008). No sort: store order is stable
+    /// while this actor is the only writer, and sorting made every slice read the whole index.
+    private func page<T>(
+        properties: [PartialKeyPath<LibraryItemRecord>], _ convert: (LibraryItemRecord) -> T
+    ) throws -> [T] {
+        var out: [T] = []
+        var offset = 0
+        while true {
+            var descriptor = FetchDescriptor<LibraryItemRecord>()
+            descriptor.propertiesToFetch = properties
+            descriptor.fetchLimit = 1_000
+            descriptor.fetchOffset = offset
+            let records = try modelContext.fetch(descriptor)
+            out.append(contentsOf: records.map(convert))
+            offset += records.count
+            if records.count < 1_000 { break }
+        }
+        return out
+    }
+
+    public func featurePrints(for assetIDs: [String]) throws -> [String: Data] {
+        var out: [String: Data] = [:]
+        for start in stride(from: 0, to: assetIDs.count, by: 500) {
+            let ids = Array(assetIDs[start..<min(start + 500, assetIDs.count)])
+            let records = try modelContext.fetch(
+                FetchDescriptor<LibraryItemRecord>(
+                    predicate: #Predicate { ids.contains($0.assetID) }))
+            for record in records {
+                if let data = record.featurePrint, !data.isEmpty { out[record.assetID] = data }
+            }
+        }
+        return out
+    }
+
+    public func refreshMetadata(_ metadata: [AssetMetadata]) throws {
+        for start in stride(from: 0, to: metadata.count, by: 500) {
+            let slice = Array(metadata[start..<min(start + 500, metadata.count)])
+            let ids = slice.map(\.assetID)
+            try transaction {
+                let records = try modelContext.fetch(
+                    FetchDescriptor<LibraryItemRecord>(
+                        predicate: #Predicate { ids.contains($0.assetID) }))
+                let byID = Dictionary(
+                    records.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
+                for m in slice { byID[m.assetID]?.updateMetadata(from: m) }
+            }
+        }
+    }
+
+    public func saveSizes(_ sizes: [String: MeasuredSize]) throws {
+        let all = Array(sizes)
+        for start in stride(from: 0, to: all.count, by: 500) {
+            let slice = Array(all[start..<min(start + 500, all.count)])
+            let ids = slice.map(\.key)
+            try transaction {
+                let records = try modelContext.fetch(
+                    FetchDescriptor<LibraryItemRecord>(
+                        predicate: #Predicate { ids.contains($0.assetID) }))
+                let byID = Dictionary(
+                    records.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
+                for (id, size) in slice {
+                    byID[id]?.byteSize = size.bytes
+                    byID[id]?.isSizeEstimated = size.isEstimated
+                }
+            }
+        }
     }
 
     /// Runs the writes and saves them together; on any error nothing is kept, so a

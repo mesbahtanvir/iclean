@@ -9,9 +9,15 @@ struct SettingsView: View {
         List {
             Section {
                 Label {
-                    Text(
-                        "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
-                    )
+                    #if os(macOS)
+                        Text(
+                            "Everything stays on this Mac. iclean never connects to the internet, has no account, and collects nothing."
+                        )
+                    #else
+                        Text(
+                            "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
+                        )
+                    #endif
                 } icon: {
                     Image(systemName: "lock.shield")
                 }

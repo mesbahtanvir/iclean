@@ -184,7 +184,9 @@
                     }
                 }
                 .navigationTitle("Baseline Library")
-                .navigationBarTitleDisplayMode(.inline)
+                #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                #endif
             }
             .task {
                 guard autoRun else { return }

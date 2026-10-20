@@ -3,7 +3,22 @@ import Foundation
 /// Local storage for scan results, keep marks and scan progress.
 /// Everything stays on the phone (Constitution Principle I).
 public protocol Store: Sendable {
+    /// Every stored item with its whole analysis. Costs about 20 KB of memory per item, so a
+    /// library of 30,000 needs more than 600 MB: the scan and the results use the lean readers
+    /// below instead (spec 008).
     func items() async throws -> [LibraryItem]
+    /// What a scan needs to know about every stored item, without any fingerprint.
+    func itemSummaries() async throws -> [StoredItemSummary]
+    /// Every stored item with its analysis except the feature print (`featurePrint` is empty).
+    /// Only `ResultsLoader` reads this: an item read this way must not be handed to a detector
+    /// without its feature print when the detector needs it.
+    func itemsWithoutFeaturePrints() async throws -> [LibraryItem]
+    /// The feature prints of these items; items without one are left out.
+    func featurePrints(for assetIDs: [String]) async throws -> [String: Data]
+    /// Updates the metadata of stored items in place and leaves their analysis alone.
+    func refreshMetadata(_ metadata: [AssetMetadata]) async throws
+    /// Records measured file sizes and leaves everything else of the items alone.
+    func saveSizes(_ sizes: [String: MeasuredSize]) async throws
     func upsert(_ items: [LibraryItem]) async throws
     func deleteItems(_ assetIDs: Set<String>) async throws
     func keepMarks() async throws -> Set<String>
@@ -36,4 +51,31 @@ public protocol Store: Sendable {
 public enum StoreError: Error, Equatable {
     /// Only one session can be running or paused at a time.
     case anotherSessionActive
+}
+
+/// A stored item without its fingerprints: all a scan plan needs (spec 008).
+public struct StoredItemSummary: Sendable, Hashable {
+    public var metadata: AssetMetadata
+    public var analysisSource: AnalysisSource
+    /// How many scans have ended with this item not analyzed (003 FR-008).
+    public var scanAttempts: Int
+
+    public var assetID: String { metadata.assetID }
+
+    public init(metadata: AssetMetadata, analysisSource: AnalysisSource, scanAttempts: Int = 0) {
+        self.metadata = metadata
+        self.analysisSource = analysisSource
+        self.scanAttempts = scanAttempts
+    }
+}
+
+/// A file size read from the phone, or estimated when the file is not on it.
+public struct MeasuredSize: Sendable, Hashable {
+    public var bytes: Int64
+    public var isEstimated: Bool
+
+    public init(bytes: Int64, isEstimated: Bool) {
+        self.bytes = bytes
+        self.isEstimated = isEstimated
+    }
 }

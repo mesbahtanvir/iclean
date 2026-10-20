@@ -29,6 +29,7 @@ public actor ScanPipeline: Scanner {
     private let policy: ScanRetryPolicy
     private let features: ProFeatures
     private let pauseWaitLimit: Duration
+    private let minProgressInterval: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
     /// Identifies this process. A chunk leased by another incarnation was left behind
     /// by a process that died (003 FR-005).
@@ -47,6 +48,11 @@ public actor ScanPipeline: Scanner {
     private var session: ScanSession?
     private var chunks: [ScanChunk] = []
     private var sinceProgress = 0
+    private var lastProgressAt: ContinuousClock.Instant?
+    /// Moves up whenever the stored results changed enough to be worth showing: quick wins
+    /// stored, a block of photos finished (spec 008). The app rebuilds its results when it moves.
+    private var publishedRevision = 0
+    private var nextBlockEdge = ScanBlocks.first
     /// What the store holds for the running job. `pause()` writes this, never the
     /// in-memory counters, which run ahead of the saved results while a chunk is in
     /// flight (review fix: a kill after a pause must not leave counters above the results).
@@ -64,11 +70,14 @@ public actor ScanPipeline: Scanner {
     ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
     ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
     ///     acknowledge; tests raise it so a slow machine cannot hit it.
+    ///   - minProgressInterval: at most one progress event per interval while items finish.
+    ///     Events that carry a change of state or a new block are never held back. A 30,000-item
+    ///     scan otherwise sent about 4,000 events, each one a screen update and a system call.
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
         policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
-        pauseWaitLimit: Duration = .seconds(2),
+        pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         }
@@ -83,6 +92,7 @@ public actor ScanPipeline: Scanner {
         self.policy = policy
         self.features = features
         self.pauseWaitLimit = pauseWaitLimit
+        self.minProgressInterval = minProgressInterval
         self.thermalState = thermalState
     }
 
@@ -197,10 +207,13 @@ public actor ScanPipeline: Scanner {
         -> ScanProgress
     {
         sinceProgress = 0
+        lastProgressAt = nil
+        publishedRevision = 0
         storedSession = nil
         storedLeased = nil
         needsCatchUp = false
         guard await loadJob(kind: kind) else { return await finish(progress: progress) }
+        nextBlockEdge = ScanBlocks.edge(after: session?.processedItems ?? 0)
         progress(snapshot())
         var caughtUp = false
         while !stopRequested {
@@ -289,11 +302,10 @@ public actor ScanPipeline: Scanner {
 
     private func plan(kind: ScanKind, adopting previous: ScanSession?) async -> Bool {
         let library = await self.library.fetchAllItems()
-        let stored = (try? await store.items()) ?? []
+        let stored = (try? await store.itemSummaries()) ?? []
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: kind, policy: policy, features: features)
-        try? await store.deleteItems(plan.gone)
-        await writeRefreshed(plan.refreshed)
+        await apply(plan)
         var s: ScanSession
         if var previous {
             previous.kind = kind == .full ? .full : previous.kind
@@ -312,13 +324,26 @@ public actor ScanPipeline: Scanner {
         return true
     }
 
-    /// Saves refreshed metadata in slices, so a library whose every item changed at once (the first
-    /// scan after an update that reads a new property) never needs one long transaction or holds
-    /// every record in memory together. Each slice is complete on its own, so a stop in the middle
-    /// keeps what was written and the next check writes the rest.
-    private func writeRefreshed(_ items: [LibraryItem]) async {
-        for start in stride(from: 0, to: items.count, by: 500) {
-            try? await store.upsert(Array(items[start..<min(start + 500, items.count)]))
+    /// Writes what a plan decided besides the analysis itself: items that left the library are
+    /// forgotten, changed metadata is refreshed, and items that need no analysis are stored right
+    /// away so they can be listed before any photo is opened (spec 008 quick wins).
+    private func apply(_ plan: ScanPlan) async {
+        try? await store.deleteItems(plan.gone)
+        // In slices, so a library whose every item changed at once (the first scan after an update
+        // that reads a new property) never needs one long transaction or holds every record in
+        // memory together. Each slice is complete on its own, so a stop in the middle keeps what
+        // was written and the next check writes the rest.
+        for start in stride(from: 0, to: plan.refreshed.count, by: 500) {
+            try? await store.refreshMetadata(
+                Array(plan.refreshed[start..<min(start + 500, plan.refreshed.count)]))
+        }
+        for start in stride(from: 0, to: plan.quickWins.count, by: 500) {
+            let slice = plan.quickWins[start..<min(start + 500, plan.quickWins.count)]
+            try? await store.upsert(
+                slice.map { LibraryItem(metadata: $0, analysisSource: .metadataOnly, analysis: nil) })
+        }
+        if !plan.gone.isEmpty || !plan.refreshed.isEmpty || !plan.quickWins.isEmpty {
+            publishedRevision += 1
         }
     }
 
@@ -327,13 +352,13 @@ public actor ScanPipeline: Scanner {
     private func catchUp() async {
         guard let jobID = session?.id else { return }
         let library = await self.library.fetchAllItems()
-        let stored = (try? await store.items()) ?? []
+        let stored = (try? await store.itemSummaries()) ?? []
         // A quick-check diff: only new or changed items, never a retry of items this job
         // already gave up on.
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: .quickCheck, policy: policy)
-        try? await store.deleteItems(plan.gone)
-        await writeRefreshed(plan.refreshed)
+            library: library, stored: stored, kind: .quickCheck, policy: policy,
+            features: features)
+        await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
         let covered = Set(
@@ -543,7 +568,12 @@ public actor ScanPipeline: Scanner {
             storedLeased = nil
         }
         if isPaused { pausedAndSaved = true }
-        progress(snapshot())
+        if let done = session?.processedItems, done >= nextBlockEdge {
+            // A block of photos is finished and saved: the results can be rebuilt from the store.
+            publishedRevision += 1
+            nextBlockEdge = ScanBlocks.edge(after: done)
+        }
+        emit(snapshot(), progress)
     }
 
     /// Records one finished item. `session` is read and written in place: pause() may
@@ -567,9 +597,11 @@ public actor ScanPipeline: Scanner {
         sinceProgress += 1
         // While pausing or stopping, the only progress event comes after the release
         // checkpoint, so a paused event always means "saved" (002 G1).
-        if sinceProgress >= progressEvery, !isPaused, !stopRequested {
+        if sinceProgress >= progressEvery, !isPaused, !stopRequested,
+            lastProgressAt.map({ ContinuousClock.now - $0 >= minProgressInterval }) ?? true
+        {
             sinceProgress = 0
-            progress(snapshot())
+            emit(snapshot(), progress)
         }
     }
 
@@ -623,7 +655,13 @@ public actor ScanPipeline: Scanner {
         return ScanProgress(
             processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
             state: paused ? .paused : s.state, isThermalPaused: !paused && isTooHot,
-            pauseReason: paused ? pauseReason : nil, failed: s.failedItems)
+            pauseReason: paused ? pauseReason : nil, failed: s.failedItems,
+            publishedRevision: publishedRevision)
+    }
+
+    private func emit(_ event: ScanProgress, _ progress: @Sendable (ScanProgress) -> Void) {
+        lastProgressAt = .now
+        progress(event)
     }
 
     static func seconds(_ d: Duration) -> TimeInterval {
@@ -633,12 +671,14 @@ public actor ScanPipeline: Scanner {
     /// One item: preview plus analysis, under the per-item time limit (003 FR-007).
     /// A failed analysis is retried by the chunk; a missing preview is a result.
     /// Without Pro, videos are not analyzed (004 FR-004a): no frame is requested, and the item
-    /// is stored with its metadata only so Large Videos can rank it.
+    /// is stored with its metadata only so Large Videos can rank it. The same holds for screenshots
+    /// in every edition: they are listed by kind, never grouped with photos (no detector reads
+    /// their analysis), so opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
         analyzeVideos: Bool
     ) async -> ItemOutcome {
-        if m.kind.isVideo, !analyzeVideos {
+        if m.kind == .screenshot || (m.kind.isVideo && !analyzeVideos) {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
         }
         let outcome: Timeout.Outcome<ItemOutcome> = await Timeout.run(limit) {

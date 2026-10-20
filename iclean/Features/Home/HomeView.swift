@@ -26,8 +26,11 @@ struct HomeView: View {
                 ResultsView()
             }
             .navigationTitle("iclean")
+            // Results found while the person reviews wait until they are back here (004 FR-010).
+            .onAppear { model.homeAppeared() }
+            .onDisappear { model.homeDisappeared() }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     NavigationLink {
                         SettingsView()
                     } label: {

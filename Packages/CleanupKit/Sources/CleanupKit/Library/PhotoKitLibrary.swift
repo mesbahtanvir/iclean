@@ -1,7 +1,12 @@
-#if os(iOS)
+#if canImport(Photos)
     import AVFoundation
     import Photos
-    import UIKit
+
+    #if canImport(UIKit)
+        import UIKit
+    #elseif canImport(AppKit)
+        import AppKit
+    #endif
 
     /// PhotoKit implementation of `PhotoLibrary` (research R2, R7, R8, R10).
     public final class PhotoKitLibrary: NSObject, PhotoLibrary, PHPhotoLibraryChangeObserver,
@@ -112,9 +117,10 @@
                 addedDate: Self.addedDate(of: asset), hasLocation: asset.location != nil)
         }
 
-        /// When the asset was added to the library, where the system says (iOS 26 and later).
+        /// When the asset was added to the library, where the system says (iOS 26, macOS 26 and
+        /// visionOS 26 and later).
         private static func addedDate(of asset: PHAsset) -> Date? {
-            if #available(iOS 26.0, *) { return asset.addedDate }
+            if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) { return asset.addedDate }
             return nil
         }
 
@@ -161,10 +167,21 @@
                     let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
                     if degraded, options.deliveryMode != .fastFormat { return }
                     let inCloud = (info?[PHImageResultIsInCloudKey] as? Bool) ?? false
-                    once.run { continuation.resume(returning: (image?.cgImage, inCloud)) }
+                    let cgImage = image.flatMap(Self.cgImage)
+                    once.run { continuation.resume(returning: (cgImage, inCloud)) }
                 }
             }
         }
+
+        /// The image PhotoKit hands back is a `UIImage` on iOS and visionOS and an `NSImage` on
+        /// the Mac; the rest of the package only knows `CGImage`.
+        #if canImport(UIKit)
+            private static func cgImage(_ image: UIImage) -> CGImage? { image.cgImage }
+        #elseif canImport(AppKit)
+            private static func cgImage(_ image: NSImage) -> CGImage? {
+                image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            }
+        #endif
 
         // MARK: Sizes
 
@@ -217,7 +234,7 @@
             var found: [String] = []
             assets.enumerateObjects { asset, _, _ in found.append(asset.localIdentifier) }
             let missing = Set(assetIDs).subtracting(found)
-            // One request, so iOS shows one confirmation for the whole selection.
+            // One request, so the system shows one confirmation for the whole selection.
             do {
                 try await PHPhotoLibrary.shared().performChanges {
                     PHAssetChangeRequest.deleteAssets(assets)

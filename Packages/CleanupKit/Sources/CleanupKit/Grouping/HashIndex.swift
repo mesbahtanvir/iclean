@@ -22,6 +22,14 @@ struct HashIndex {
     /// Index pairs (i < j) whose hashes are within `maxDistance` bits.
     func candidatePairs(_ hashes: [UInt64]) -> [(Int, Int)] {
         var pairs: [(Int, Int)] = []
+        forEachCandidatePair(hashes) { pairs.append(($0, $1)) }
+        return pairs
+    }
+
+    /// The same pairs, one at a time and in the same order, without holding them: a library with
+    /// many look-alike photos has millions of candidate pairs (9.8 million for 27,000 photos of
+    /// the large demo library), which as an array was hundreds of MB (spec 008).
+    func forEachCandidatePair(_ hashes: [UInt64], _ body: (Int, Int) -> Void) {
         for (c, chunk) in chunks.enumerated() {
             var buckets: [UInt64: [Int]] = [:]
             for (i, h) in hashes.enumerated() {
@@ -35,13 +43,12 @@ struct HashIndex {
                         // Report each pair once: only in the first chunk where it matches.
                         if sharesEarlierChunk(hashes[i], hashes[j], before: c) { continue }
                         if hammingDistance(hashes[i], hashes[j]) <= maxDistance {
-                            pairs.append((min(i, j), max(i, j)))
+                            body(min(i, j), max(i, j))
                         }
                     }
                 }
             }
         }
-        return pairs
     }
 
     private func sharesEarlierChunk(_ a: UInt64, _ b: UInt64, before c: Int) -> Bool {

@@ -12,6 +12,18 @@
             var image: CGImage?
             var cloudOnly: Bool
             var size: Int64?
+            /// For the large scenarios: the image is drawn when its preview is asked for, so 30,000
+            /// photos do not sit in memory.
+            var recipe: LargeRecipe?
+        }
+
+        /// How to draw one photo of a large scenario.
+        enum LargeRecipe: Sendable {
+            case scene(UInt64)
+            case copy(UInt64)
+            case burst(UInt64, Int)
+            case blurred(UInt64)
+            case stripes(UInt64)
         }
 
         private let lock = NSLock()
@@ -19,11 +31,23 @@
         private var order: [String] = []
         private let scenario: String
         private var listeners: [AsyncStream<LibraryChange>.Continuation] = []
+        /// `-DemoAnalysisLatencyMs N`: every preview takes N ms, like a phone's photo library.
+        private let previewLatency: Duration
 
         init(scenario: String) {
             self.scenario = scenario
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-DemoAnalysisLatencyMs"), i + 1 < args.count,
+                let ms = Int(args[i + 1])
+            {
+                previewLatency = .milliseconds(ms)
+            } else {
+                previewLatency = .zero
+            }
             if scenario == "dates" {
                 buildDates()
+            } else if let count = Self.largeCount(scenario) {
+                buildLarge(count: count)
             } else if scenario != "empty" {
                 buildStandard()
             }
@@ -67,6 +91,81 @@
             add(
                 "date-real", image: DemoImages.resized(b, 0.5), minutes: 0, width: 2016, height: 1512,
                 size: 900_000, date: Date(timeIntervalSince1970: 1_580_000_000))
+        }
+
+        /// `large30k`, `large3k`: a library of that many items shaped like a real one (about 9% screenshots,
+        /// 6% videos, a third of the photos in bursts, a few copies and blurry ones), drawn on demand.
+        static func largeCount(_ scenario: String) -> Int? {
+            guard scenario.hasPrefix("large"), scenario.hasSuffix("k"),
+                let thousands = Int(scenario.dropFirst(5).dropLast())
+            else { return nil }
+            return thousands * 1_000
+        }
+
+        private func buildLarge(count: Int) {
+            var rng = DemoRandom(seed: 30_000)
+            var clock = 1_600_000_000.0
+            var n = 0
+            func put(
+                _ id: String, kind: ItemKind = .photo, recipe: LargeRecipe?, at t: Double,
+                size: Int64, width: Int = 4032, height: Int = 3024, duration: Double? = nil
+            ) {
+                let date = Date(timeIntervalSince1970: t)
+                let m = AssetMetadata(
+                    assetID: id, kind: kind, captureDate: date, modificationDate: date,
+                    pixelWidth: width, pixelHeight: height, duration: duration)
+                assets[id] = Asset(
+                    metadata: m, image: nil, cloudOnly: false, size: size, recipe: recipe)
+                order.append(id)
+            }
+            while order.count < count {
+                clock += 600 + rng.unit() * 40_000
+                let id = "L\(n)"
+                let seed = UInt64(n) &+ 1
+                switch Double(n % 100) {
+                case 0..<9:
+                    put(id, kind: .screenshot, recipe: .stripes(seed), at: clock, size: 400_000, width: 1206, height: 2622)
+                case 9..<15:
+                    let big = rng.unit() < 0.1
+                    put(
+                        id, kind: .video, recipe: .scene(seed), at: clock,
+                        size: big ? 600_000_000 : Int64(5_000_000 + rng.unit() * 90_000_000),
+                        width: 1920, height: 1080, duration: 5 + rng.unit() * 120)
+                case 15..<45:
+                    // A burst of four shots a few seconds apart.
+                    for k in 0..<4 where order.count < count {
+                        put(
+                            "\(id)b\(k)", recipe: .burst(seed, k), at: clock + Double(k) * 2.5,
+                            size: 2_400_000)
+                    }
+                case 45..<50:
+                    // Two copies of one photo, the second smaller.
+                    put(id, recipe: .scene(seed), at: clock, size: 3_200_000)
+                    if order.count < count {
+                        put("\(id)c", recipe: .copy(seed), at: clock + 3_600, size: 900_000, width: 2016, height: 1512)
+                    }
+                case 50..<58:
+                    put(id, recipe: .blurred(seed), at: clock, size: 2_000_000)
+                default:
+                    put(id, recipe: .scene(seed), at: clock, size: 3_000_000)
+                }
+                n += 1
+            }
+        }
+
+        private static func image(for recipe: LargeRecipe) -> CGImage {
+            let w = 256
+            let h = 192
+            switch recipe {
+            case .scene(let seed): return DemoImages.scene(seed: seed, width: w, height: h)
+            case .copy(let seed):
+                return DemoImages.resized(DemoImages.scene(seed: seed, width: w, height: h), 0.5)
+            case .burst(let seed, let k):
+                return DemoImages.burstFrame(DemoImages.scene(seed: seed, width: w, height: h), index: k)
+            case .blurred(let seed):
+                return DemoImages.blurred(DemoImages.scene(seed: seed, width: w, height: h))
+            case .stripes(let seed): return DemoImages.stripes(seed: seed, width: 134, height: 291)
+            }
         }
 
         private func buildStandard() {
@@ -145,9 +244,10 @@
             if scenario == "slow" { try? await Task.sleep(for: .milliseconds(1500)) }
             // Long enough to leave the app and watch the scan continue (002 quickstart).
             if scenario == "verySlow" { try? await Task.sleep(for: .seconds(6)) }
-            guard let asset = lock.withLock({ assets[assetID] }), let image = asset.image else {
-                return .unavailable
-            }
+            if previewLatency > .zero { try? await Task.sleep(for: previewLatency) }
+            guard let asset = lock.withLock({ assets[assetID] }) else { return .unavailable }
+            let drawn = asset.recipe.map(Self.image(for:))
+            guard let image = asset.image ?? drawn else { return .unavailable }
             return asset.cloudOnly ? .cloudPreview(image) : .local(image)
         }
 

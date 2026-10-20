@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-18
 
-**Status**: Draft
+**Status**: Draft (partly delivered by [008](../008-staged-cleanup-at-scale/spec.md))
 
 **Input**: User description: "Some people might have a library as big as 30K photos, so
 running all the analysis at the beginning might not be ideal, can we plan phased cleaning?"

@@ -21,6 +21,10 @@ struct ConfirmSheet: View {
             }
         }
         .interactiveDismissDisabled(isRemoving)
+        #if os(macOS)
+            // A sheet on the Mac has no size of its own.
+            .frame(minWidth: 460, minHeight: 420)
+        #endif
     }
 
     private var form: some View {
@@ -43,7 +47,11 @@ struct ConfirmSheet: View {
                         .bold()
                 }
             } footer: {
-                Text("They go to Recently Deleted in the Photos app, where you can restore them. iOS will ask you to confirm.")
+                #if os(macOS)
+                    Text("They go to Recently Deleted in the Photos app, where you can restore them. Photos may ask you to confirm.")
+                #else
+                    Text("They go to Recently Deleted in the Photos app, where you can restore them. iOS will ask you to confirm.")
+                #endif
             }
             if !preview.wholeGroupsSelected.isEmpty {
                 Section {
@@ -58,7 +66,9 @@ struct ConfirmSheet: View {
             }
         }
         .navigationTitle("Remove \(preview.count) Items?")
-        .navigationBarTitleDisplayMode(.inline)
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }

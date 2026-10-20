@@ -37,7 +37,9 @@ struct RecentScansView: View {
             }
         }
         .navigationTitle("Recent Scans")
-        .navigationBarTitleDisplayMode(.inline)
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task {
             sessions = await model.recentSessions()
             loaded = true

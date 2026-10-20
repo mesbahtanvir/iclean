@@ -8,7 +8,18 @@ struct ResultsView: View {
     var body: some View {
         let results = model.results
         if results.categories.isEmpty {
-            if model.isBuildingResults {
+            if model.isScanning, !model.isBuildingResults {
+                // Nothing found yet, and the scan is not done: never claim the library is clean.
+                Section {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Looking for things to clean up. Results appear here as they are found.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("results.checking")
+                }
+            } else if model.isBuildingResults {
                 Section {
                     HStack(spacing: 12) {
                         ProgressView()
@@ -31,6 +42,16 @@ struct ResultsView: View {
                 }
             }
         } else {
+            if model.pendingNewCount > 0 {
+                Section {
+                    Button {
+                        model.showPendingResults()
+                    } label: {
+                        Label("\(model.pendingNewCount) new results. Show", systemImage: "sparkles")
+                    }
+                    .accessibilityIdentifier("results.showNew")
+                }
+            }
             Section {
                 ForEach(results.categories) { result in
                     NavigationLink(value: result.category) {
@@ -39,7 +60,14 @@ struct ResultsView: View {
                     .accessibilityIdentifier("results.category.\(result.category.rawValue)")
                 }
             } header: {
-                Text("Results")
+                if model.isScanning, let p = model.progress, p.total > 0 {
+                    // Rows are the finds so far; the scan is still going (004 FR-009).
+                    Text("Found so far · checked \(p.processed) of \(p.total)")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("results.foundSoFar")
+                } else {
+                    Text("Results")
+                }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if results.notScannedCount > 0 {
