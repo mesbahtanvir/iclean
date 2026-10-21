@@ -49,6 +49,42 @@ import Testing
         #expect(try await store.loadLaunchState().lastFullScanCompletedAt == day(3))
     }
 
+    @Test func manyQuickChecksDoNotForgetTheLastCompletedFullScan() async throws {
+        let store = try InMemoryStore.make()
+        try await store.saveSession(
+            ScanSession(
+                kind: .full, state: .completed, startedAt: day(1), finishedAt: day(1),
+                totalItems: 10, processedItems: 10))
+        // One foreground check per day, far more than the store keeps of anything else.
+        for n in 2...30 {
+            try await store.saveSession(
+                ScanSession(
+                    kind: .quickCheck, state: .completed, startedAt: day(n), finishedAt: day(n)))
+        }
+        #expect(try await store.loadLaunchState().lastFullScanCompletedAt == day(1))
+        let kept = try await store.sessions()
+        // The newest session and the four before it; the full scan is kept on top of them.
+        #expect(kept.filter { $0.kind == .quickCheck }.count == 5)
+        #expect(kept.filter { $0.kind == .full }.count == 1)
+    }
+
+    @Test func recentScansKeepsTheLatestTenFullScansAmongQuickChecks() async throws {
+        let store = try InMemoryStore.make()
+        for n in 1...14 {
+            try await store.saveSession(
+                ScanSession(
+                    kind: .full, state: .completed, startedAt: day(n * 2), finishedAt: day(n * 2),
+                    totalItems: 10, processedItems: 10))
+            try await store.saveSession(
+                ScanSession(
+                    kind: .quickCheck, state: .completed, startedAt: day(n * 2 + 1),
+                    finishedAt: day(n * 2 + 1)))
+        }
+        let kept = try await store.sessions()
+        #expect(kept.filter { $0.kind == .full }.count == 10)
+        #expect(try await store.loadLaunchState().lastFullScanCompletedAt == day(28))
+    }
+
     @Test func theItemCountIsTheStoresCount() async throws {
         let store = try InMemoryStore.make()
         #expect(try await store.itemCount() == 0)

@@ -32,6 +32,8 @@
         }()
         /// Start and stop of prefetching happen in order, off the main thread.
         private let prefetchQueue = DispatchQueue(label: "iclean.prefetch", qos: .userInitiated)
+        /// Decodes the pictures PhotoKit delivers, one at a time and in order, off the main thread.
+        private let decodeQueue = DispatchQueue(label: "iclean.decode", qos: .userInitiated)
         private let lock = NSLock()
         private var fetchResult: PHFetchResult<PHAsset>?
         private var continuations: [UUID: AsyncStream<LibraryChange>.Continuation] = [:]
@@ -258,12 +260,19 @@
                         let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
                         let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
                         let failed = info?[PHImageErrorKey] != nil
-                        if let cgImage = image.flatMap(Self.displayReady) {
-                            continuation.yield(ThumbnailImage(image: cgImage, isFinal: !degraded))
+                        // PhotoKit calls this on the main thread for a picture that was not at hand,
+                        // so the decode is handed to a queue of ours, which keeps the order of the
+                        // quick picture and the final one and never makes scrolling wait.
+                        let handoff = ImageHandoff(image)
+                        self.decodeQueue.async {
+                            if let cgImage = handoff.image.flatMap(Self.displayReady) {
+                                continuation.yield(
+                                    ThumbnailImage(image: cgImage, isFinal: !degraded))
+                            }
+                            // A degraded picture is followed by the final one (or by a failure), so
+                            // the stream stays open for it.
+                            if !degraded || cancelled || failed { continuation.finish() }
                         }
-                        // A degraded picture is followed by the final one (or by a failure), so
-                        // the stream stays open for it.
-                        if !degraded || cancelled || failed { continuation.finish() }
                     }
                     token.began(requestID, on: manager)
                 }
@@ -309,12 +318,14 @@
         /// The image PhotoKit hands back is a `UIImage` on iOS and visionOS and an `NSImage` on
         /// the Mac; the rest of the package only knows `CGImage`.
         #if canImport(UIKit)
+            typealias PlatformImage = UIImage
             private static func cgImage(_ image: UIImage) -> CGImage? { image.cgImage }
-            /// Decoded here, off the main thread, so drawing a cell does not decode it.
+            /// Decoded off the main thread (see `decodeQueue`), so drawing a cell does not decode it.
             private static func displayReady(_ image: UIImage) -> CGImage? {
                 (image.preparingForDisplay() ?? image).cgImage
             }
         #elseif canImport(AppKit)
+            typealias PlatformImage = NSImage
             private static func cgImage(_ image: NSImage) -> CGImage? {
                 image.cgImage(forProposedRect: nil, context: nil, hints: nil)
             }
@@ -464,6 +475,12 @@
             }
             if let id { manager.cancelImageRequest(id) }
         }
+    }
+
+    /// A picture on its way from PhotoKit's callback to the decode queue. Nothing else touches it.
+    private struct ImageHandoff: @unchecked Sendable {
+        let image: PhotoKitLibrary.PlatformImage?
+        init(_ image: PhotoKitLibrary.PlatformImage?) { self.image = image }
     }
 
     /// Runs a closure at most once (PhotoKit callbacks may fire more than once).

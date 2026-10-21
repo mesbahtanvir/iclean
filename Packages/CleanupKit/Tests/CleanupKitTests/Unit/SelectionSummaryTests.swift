@@ -116,4 +116,24 @@ import Testing
         // The old way took tens of seconds here; a generous bound that still catches a return of it.
         #expect(elapsed < .seconds(5))
     }
+
+    @Test func removingFifteenThousandPhotosFromThirtyThousandIsFast() {
+        let results = results(groups: 3_800)
+        let gone = Set(results.items.keys.prefix(15_000))
+        let start = ContinuousClock.now
+        let after = results.removing(gone)
+        let elapsed = ContinuousClock.now - start
+        // Each removed photo is gone, and a group that lost nothing is exactly as it was.
+        #expect(after.items.count == results.items.count - gone.count)
+        let before = Dictionary(
+            uniqueKeysWithValues: results.categories.flatMap(\.groups).map { ($0.id, $0) })
+        for group in after.categories.flatMap(\.groups) {
+            #expect(group.members.allSatisfy { !gone.contains($0) })
+            if let old = before[group.id], !old.members.contains(where: gone.contains) {
+                #expect(group == old)
+            }
+        }
+        // `Set.subtract` per group took ten seconds here.
+        #expect(elapsed < .seconds(2))
+    }
 }

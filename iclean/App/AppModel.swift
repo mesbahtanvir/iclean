@@ -243,6 +243,9 @@ final class AppModel {
         defer { reconciling = false }
         _ = await environment.scanner.quickCheck()
         guard !isDeleting else { return }
+        // The check may have added photos: Home's "No photos to check" and "We checked N photos"
+        // read this count.
+        await refreshLibraryItemCount()
         let current = try? await environment.store.revision()
         if let current, current != basisRevision { await rebuild() }
     }
@@ -478,10 +481,14 @@ final class AppModel {
     /// analyzed again by the next check), out of the lists, and the results are built again.
     private func photosChangedElsewhere(_ ids: Set<String>) async {
         guard !ids.isEmpty, !isDeleting else { return }
-        // A photo changed or removed elsewhere must be drawn again, not from memory.
-        environment.thumbnails.removeAll()
         try? await environment.store.deleteItems(ids)
-        patch(removing: ids)
+        // Photos that are in no list change nothing on screen (a new photo, a favorite switched, an
+        // iCloud sync): no pictures dropped and no rebuild for them.
+        let shown = ids.filter { results.items[$0] != nil }
+        guard !shown.isEmpty else { return }
+        // A photo changed or removed elsewhere must be drawn again, not from memory.
+        environment.thumbnails.remove(shown)
+        patch(removing: shown)
     }
 
     /// Checks what is shown against the library as it is now. Changes made while iclean was closed
@@ -599,24 +606,26 @@ final class AppModel {
     func toggle(_ id: String) {
         let on = !selection.contains(id)
         if on { selection.insert(id) } else { selection.remove(id) }
-        intent.setSelected([id], on, keepers: suggestedKeepers)
+        intent.setSelected([id], on, keepers: on ? suggestedKeepers(among: [id]) : [])
         noteFocus(id)
         saveDecisions()
     }
 
     func setSelected(_ ids: [String], _ selected: Bool) {
         if selected { selection.formUnion(ids) } else { selection.subtract(ids) }
-        intent.setSelected(ids, selected, keepers: suggestedKeepers)
+        intent.setSelected(ids, selected, keepers: selected ? suggestedKeepers(among: ids) : [])
         saveDecisions()
     }
 
-    /// The photos the results suggest keeping right now, to tell a tick on a keeper from a tick
-    /// on an ordinary copy.
-    private var suggestedKeepers: Set<String> {
-        Set(
-            results.categories.flatMap {
-                $0.groups.filter { $0.type != .single }.flatMap(\.keepers)
-            })
+    /// Which of `ids` the results suggest keeping right now, to tell a tick on a keeper from a tick
+    /// on an ordinary copy. A tap asks about one photo: that is a look through the groups, not a
+    /// set built from all of them.
+    private func suggestedKeepers(among ids: [String]) -> Set<String> {
+        let groups = results.categories.lazy.flatMap(\.groups).filter { $0.type != .single }
+        if ids.count <= 8 {
+            return Set(ids.filter { id in groups.contains { $0.keepers.contains(id) } })
+        }
+        return Set(groups.flatMap(\.keepers))
     }
 
     func selectedCount(in category: CleanupCategory) -> Int {
@@ -684,8 +693,8 @@ final class AppModel {
         // Before the results are shown the suggestions are not known, so nothing can be compared
         // with them, and what is saved must not be overwritten by what is merely not loaded yet.
         guard launchPhase == .ready else { return }
-        let defaults = ReviewIntent.defaults(for: results, keepMarks: keepMarks)
-        let saved = intent.normalized(against: defaults)
+        // The suggestions the results were last applied with: what a tap compares its choice to.
+        let saved = intent.normalized(against: results.defaultSelection)
         let generation = writerGeneration
         Task { await writer.update(decisions: saved, generation: generation) }
     }

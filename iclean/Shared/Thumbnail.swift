@@ -48,6 +48,10 @@ struct Thumbnail: View {
             }
             .clipped()
             .task(id: Work(assetID: assetID, maxPixels: maxPixels)) { await load() }
+            // A grid keeps the state of cells that scrolled away: the picture stays in the cache
+            // (bounded, and the cell reads it from there on its first frame when it comes back),
+            // not in thousands of cells.
+            .onDisappear { loaded = nil }
     }
 
     private func load() async {

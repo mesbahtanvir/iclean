@@ -12,8 +12,12 @@ final class ThumbnailCache: @unchecked Sendable {
     }
 
     private let cache = NSCache<NSString, Entry>()
+    /// The keys stored for each photo, so one changed photo can be dropped without emptying the
+    /// cache. A key the cache has already evicted stays listed; removing it is harmless.
+    private let lock = NSLock()
+    private var keysByAsset: [String: Set<NSString>] = [:]
 
-    init(megabytes: Int = 96) {
+    init(megabytes: Int = 192) {
         cache.totalCostLimit = megabytes * 1_048_576
     }
 
@@ -31,8 +35,21 @@ final class ThumbnailCache: @unchecked Sendable {
         if !picture.isFinal, cache.object(forKey: k)?.picture.isFinal == true { return }
         let cost = picture.image.width * picture.image.height * 4
         cache.setObject(Entry(picture), forKey: k, cost: cost)
+        lock.withLock { _ = keysByAsset[assetID, default: []].insert(k) }
     }
 
-    /// For when the library changed: an edited photo must be fetched again.
-    func removeAll() { cache.removeAllObjects() }
+    /// For when photos changed in the library: an edited photo must be fetched again, and the
+    /// pictures of every other photo stay.
+    func remove(_ assetIDs: some Sequence<String>) {
+        let keys = lock.withLock {
+            assetIDs.flatMap { keysByAsset.removeValue(forKey: $0) ?? [] }
+        }
+        keys.forEach { cache.removeObject(forKey: $0) }
+    }
+
+    /// For when everything must be fetched again.
+    func removeAll() {
+        cache.removeAllObjects()
+        lock.withLock { keysByAsset.removeAll() }
+    }
 }

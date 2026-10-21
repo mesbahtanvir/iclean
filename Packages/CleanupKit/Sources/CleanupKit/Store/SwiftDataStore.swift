@@ -295,13 +295,29 @@ public actor SwiftDataStore: Store {
             modelContext.insert(ScanSessionRecord(session))
         }
         if !session.isActive { try removeChunks(job: id) }
-        // Keep only the latest few sessions, and no chunks of the pruned ones.
-        let old = all.filter { $0.id != id }.sorted { $0.startedAt > $1.startedAt }.dropFirst(4)
-        for record in old {
+        // Keep the latest few sessions, the full scans Recent Scans lists, and the newest full scan
+        // that ran to the end (Home's "a full scan has finished" is read from it), and no chunks of
+        // the pruned ones. Quick checks run at every foreground; they must not push the others out.
+        let others = all.filter { $0.id != id }.sorted { $0.startedAt > $1.startedAt }
+        let full = ScanKind.full.rawValue
+        var keep = Set(others.prefix(Self.recentSessionsKept).map(\.id))
+        keep.formUnion(
+            others.lazy.filter { $0.kindRaw == full }.prefix(Self.fullScansKept).map(\.id))
+        let completed = ScanState.completed.rawValue
+        if let lastCompleted = others.first(where: {
+            $0.kindRaw == full && $0.stateRaw == completed
+        }) {
+            keep.insert(lastCompleted.id)
+        }
+        for record in others where !keep.contains(record.id) {
             try removeChunks(job: record.id)
             modelContext.delete(record)
         }
     }
+
+    private static let recentSessionsKept = 4
+    /// Recent Scans lists this many full scans.
+    private static let fullScansKept = 10
 
     public func currentSession() throws -> ScanSession? {
         var descriptor = FetchDescriptor<ScanSessionRecord>(

@@ -66,6 +66,15 @@ struct CategoryView: View {
             .onChange(of: result?.groups.count) {
                 scrollToRestoredPhoto(proxy, in: result, layout: layout)
             }
+            // The groups and cells are built once the width is known, which is after the screen
+            // appeared: the first attempt above had nothing to scroll to.
+            .onChange(of: width > 0) { _, known in
+                guard known else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(80))
+                    scrollToRestoredPhoto(proxy, in: result, layout: layout)
+                }
+            }
         }
         .environment(prefetcher)
         .task(id: PrefetchKey(count: members.count, pixels: pixelSize(layout))) {
