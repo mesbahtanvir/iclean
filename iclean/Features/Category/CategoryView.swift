@@ -8,6 +8,8 @@ struct CategoryView: View {
     @Environment(AppModel.self) private var model
     @State private var showConfirm = false
     @State private var viewing: String?
+    /// Warms the pictures just ahead of the scroll.
+    @State private var prefetcher = ThumbnailPrefetcher()
 
     private let columns = [GridItem(.adaptive(minimum: 104), spacing: 4)]
 
@@ -15,7 +17,8 @@ struct CategoryView: View {
         let result = model.results.category(category)
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                // Lazy: a library with thousands of groups must not build them all when it opens.
+                LazyVStack(alignment: .leading, spacing: 16) {
                     Text(category.explanation)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -57,8 +60,12 @@ struct CategoryView: View {
             }
             // A restored screen opens on the photo the person last touched.
             .onAppear { scrollToRestoredPhoto(proxy, in: result) }
-            .onChange(of: result?.allMembers.count) { scrollToRestoredPhoto(proxy, in: result) }
+            // Not `allMembers.count`: that builds the whole list of ids each time the body runs.
+            .onChange(of: result?.groups.count) { scrollToRestoredPhoto(proxy, in: result) }
         }
+        .environment(prefetcher)
+        .task(id: result?.groups.count) { updatePrefetchList() }
+        .onDisappear { prefetcher.stopAll() }
         .navigationTitle(category.title)
         .task { await model.measureSizes(in: category) }
         .toolbar {
@@ -76,6 +83,11 @@ struct CategoryView: View {
 
     private var viewingBinding: Binding<Viewing?> {
         Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })
+    }
+
+    private func updatePrefetchList() {
+        let ids = model.results.category(category)?.allMembers ?? []
+        prefetcher.use(library: model.environment.library, ids: ids, pixelSize: 300)
     }
 
     private func scrollToRestoredPhoto(_ proxy: ScrollViewProxy, in result: CategoryResult?) {
@@ -129,11 +141,13 @@ struct CategoryView: View {
                         }
                     }
                     Spacer()
-                    SelectionMark(selected: model.isSelected(id))
+                    SelectionMark(selected: model.isSelected(id), style: .onSurface)
                 }
                 .padding(.horizontal)
                 .contentShape(Rectangle())
                 .onTapGesture { model.toggle(id) }
+                .onAppear { prefetcher.appeared(id) }
+                .onDisappear { prefetcher.disappeared(id) }
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAddTraits(model.isSelected(id) ? .isSelected : [])
@@ -190,11 +204,15 @@ struct ItemCell: View {
     var onView: () -> Void
 
     @Environment(AppModel.self) private var model
+    @Environment(ThumbnailPrefetcher.self) private var prefetcher
 
     var body: some View {
         let item = model.results.items[assetID]
         let selected = model.isSelected(assetID)
         Thumbnail(assetID: assetID)
+            // Only the picture is dimmed: dimming the whole cell would draw it, and everything
+            // on it, as one extra layer for every cell on screen.
+            .opacity(selected ? 0.75 : 1)
             .aspectRatio(1, contentMode: .fit)
             .overlay(alignment: .topTrailing) {
                 SelectionMark(selected: selected).padding(6)
@@ -203,8 +221,9 @@ struct ItemCell: View {
                 Button(action: onView) {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.caption.bold())
+                        .foregroundStyle(.white)
                         .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .background(Color.black.opacity(0.4), in: Circle())
                 }
                 .padding(4)
                 .accessibilityHidden(true)
@@ -226,10 +245,11 @@ struct ItemCell: View {
                 }
                 .padding(4)
             }
-            .opacity(selected ? 0.75 : 1)
             .contentShape(Rectangle())
             .onTapGesture { model.toggle(assetID) }
             .onLongPressGesture(minimumDuration: 0.4) { onView() }
+            .onAppear { prefetcher.appeared(assetID) }
+            .onDisappear { prefetcher.disappeared(assetID) }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label(item: item))
             .accessibilityAddTraits(.isButton)
@@ -261,17 +281,6 @@ struct ItemCell: View {
     }
 }
 
-struct SelectionMark: View {
-    let selected: Bool
-    var body: some View {
-        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-            .font(.title3)
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, selected ? Color.red : Color.black.opacity(0.3))
-            .accessibilityHidden(true)
-    }
-}
-
 struct Badge: View {
     let text: String?
     let systemImage: String
@@ -285,9 +294,11 @@ struct Badge: View {
             if let text, !typeSize.isAccessibilitySize { Text(text) }
         }
         .font(.caption2.bold())
+        .foregroundStyle(.white)
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
-        .background(.ultraThinMaterial, in: Capsule())
+        // A solid tint, not a blur: a blur per badge on every visible cell is costly to scroll.
+        .background(Color.black.opacity(0.5), in: Capsule())
         .accessibilityIdentifier(text == "Keep" ? "category.keeperBadge" : "")
     }
 }

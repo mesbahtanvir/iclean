@@ -38,9 +38,26 @@ final class AppModel {
     var progress: ScanProgress?
     var isScanning = false
     var hasInterruptedScan = false
+    /// When the newest full scan that ran to the end finished. Not the last quick check, and not a
+    /// scan that was stopped: Home must never say "nothing to clean up" for a library that was not
+    /// fully checked.
     var lastScanDate: Date?
-    var results: CleanupResults = .empty
-    var selection: Set<String> = []
+    /// Whether a full scan has ever run to the end.
+    var hasFinishedFullScan: Bool { lastScanDate != nil }
+    /// How many photos the store holds (a count, not read from the items). Nil until known.
+    private(set) var libraryItemCount: Int?
+    var results: CleanupResults = .empty {
+        didSet {
+            resultsVersion += 1
+            scheduleSummary()
+        }
+    }
+    var selection: Set<String> = [] {
+        didSet { scheduleSummary() }
+    }
+    /// The selection in numbers: what the hero figure, the Review button and the Confirm sheet all
+    /// read, so they always agree. Recomputed off the main thread, one pass over the selection.
+    private(set) var summary: SelectionSummary = .empty
     var lastSummary: CleanupSummary?
     /// Something went wrong that the person must be told about (shown by Home as an alert).
     var errorMessage: String?
@@ -65,6 +82,11 @@ final class AppModel {
 
     /// Tells a finished build whether it is still the newest one.
     private var resultsGeneration = 0
+    @ObservationIgnored private var summaryTask: Task<Void, Never>?
+    @ObservationIgnored private var summaryRequest = 0
+    @ObservationIgnored private var resultsVersion = 0
+    @ObservationIgnored private var indexVersion = -1
+    @ObservationIgnored private var cachedIndex: ResultsIndex?
     /// How many items the results held in `pendingBuild` would add to the screen.
     private(set) var pendingNewCount = 0
     /// Photos removed in this run. A scan still in flight can bring one back into the store,
@@ -73,8 +95,13 @@ final class AppModel {
     private var publishedRevision = -1
     /// Items checked when the results were last rebuilt, so a pause shows what was saved since.
     private var lastRebuiltAt = 0
-    /// The scan has ended and its last results are being built.
-    private var isFinishing = false
+    /// The scan has ended and its last results are being built: Home shows progress, never a
+    /// "clean" or "empty" claim, until they are.
+    private(set) var isFinishing = false
+    /// The person has removed something in this run (for "All cleaned up").
+    var hasRemovedThisSession: Bool { !removedInSession.isEmpty }
+    /// How many photos are marked "Always Keep".
+    var keepMarkCount: Int { keepMarks.count }
 
     private var changesTask: Task<Void, Never>?
 
@@ -132,7 +159,8 @@ final class AppModel {
         }
         stateLoaded = true
         hasInterruptedScan = state.session?.isActive ?? false
-        lastScanDate = state.session?.finishedAt
+        lastScanDate = state.lastFullScanCompletedAt
+        libraryItemCount = state.itemCount
         keepMarks = state.keepMarks
         intent =
             Self.decode(ReviewIntent.self, state.states[.decisions], ReviewIntent.formatVersion)
@@ -229,6 +257,7 @@ final class AppModel {
             // to a process that may be suspended at once.
             await rebuildTask?.value
             await reloadResults()
+            await refreshLibraryItemCount()
             continuation.scanEnded()
             isFinishing = false
         }
@@ -411,6 +440,8 @@ final class AppModel {
     /// analyzed again by the next check), out of the lists, and the results are built again.
     private func photosChangedElsewhere(_ ids: Set<String>) async {
         guard !ids.isEmpty, !isDeleting else { return }
+        // A photo changed or removed elsewhere must be drawn again, not from memory.
+        environment.thumbnails.removeAll()
         try? await environment.store.deleteItems(ids)
         patch(removing: ids)
     }
@@ -551,7 +582,42 @@ final class AppModel {
     }
 
     func selectedCount(in category: CleanupCategory) -> Int {
-        results.category(category)?.allMembers.filter(selection.contains).count ?? 0
+        summary.perCategory[category]?.selected ?? 0
+    }
+
+    /// Recomputes the summary once for any number of changes that arrive together (a batch toggle,
+    /// a burst of size updates), and never on the main thread: building the index of a 30,000-photo
+    /// result takes a moment, and a screen launch must not wait for it.
+    private func scheduleSummary() {
+        guard summaryTask == nil else { return }
+        summaryTask = Task { [weak self] in
+            await Task.yield()
+            await self?.recomputeSummary()
+        }
+    }
+
+    private func recomputeSummary() async {
+        summaryTask = nil
+        summaryRequest += 1
+        let request = summaryRequest
+        let results = results
+        let selection = selection
+        let version = resultsVersion
+        let reusable = indexVersion == version ? cachedIndex : nil
+        let (index, fresh) = await Task.detached(priority: .userInitiated) {
+            let index = reusable ?? ResultsIndex(results)
+            return (index, SelectionSummary.make(selection: selection, index: index))
+        }.value
+        // A newer request started meanwhile: it will set the right numbers.
+        guard request == summaryRequest else { return }
+        cachedIndex = index
+        indexVersion = version
+        summary = fresh
+    }
+
+    /// Re-reads the store's count of photos (after a scan, or a removal).
+    func refreshLibraryItemCount() async {
+        libraryItemCount = try? await environment.store.itemCount()
     }
 
     /// Makes `id` the keeper of its group; the previous keeper becomes removable
@@ -739,6 +805,7 @@ final class AppModel {
                 intent.forget(removed)
                 patch(removing: removed)
                 saveDecisions()
+                await refreshLibraryItemCount()
                 Log.removal.info("Removed \(summary.removedCount) items")
             }
             lastSummary = summary
@@ -827,6 +894,7 @@ final class AppModel {
         basisRevision = nil
         storeProblem = nil
         lastScanDate = nil
+        libraryItemCount = nil
         hasInterruptedScan = false
         progress = nil
         stateLoaded = false
@@ -882,6 +950,7 @@ final class AppModel {
         removedInSession = []
         basisRevision = try? await environment.store.revision()
         lastScanDate = nil
+        libraryItemCount = nil
         hasInterruptedScan = false
         progress = nil
         results = .empty

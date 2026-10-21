@@ -416,11 +416,27 @@ public actor SwiftDataStore: Store {
         return ResultInputs(items: items, keepMarks: try keepMarks(), revision: revision)
     }
 
+    public func itemCount() throws -> Int {
+        try modelContext.fetchCount(FetchDescriptor<LibraryItemRecord>())
+    }
+
     public func loadLaunchState() throws -> LaunchState {
         LaunchState(
             revision: try revision(), states: try verifiedStates(), keepMarks: try keepMarks(),
-            session: try currentSession(),
-            itemCount: try modelContext.fetchCount(FetchDescriptor<LibraryItemRecord>()))
+            session: try currentSession(), itemCount: try itemCount(),
+            lastFullScanCompletedAt: try lastFullScanCompletedAt())
+    }
+
+    /// The newest full scan that finished normally: not a quick check, not a stopped scan.
+    private func lastFullScanCompletedAt() throws -> Date? {
+        let full = ScanKind.full.rawValue
+        let completed = ScanState.completed.rawValue
+        var descriptor = FetchDescriptor<ScanSessionRecord>(
+            predicate: #Predicate { $0.kindRaw == full && $0.stateRaw == completed },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        let record = try modelContext.fetch(descriptor).first
+        return record?.finishedAt ?? record?.startedAt
     }
 
     /// Saved state rows that pass their checksum. A damaged one is deleted: a cache or a saved

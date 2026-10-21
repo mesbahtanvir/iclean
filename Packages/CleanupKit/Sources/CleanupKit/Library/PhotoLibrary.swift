@@ -14,6 +14,17 @@ public protocol PhotoLibrary: Sendable {
     /// Cheaper than `fetchItems(withIDs:)`; photos no longer in the library are left out.
     func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp]
     func preview(for assetID: String, maxPixels: Int) async -> PreviewResult
+    /// Pictures of one item for the screen, as a stream: a quick low-resolution one first when that
+    /// is all that is on the phone (so a cell is never empty while the better one is made), then the
+    /// final one. Ends when the final one has been delivered, and stops the work when the stream is
+    /// cancelled (a cell scrolled away). Never downloads. Not for analysis: see `preview`.
+    func thumbnails(for assetID: String, pixelSize: Int, fit: ThumbnailFit) -> AsyncStream<
+        ThumbnailImage
+    >
+    /// Tells the library which thumbnails will be asked for soon, so they are ready by then.
+    func startPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit)
+    /// Tells the library these thumbnails are no longer expected soon.
+    func stopPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit)
     /// Size of the item's files on the phone, or nil when not stored locally.
     func localByteSize(for assetID: String) async -> Int64?
     /// Moves items to Recently Deleted. iOS shows its own confirmation first.
@@ -22,7 +33,42 @@ public protocol PhotoLibrary: Sendable {
     func changes() -> AsyncStream<LibraryChange>
 }
 
+/// How a thumbnail fills its square: `fill` makes the shorter side the size (a grid cell is cropped
+/// to it), `fit` makes the longer side the size (the whole picture, for viewing).
+public enum ThumbnailFit: Sendable, Hashable {
+    case fill, fit
+}
+
+/// One picture of a thumbnail stream. `isFinal` is false for the quick low-resolution first one.
+public struct ThumbnailImage: @unchecked Sendable {
+    public let image: CGImage
+    public let isFinal: Bool
+
+    public init(image: CGImage, isFinal: Bool) {
+        self.image = image
+        self.isFinal = isFinal
+    }
+}
+
 extension PhotoLibrary {
+    /// For libraries with no faster path (the demo library, tests): the preview, once.
+    public func thumbnails(for assetID: String, pixelSize: Int, fit: ThumbnailFit) -> AsyncStream<
+        ThumbnailImage
+    > {
+        AsyncStream { continuation in
+            let task = Task {
+                if let image = await preview(for: assetID, maxPixels: pixelSize).image {
+                    continuation.yield(ThumbnailImage(image: image, isFinal: true))
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    public func startPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit) {}
+    public func stopPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit) {}
+
     public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
         let wanted = Set(assetIDs)
         return await fetchAllItems().filter { wanted.contains($0.assetID) }
