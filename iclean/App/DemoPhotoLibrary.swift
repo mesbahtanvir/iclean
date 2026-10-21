@@ -48,6 +48,8 @@
                 buildDates()
             } else if let count = Self.largeCount(scenario) {
                 buildLarge(count: count)
+            } else if scenario == "clean" {
+                buildClean()
             } else if scenario != "empty" {
                 buildStandard()
             }
@@ -168,6 +170,16 @@
             }
         }
 
+        /// Photos, but nothing to clean up: every photo is sharp and different, none is a screenshot
+        /// or a video. The scan ends with "Nothing to clean up" (spec 009).
+        private func buildClean() {
+            for i in 0..<8 {
+                add(
+                    "clean\(i)", image: DemoImages.scene(seed: UInt64(200 + i)),
+                    minutes: Double(i) * 60 * 24 * 3, size: 3_000_000)
+            }
+        }
+
         private func buildStandard() {
             // Duplicates: three copies of one photo, two of another (one a favorite),
             // and an edited version that must not be grouped with its original.
@@ -214,11 +226,15 @@
             switch scenario {
             case "denied": .denied
             case "limited": .limited
+            case "notDetermined": .notDetermined
             default: .full
             }
         }
 
-        func requestAuthorization() async -> LibraryAccess { authorizationStatus() }
+        /// `notDetermined` is the first launch: asking grants access, as tapping Allow does.
+        func requestAuthorization() async -> LibraryAccess {
+            scenario == "notDetermined" ? .full : authorizationStatus()
+        }
 
         func fetchAllItems() async -> [AssetMetadata] {
             if scenario == "deleteDuringReview" {

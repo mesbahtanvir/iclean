@@ -37,11 +37,20 @@ struct icleanApp: App {
         }
         #if os(macOS)
             .defaultSize(width: 560, height: 780)
+            // Small enough for a narrow window, but never a sliver; the contents set the minimum.
+            .windowResizability(.contentMinSize)
+            .commands {
+                // One window only: one scan and one confirmation can be in progress, by construction.
+                CommandGroup(replacing: .newItem) {}
+            }
         #endif
     }
 
     private var appRoot: some View {
-        RootView()
+        rootContent
+            #if os(macOS)
+                .frame(minWidth: 480, minHeight: 560)
+            #endif
             .environment(model)
             .task {
                 #if DEBUG
@@ -52,6 +61,9 @@ struct icleanApp: App {
                     if ProcessInfo.processInfo.arguments.contains("-AutoScan") {
                         model.startScan()
                     }
+                    #if os(macOS)
+                        await WindowSnapshot.runIfRequested(model: model)
+                    #endif
                 #endif
             }
             .onChange(of: scenePhase) { _, phase in
@@ -64,6 +76,22 @@ struct icleanApp: App {
                 @unknown default: break
                 }
             }
+    }
+}
+
+extension icleanApp {
+    /// The app's root; in a Mac debug build `-ShowScreen` shows one screen alone (WindowSnapshot).
+    @ViewBuilder fileprivate var rootContent: some View {
+        #if DEBUG && os(macOS)
+            switch WindowSnapshot.screenOverride {
+            case "settings": NavigationStack { SettingsView() }
+            case "saved": NavigationStack { SavedDataView() }
+            case "recent": NavigationStack { RecentScansView() }
+            default: RootView()
+            }
+        #else
+            RootView()
+        #endif
     }
 }
 
