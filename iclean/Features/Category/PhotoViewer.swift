@@ -70,6 +70,7 @@ struct PhotoViewer: View {
         #if os(macOS)
             // A sheet on the Mac has no size of its own.
             .frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+            .tracksSheet()
         #endif
         .task { await prepareVideo(item) }
         .onChange(of: assetID) { resetZoom() }
@@ -77,6 +78,15 @@ struct PhotoViewer: View {
     }
 
     private var isVideo: Bool { model.results.items[assetID]?.metadata.kind.isVideo == true }
+
+    /// How to zoom without a touch screen: the keys on a Mac, the pinch-like swipe on a phone.
+    private var zoomHint: Text {
+        #if os(macOS)
+            Text("Press Command-Plus or Command-Minus to zoom")
+        #else
+            Text("Swipe up or down to zoom")
+        #endif
+    }
 
     /// The pixels asked for: the picture of a photo filling a big screen.
     private var pixelRequest: Int {
@@ -167,7 +177,7 @@ struct PhotoViewer: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(ItemKind.photo.spokenName))
             .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
-            .accessibilityHint(Text("Swipe up or down to zoom"))
+            .accessibilityHint(zoomHint)
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: setZoom(baseScale * 1.5, item: item)

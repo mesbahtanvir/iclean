@@ -37,6 +37,8 @@ enum Layout {
     static let readable: CGFloat = 560
     static let access: CGFloat = 480
     static let macSheet: CGFloat = 440
+    /// The Mac Settings window: fixed width, the height follows the tab.
+    static let macSettings: CGFloat = 480
 }
 
 enum Typography {

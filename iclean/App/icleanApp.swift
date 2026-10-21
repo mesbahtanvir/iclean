@@ -36,20 +36,28 @@ struct icleanApp: App {
             #endif
         }
         #if os(macOS)
-            .defaultSize(width: 560, height: 780)
-            // Small enough for a narrow window, but never a sliver; the contents set the minimum.
+            // A Mac window, not a phone: wide enough for a sidebar and a column of photos. The
+            // contents set the minimum (`appRoot`), so it can never be made a sliver.
+            .defaultSize(width: 1040, height: 700)
             .windowResizability(.contentMinSize)
-            .commands {
-                // One window only: one scan and one confirmation can be in progress, by construction.
-                CommandGroup(replacing: .newItem) {}
-            }
+            // One window only (no New Window), the Scan menu, selection commands and Help.
+            .commands { MacCommands(model: model) }
+        #endif
+        #if os(macOS)
+            // Command-comma.
+            Settings { MacSettingsView().environment(model) }
+            // Help: what removing does and how to undo it. Opened from the menu, never at launch.
+            Window("How Removal Works", id: HowRemovalWorks.windowID) { HowRemovalWorksView() }
+                .windowResizability(.contentSize)
+                .defaultLaunchBehavior(.suppressed)
+                .restorationBehavior(.disabled)
         #endif
     }
 
     private var appRoot: some View {
         rootContent
             #if os(macOS)
-                .frame(minWidth: 480, minHeight: 560)
+                .frame(minWidth: 820, minHeight: 540)
             #endif
             .environment(model)
             .task {
@@ -87,6 +95,11 @@ extension icleanApp {
             case "settings": NavigationStack { SettingsView() }
             case "saved": NavigationStack { SavedDataView() }
             case "recent": NavigationStack { RecentScansView() }
+            // The Mac Settings window's tabs and the Help window, in the main window so they can be
+            // captured (the real windows are separate scenes).
+            case "settingsGeneral": MacSettingsView(tab: .general)
+            case "settingsData": MacSettingsView(tab: .data)
+            case "help": HowRemovalWorksView()
             default: RootView()
             }
         #else

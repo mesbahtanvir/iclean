@@ -33,14 +33,49 @@ struct RecentScansView: View {
 
     private func list(_ history: ScanHistory) -> some View {
         List {
+            RecentScansSection(history: history, showsHeader: false)
+        }
+    }
+}
+
+/// The scans as one section, so the Mac Settings window can show them under the other data rows.
+struct RecentScansSection: View {
+    let history: ScanHistory
+    /// The Mac window has no screen title to say what the rows are, so its section has a header.
+    var showsHeader = true
+
+    var body: some View {
+        if showsHeader {
             Section {
-                ForEach(history.scans) { scan in
-                    ScanRow(session: scan)
-                }
+                rows
+            } header: {
+                Text("Recent Scans")
             } footer: {
-                if let line = history.quickChecksLine { Text(line) }
+                footer
+            }
+        } else {
+            Section {
+                rows
+            } footer: {
+                footer
             }
         }
+    }
+
+    @ViewBuilder private var rows: some View {
+        if history.isEmpty {
+            Text("Scans you run will be listed here.")
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("recentScans.empty")
+        } else {
+            ForEach(history.scans) { scan in
+                ScanRow(session: scan)
+            }
+        }
+    }
+
+    @ViewBuilder private var footer: some View {
+        if let line = history.quickChecksLine { Text(line) }
     }
 }
 

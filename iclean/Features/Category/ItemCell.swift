@@ -67,7 +67,7 @@ struct ItemCell: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description(item: item, favorite: favorite, inAlbums: inAlbums))
             .accessibilityValue(ReviewState.text(selected: selected))
-            .accessibilityHint(Text("Double tap to change"))
+            .accessibilityHint(ReviewState.changeHint)
             .accessibilityAddTraits(.isButton)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("category.item.\(assetID)")
@@ -95,6 +95,17 @@ struct ItemCell: View {
             parts.append(String(localized: "Checked from a preview only."))
         }
         return parts.joined(separator: " ")
+    }
+}
+
+extension ReviewState {
+    /// What VoiceOver says about how to change it: a double tap on a phone, the Space bar on a Mac.
+    static var changeHint: Text {
+        #if os(macOS)
+            Text("Press the Space bar to change")
+        #else
+            Text("Double tap to change")
+        #endif
     }
 }
 

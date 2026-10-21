@@ -22,14 +22,21 @@ enum RestoreHelp {
     }
 }
 
+/// The steps as text, for the page, the Mac Settings window and the Mac Help window.
+struct RestoreHelpContent: View {
+    var body: some View {
+        Text(RestoreHelp.steps)
+            .font(.body)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// A short page with the restore steps. Nothing to tap: the answer is the text.
 struct RestoreHelpView: View {
     var body: some View {
         ScrollView {
-            Text(RestoreHelp.steps)
-                .font(.body)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            RestoreHelpContent()
                 .padding(.horizontal, Space.l)
                 .padding(.vertical, Space.xl)
                 .readableColumn()

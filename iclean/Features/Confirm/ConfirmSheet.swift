@@ -47,6 +47,10 @@ struct ConfirmSheet: View {
                     if receipt != nil { chosenDetent = .large }
                 #endif
             }
+            #if os(macOS)
+                // The menu commands wait while this question is up.
+                .tracksSheet()
+            #endif
     }
 
     private var isReceipt: Bool { summary.map { !$0.cancelled } ?? false }

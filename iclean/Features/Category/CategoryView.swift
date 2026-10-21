@@ -88,6 +88,12 @@ struct CategoryView: View {
         }
         .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
         .photoViewer($viewing)
+        #if os(macOS)
+            // Tells the Edit menu which category this is and how to open its Confirm sheet.
+            .focusedSceneValue(
+                \.reviewActions,
+                ReviewActions(category: category, review: { showConfirm = true }))
+        #endif
     }
 
     // MARK: Sizes
