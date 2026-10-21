@@ -849,7 +849,10 @@ final class AppModel {
             lastSummary = summary
             return summary
         } catch {
-            removalError = String(localized: "Nothing was removed.")
+            removalError = String(
+                localized:
+                    "Something went wrong, so nothing was removed. Your photos are untouched. You can try again."
+            )
             return nil
         }
     }
@@ -875,6 +878,8 @@ final class AppModel {
         var decisionCount: Int
         var keeperChoices: Int
         var hasPosition: Bool
+        /// Photos marked "Always Keep".
+        var keepMarkCount: Int
     }
 
     /// What is saved besides the scan itself, for the "Saved on this iPhone" screen.
@@ -883,7 +888,8 @@ final class AppModel {
         return SavedDataInventory(
             resultsBytes: info[.results]?.bytes, resultsBuiltAt: info[.results]?.updatedAt,
             decisionCount: intent.forcedOn.count + intent.forcedOff.count,
-            keeperChoices: intent.keeperChoices.count, hasPosition: !position.path.isEmpty)
+            keeperChoices: intent.keeperChoices.count, hasPosition: !position.path.isEmpty,
+            keepMarkCount: keepMarks.count)
     }
 
     /// Deletes the saved results. They are rebuilt from the scan next time; nothing is lost.
