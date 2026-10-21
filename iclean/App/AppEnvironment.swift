@@ -37,7 +37,7 @@ struct AppEnvironment: Sendable {
             library: library, store: store,
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
-                chunkSize: LaunchArguments.chunkSize, features: features,
+                profile: LaunchArguments.scanProfile, features: features,
                 minProgressInterval: .milliseconds(250)),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
@@ -84,6 +84,21 @@ enum LaunchArguments {
             }
         #endif
         return 32
+    }
+
+    /// How wide the scan works (spec 009): every core on a Mac, the narrow settings of spec 008 on a
+    /// phone. DEBUG only: `-ScanProfile phone` or `-ScanProfile mac` picks one, so the narrow scan can
+    /// be run on a Mac and the wide one compared with it.
+    static var scanProfile: ScanProfile {
+        var profile = ScanProfile.current
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-ScanProfile"), i + 1 < args.count {
+                profile = args[i + 1] == "phone" ? .phone : .mac()
+            }
+        #endif
+        profile.chunkSize = chunkSize
+        return profile
     }
 
     /// What Pro unlocks. Always free in a release build: the one-time Pro purchase is not

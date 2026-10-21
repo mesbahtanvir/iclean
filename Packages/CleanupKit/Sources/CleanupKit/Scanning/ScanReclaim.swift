@@ -27,7 +27,6 @@ enum ScanReclaim {
             // never counted for those.
             sawCrash = true
             chunk.crashes += 1
-            session.crashCount += 1
             chunk.owner = nil
             let flying = chunk.inFlightIndex
             chunk.inFlightIndex = nil
@@ -51,6 +50,9 @@ enum ScanReclaim {
             chunk.state = chunk.isComplete ? .done : .pending
         }
         if sawCrash {
+            // One death is one crash, however many chunks were running when it happened: a scan
+            // with several lanes (spec 009) has several, and the budget is for deaths.
+            session.crashCount += 1
             session.interruptedCount += 1
             if session.crashCount >= policy.crashBudget {
                 // Too many deaths: end the job, keep what was done (003 edge cases).
