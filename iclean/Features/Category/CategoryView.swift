@@ -14,6 +14,12 @@ struct CategoryView: View {
     @Environment(\.displayScale) private var displayScale
     #if os(macOS)
         @Environment(\.openConfirm) private var openConfirm
+        /// The photo size the person chose with the toolbar slider.
+        @AppStorage(PhotoSize.key) private var photoSize = PhotoSize.standard
+        /// The photo that has the keyboard focus.
+        @FocusState private var focusedID: String?
+        /// What the cells share: where the arrow keys lead and where a range starts.
+        @State private var navigator = GridNavigator()
     #endif
     @State private var showConfirm = false
     @State private var viewing: String?
@@ -32,6 +38,77 @@ struct CategoryView: View {
         let layout: Layout =
             category == .largeVideos
             ? .videoList : (result?.groups.first?.type == .single ? .flatGrid : .groups)
+        mainContent(result, members: members, layout: layout)
+            .environment(prefetcher)
+            .task(id: PrefetchKey(count: members.count, pixels: pixelSize(layout))) {
+                prefetcher.use(
+                    library: model.environment.library, ids: members, pixelSize: pixelSize(layout))
+            }
+            .onDisappear { prefetcher.stopAll() }
+            .navigationTitle(category.title)
+            #if os(iOS)
+                // At accessibility sizes the title, the back button and "Select All Videos" cannot
+                // share one line, so the title gets its own.
+                .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .large : .inline)
+            #endif
+            #if os(macOS)
+                // "3 sets · 6.4 MB" under the name, in the window's title bar.
+                .modifier(
+                    CategorySubtitle(
+                        category: category, count: result?.groups.count ?? 0,
+                        isGrouped: layout == .groups))
+            #endif
+            .task { await model.measureSizes(in: category) }
+            .toolbar {
+                #if os(macOS)
+                    if layout != .videoList {
+                        ToolbarItem(placement: .primaryAction) { PhotoSizeSlider() }
+                    }
+                #endif
+                ToolbarItem(placement: .primaryAction) {
+                    SelectSuggestedButton(category: category)
+                }
+            }
+            #if os(iOS)
+                .pinnedBar(isPresented: true) {
+                    CategoryRemoveBar(category: category) { requestConfirm() }
+                }
+            #else
+                // A 40 pt status bar, not a slab.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    MacRemoveStatusBar(category: category) { requestConfirm() }
+                }
+            #endif
+            .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
+            .photoViewer($viewing)
+    }
+
+    /// What fills the screen: the scrolling list of photos, groups or videos, or, for Large Videos on
+    /// a Mac, a native table.
+    @ViewBuilder private func mainContent(
+        _ result: CategoryResult?, members: [String], layout: Layout
+    ) -> some View {
+        #if os(macOS)
+            if layout == .videoList, result != nil {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    intro(result, layout: layout)
+                    MacVideoTable(
+                        ids: members, pixelSize: pixelSize(layout), onView: { viewing = $0 },
+                        onRemove: removeIfSelected
+                    )
+                }
+                .padding(.top, Space.l)
+            } else {
+                scroller(result, members: members, layout: layout)
+            }
+        #else
+            scroller(result, members: members, layout: layout)
+        #endif
+    }
+
+    private func scroller(_ result: CategoryResult?, members: [String], layout: Layout)
+        -> some View
+    {
         ScrollViewReader { proxy in
             ScrollView {
                 // Lazy: a library with thousands of groups must not build them all when it opens.
@@ -62,35 +139,23 @@ struct CategoryView: View {
                 $0.size.width
             } action: {
                 width = $0
+                syncNavigator()
             }
             // A restored screen opens on the photo the person last touched.
-            .onAppear { scrollToRestoredPhoto(proxy, in: result, layout: layout) }
+            .onAppear {
+                scrollToRestoredPhoto(proxy, in: result, layout: layout)
+                #if os(macOS)
+                    connectNavigator(proxy)
+                #endif
+            }
             // Not `allMembers.count`: that builds the whole list of ids each time the body runs.
             .onChange(of: result?.groups.count) {
                 scrollToRestoredPhoto(proxy, in: result, layout: layout)
             }
+            #if os(macOS)
+                .onChange(of: photoSize) { syncNavigator() }
+            #endif
         }
-        .environment(prefetcher)
-        .task(id: PrefetchKey(count: members.count, pixels: pixelSize(layout))) {
-            prefetcher.use(
-                library: model.environment.library, ids: members, pixelSize: pixelSize(layout))
-        }
-        .onDisappear { prefetcher.stopAll() }
-        .navigationTitle(category.title)
-        #if os(iOS)
-            // At accessibility sizes the title, the back button and "Select All Videos" cannot
-            // share one line, so the title gets its own.
-            .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .large : .inline)
-        #endif
-        .task { await model.measureSizes(in: category) }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) { SelectSuggestedButton(category: category) }
-        }
-        .pinnedBar(isPresented: true) {
-            CategoryRemoveBar(category: category) { requestConfirm() }
-        }
-        .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
-        .photoViewer($viewing)
     }
 
     /// Opens the Confirm sheet. In the Mac window the shell owns it, so it outlives this screen.
@@ -104,6 +169,43 @@ struct CategoryView: View {
         showConfirm = true
     }
 
+    #if os(macOS)
+        /// Delete: opens the Confirm sheet, but only when something is selected, so the key can never
+        /// show an empty question. It never removes anything itself.
+        private func removeIfSelected() {
+            guard (model.summary.perCategory[category]?.selected ?? 0) > 0 else { return }
+            requestConfirm()
+        }
+
+        /// Tells the cells how to find the results and how to scroll to a photo.
+        private func connectNavigator(_ proxy: ScrollViewProxy) {
+            navigator.results = { [model, category] in model.results.category(category) }
+            navigator.scrollTo = { id, groupID in
+                if let groupID {
+                    // The group's own section first: its photos are in a lazy grid that does not
+                    // exist until the section is on screen.
+                    proxy.scrollTo(groupID, anchor: nil)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(80))
+                        proxy.scrollTo(id, anchor: nil)
+                    }
+                } else {
+                    proxy.scrollTo(id, anchor: nil)
+                }
+            }
+            syncNavigator()
+        }
+    #endif
+
+    /// The number of columns the grid has now, which the up and down keys step by.
+    private func syncNavigator() {
+        #if os(macOS)
+            navigator.columns = GridMetrics.columns(
+                width: Double(gridWidth), minimum: Double(columnMinimum),
+                spacing: Double(Gutter.grid))
+        #endif
+    }
+
     // MARK: Sizes
 
     private struct PrefetchKey: Equatable {
@@ -112,14 +214,27 @@ struct CategoryView: View {
     }
 
     /// The smallest a photo may be: wider on a Mac and at accessibility sizes, so a cell stays
-    /// large enough for its glyphs.
+    /// large enough for its glyphs. On a Mac the person sets it with the slider.
     private var columnMinimum: CGFloat {
         #if os(macOS)
-            150
+            CGFloat(PhotoSize.clamped(photoSize))
         #else
             typeSize.isAccessibilitySize ? 150 : 104
         #endif
     }
+
+    /// Space left and right of the grid: none on a phone, where the photos run edge to edge, and the
+    /// text's gutter on a Mac, where the photos are rounded tiles and need air at the window's edge.
+    private var gridInset: CGFloat {
+        #if os(macOS)
+            Space.l
+        #else
+            0
+        #endif
+    }
+
+    /// The width the columns are made from.
+    private var gridWidth: CGFloat { max(width - 2 * gridInset, 0) }
 
     private var pixelCap: Int {
         #if os(macOS)
@@ -133,15 +248,22 @@ struct CategoryView: View {
     private func pixelSize(_ layout: Layout) -> Int {
         switch layout {
         case .videoList:
-            // A 72 pt preview.
-            return GridMetrics.pixels(
-                width: VideoRow.previewSide, minimum: VideoRow.previewSide, spacing: 0,
-                scale: displayScale, cap: pixelCap)
+            #if os(macOS)
+                // A 56 pt preview in the table.
+                return GridMetrics.pixels(
+                    width: MacVideoTable.preview, minimum: MacVideoTable.preview, spacing: 0,
+                    scale: displayScale, cap: pixelCap)
+            #else
+                // A 72 pt preview.
+                return GridMetrics.pixels(
+                    width: VideoRow.previewSide, minimum: VideoRow.previewSide, spacing: 0,
+                    scale: displayScale, cap: pixelCap)
+            #endif
         case .flatGrid, .groups:
             guard width > 0 else { return 256 }
             return GridMetrics.pixels(
-                width: width, minimum: columnMinimum, spacing: Gutter.grid, scale: displayScale,
-                cap: pixelCap)
+                width: gridWidth, minimum: columnMinimum, spacing: Gutter.grid,
+                scale: displayScale, cap: pixelCap)
         }
     }
 
@@ -195,6 +317,7 @@ struct CategoryView: View {
             LazyVGrid(columns: columns, spacing: Gutter.grid) {
                 ForEach(members, id: \.self) { cell($0, group: nil, pixels: pixels) }
             }
+            .padding(.horizontal, gridInset)
         case .groups:
             ForEach(result.groups) { group in
                 VStack(alignment: .leading, spacing: Space.s) {
@@ -204,15 +327,25 @@ struct CategoryView: View {
                             cell($0, group: group, pixels: pixels)
                         }
                     }
+                    .padding(.horizontal, gridInset)
                 }
             }
         }
     }
 
-    private func cell(_ id: String, group: ResultGroup?, pixels: Int) -> some View {
-        ItemCell(
-            assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-            confidence: group?.confidence ?? .normal, pixelSize: pixels, onView: { viewing = id })
+    @ViewBuilder private func cell(_ id: String, group: ResultGroup?, pixels: Int) -> some View {
+        #if os(macOS)
+            MacItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels, group: group,
+                navigator: navigator, focus: $focusedID, onView: { viewing = id },
+                onRemove: removeIfSelected)
+        #else
+            ItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels,
+                onView: { viewing = id })
+        #endif
     }
 
     // MARK: Restoring the place

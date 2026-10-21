@@ -38,6 +38,25 @@ Review bar) → 5. interrupted with nothing found (`home.resume`) → 6. first r
 "A full scan has finished" means a session of kind full that ran to the end; a quick check or a
 stopped scan does not count.
 
+## Mac window (spec 009 section 6.15)
+
+The Mac is a sidebar and a detail pane, not the phone's stack. The same screens and ids apply in the
+detail pane (the Overview is Home's results screen with `results.reviewAll` as an inline button), and
+these are Mac only:
+
+- Sidebar: `sidebar.overview`, `sidebar.category.<name>` (the Overview keeps `results.category.<name>`).
+  The sidebar footer holds `home.lastScan` and `home.scan` (Scan Again), `home.resume`, `home.continue`,
+  `results.showNew` and, while scanning with results, the scan status. While scanning with nothing
+  found yet the scan card is the detail pane; its controls are in the toolbar.
+- Toolbar: `toolbar.scan` (Scan Library, Scan Again), `toolbar.resume` (Resume Scan after an interrupted
+  scan), and while a scan runs `scan.pause`, `scan.resume`, `scan.stop`; on a category
+  `category.photoSize` (the photo-size slider) and `category.selectAll`.
+- Category: `category.removeSelected` is the button in a 40 pt status bar. Large Videos is a table with
+  `category.item.<assetID>` on the Size cell of each row. Group compare uses checkboxes for
+  `group.toggle.<assetID>` (query `checkBoxes`, not `switches`).
+- There is no `home.settings` on the Mac: Settings is the window opened with Command-comma, and the
+  Help menu has "How Removal Works".
+
 ## Flow
 
 ```text
