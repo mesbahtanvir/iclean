@@ -171,8 +171,11 @@ final class HomeStatesTests: XCTestCase {
     private let audit: XCUIAccessibilityAuditType = .all.subtracting(.contrast)
 
     /// A system list header: iOS caps how far its text grows, and the audit reports that for every
-    /// section header (AccessibilityTests allows the same kind of system-capped text).
-    private let systemCapped: Set<String> = ["results.foundSoFar"]
+    /// section header (AccessibilityTests allows the same kind of system-capped text). The Review bar
+    /// is capped at accessibility1 on purpose.
+    private let systemCapped: Set<String> = [
+        "results.foundSoFar", "results.reviewAll.title", "results.reviewAll.size",
+    ]
 
     /// Fails on any issue, and says which element it is.
     private func runAudit(_ app: XCUIApplication, _ screen: String) throws {

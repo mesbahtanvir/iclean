@@ -20,6 +20,9 @@ final class AccessibilityTests: XCTestCase {
         // The "Kept" pill on a photo is capped at the xLarge text size by design (spec 009 4.3): it
         // sits on a thumbnail, and at accessibility sizes the grid gets wider cells instead.
         "category.keeperBadge",
+        // The pinned Review bar stops growing at accessibility1, so it stays a control at the
+        // largest sizes instead of covering a third of the screen (spec 009 4.3).
+        "results.reviewAll.title", "results.reviewAll.size",
         "Removed items go to Recently Deleted in the Photos app.",
         "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
     ]

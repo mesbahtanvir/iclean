@@ -17,8 +17,10 @@ struct ReviewBar: View {
                 VStack(spacing: 2) {
                     Text("Review ^[\(summary.count) Item](inflect: true)")
                         .font(.headline)
+                        .accessibilityIdentifier("results.reviewAll.title")
                     Text(Format.bytes(summary.bytes, estimate: summary.isEstimate))
                         .font(.subheadline.weight(.medium))
+                        .accessibilityIdentifier("results.reviewAll.size")
                 }
                 .frame(maxWidth: .infinity)
                 .multilineTextAlignment(.center)
@@ -26,6 +28,10 @@ struct ReviewBar: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
+            // A pinned control stays a control at the largest sizes: at AX5 it filled a third of the
+            // screen and covered the rows it sits over. The text still grows to AX1, like the
+            // system's own bars; the list above carries the rest.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .accessibilityLabel(spokenLabel)
             .accessibilityHint("Opens a summary. Nothing is removed until you confirm.")
             .accessibilityIdentifier("results.reviewAll")
