@@ -195,7 +195,7 @@ struct GroupHeader: View {
                 HStack(spacing: Space.xs) {
                     Text("Compare")
                         .font(.subheadline)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(Palette.accentText)
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)

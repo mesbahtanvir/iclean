@@ -289,6 +289,7 @@ private struct CompareCard: View {
                     model.makeKeeper(assetID)
                 }
                 .buttonStyle(.bordered)
+                .tint(Palette.accentText)
                 .accessibilityIdentifier("group.makeKeeper")
             }
         }

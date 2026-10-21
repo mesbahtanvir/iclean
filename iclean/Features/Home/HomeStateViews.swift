@@ -137,6 +137,7 @@ struct HomeNothingToShow: View {
             // An empty library can only be fixed outside iclean; scanning is still offered.
             Button("Scan Again") { model.startScan() }
                 .buttonStyle(.bordered)
+                .tint(Palette.accentText)
                 .controlSize(.large)
                 .accessibilityIdentifier("home.scan")
         }

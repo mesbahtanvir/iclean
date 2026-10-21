@@ -72,7 +72,7 @@ struct ResultsView: View {
                 VStack(alignment: .leading, spacing: Space.xs) {
                     Text("Resume Scan")
                         .font(.headline)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(Palette.accentText)
                     Text("Picks up where it stopped.")
                         .font(Typography.note)
                         .foregroundStyle(Palette.quietText)
@@ -346,7 +346,7 @@ private struct ContinueSection: View {
                     VStack(alignment: .leading, spacing: Space.xs) {
                         Text("Continue reviewing")
                             .font(.headline)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(Palette.accentText)
                         if let category {
                             Text("\(category.title), \(model.selectedCount(in: category)) selected")
                                 .font(Typography.note)
@@ -419,6 +419,7 @@ struct ScanAgainLine: View {
                 }
             }
             .font(.body)
+            .foregroundStyle(Palette.accentText)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
