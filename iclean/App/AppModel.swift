@@ -1,6 +1,7 @@
 import CleanupKit
 import Foundation
 import Observation
+import SwiftUI
 
 #if canImport(UIKit)
     import UIKit
@@ -147,6 +148,18 @@ final class AppModel {
         if case .volatile(let why) = await environment.store.openStatus() {
             storeProblem = .volatile(why)
         }
+        #if DEBUG
+            // `-DemoStoreProblem volatile` or `failed`: shows Home's notices for a store that cannot
+            // keep anything, or cannot be read, without breaking a real store (spec 009 section 6.2).
+            if let demo = Self.demoStoreProblem {
+                if demo == "volatile" { storeProblem = .volatile("demo") }
+                if demo == "failed" {
+                    storeProblem = .unreadable("demo")
+                    launchPhase = .failed
+                    return
+                }
+            }
+        #endif
         writerGeneration = await writer.currentGeneration()
         let state: LaunchState
         do {
@@ -198,6 +211,16 @@ final class AppModel {
         observeLibraryChanges()
         await reconcile()
     }
+
+    #if DEBUG
+        private static var demoStoreProblem: String? {
+            let args = ProcessInfo.processInfo.arguments
+            guard let i = args.firstIndex(of: "-DemoStoreProblem"), i + 1 < args.count else {
+                return nil
+            }
+            return args[i + 1]
+        }
+    #endif
 
     /// Quick check for new or changed photos each time the app opens (FR-005a).
     func onForeground() async {
@@ -260,7 +283,22 @@ final class AppModel {
             await refreshLibraryItemCount()
             continuation.scanEnded()
             isFinishing = false
+            if progress?.state == .completed { await announceScanFinished() }
         }
+    }
+
+    /// Said once, when a scan has run to the end and its results are final: never per progress tick,
+    /// and not from the scan card, which is gone by then.
+    private func announceScanFinished() async {
+        // The summary follows the results by a moment; this is the number the screen now shows.
+        await recomputeSummary()
+        let text =
+            summary.bytes > 0
+            ? String(
+                localized:
+                    "Scan finished. You can free about \(SpokenBytes.string(summary.bytes)).")
+            : String(localized: "Scan finished.")
+        AccessibilityNotification.Announcement(text).post()
     }
 
     func pauseScan() {

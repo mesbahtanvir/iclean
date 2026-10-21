@@ -1,132 +1,428 @@
 import CleanupKit
 import SwiftUI
 
-/// One row per category with count and space (FR-007).
+/// Home when there is something to show: the hero (how much can be freed), the scan status while a
+/// scan runs, the categories, and the one next step pinned at the bottom (spec 009 section 6.3).
+///
+/// Everything here reads the cached `model.summary`. Nothing reads the scan's progress (only the
+/// status card does), so a progress tick never re-evaluates the rows, and no photo file is read.
 struct ResultsView: View {
-    @Environment(AppModel.self) private var model
+    /// The Review bar asks the host to open the Confirm sheet; the host owns the sheet.
+    let onReview: () -> Void
 
-    var body: some View {
-        let results = model.results
-        if results.categories.isEmpty {
-            if model.isScanning, !model.isBuildingResults {
-                // Nothing found yet, and the scan is not done: never claim the library is clean.
-                Section {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Looking for things to clean up. Results appear here as they are found.")
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("results.checking")
-                }
-            } else if model.isBuildingResults {
-                Section {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Updating results…")
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("results.updating")
-                }
-            } else if model.lastScanDate != nil, !model.isScanning {
-                Section {
-                    Label("Your library looks clean", systemImage: "checkmark.seal")
-                        .accessibilityIdentifier("results.empty")
-                } footer: {
-                    if results.notScannedCount > 0 {
-                        Text(
-                            "\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos."
-                        )
-                        .accessibilityIdentifier("results.notScanned")
-                    }
-                }
-            }
-        } else {
-            if model.pendingNewCount > 0 {
-                Section {
-                    Button {
-                        model.showPendingResults()
-                    } label: {
-                        Label("\(model.pendingNewCount) new results. Show", systemImage: "sparkles")
-                    }
-                    .accessibilityIdentifier("results.showNew")
-                }
-            }
-            Section {
-                ForEach(results.categories) { result in
-                    NavigationLink(value: Route.category(result.category)) {
-                        CategoryRow(category: result.category)
-                    }
-                    .accessibilityIdentifier("results.category.\(result.category.rawValue)")
-                }
-            } header: {
-                if model.isScanning, let p = model.progress, p.total > 0 {
-                    // Rows are the finds so far; the scan is still going (004 FR-009).
-                    Text("Found so far · checked \(p.processed) of \(p.total)")
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("results.foundSoFar")
-                } else {
-                    Text("Results")
-                }
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    if results.notScannedCount > 0 {
-                        Text(
-                            "\(results.notScannedCount) items were not scanned because only iCloud has them. iclean never downloads photos."
-                        )
-                        .accessibilityIdentifier("results.notScanned")
-                    }
-                    Text("Removed items go to Recently Deleted in the Photos app.")
-                }
-            }
-            Section {
-                ReviewAllButton()
-            }
-        }
-    }
-}
-
-struct CategoryRow: View {
-    let category: CleanupCategory
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        let totals = model.results.totals(for: category)
-        let shown = model.results.category(category)?.allMembers.count ?? 0
-        // Side by side normally; stacked at accessibility text sizes so nothing is cut off.
-        let layout =
-            typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout())
-        layout {
-            Label(category.title, systemImage: category.systemImage)
-                .fixedSize(horizontal: false, vertical: true)
-            if !typeSize.isAccessibilitySize { Spacer() }
-            VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing) {
-                Text(category == .largeVideos ? "\(shown) videos" : "\(totals.count) items")
-                Text(Format.bytes(totals.bytes, estimate: totals.isEstimate))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+        let hasResults = !model.results.categories.isEmpty
+        let hasSelection = model.summary.count > 0
+        // The summary is worked out a moment after the results arrive. Until then there is no
+        // number to give, and "Nothing selected yet" would be a claim, so the hero waits for it.
+        let summaryReady = !model.summary.perCategory.isEmpty
+        let idle = !model.isScanning && !model.isFinishing && !model.hasInterruptedScan
+        List {
+            if hasResults && summaryReady { heroSection }
+            if model.isScanning {
+                Section { ScanningView() }
+            } else if model.hasInterruptedScan {
+                resumeSection
+            }
+            if !model.continueRoute.isEmpty { ContinueSection() }
+            if model.pendingNewCount > 0 { showNewSection }
+            if hasResults {
+                categorySection
+            } else if !model.isScanning && (model.isBuildingResults || model.isFinishing) {
+                // Never while the scan runs: with nothing found yet, the card is the only row and
+                // the results area stays silent.
+                updatingSection
+            }
+            footerSection(
+                showsScanAgain: idle,
+                // At accessibility sizes the reassurance joins the list so the pinned bar stays one
+                // button tall.
+                showsReviewNote: hasSelection && typeSize.isAccessibilitySize)
+        }
+        #if os(iOS)
+            .listStyle(.insetGrouped)
+        #endif
+        .readableColumn()
+        .pinnedBar(isPresented: hasSelection) {
+            ReviewBar(
+                summary: model.summary, showsNote: !typeSize.isAccessibilitySize, action: onReview)
+        }
+        .calmAnimation(value: hasSelection)
+    }
+
+    // MARK: Sections
+
+    private var heroSection: some View {
+        Section {
+            HomeHero(summary: model.summary, isScanning: model.isScanning)
+                .quietRow(top: 0, bottom: Space.xs)
+        }
+    }
+
+    /// An interrupted scan with results: the way to carry on is the top row, and "Scan Again" is
+    /// not offered beside it.
+    private var resumeSection: some View {
+        Section {
+            Button {
+                model.startScan()
+            } label: {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Resume Scan")
+                        .font(.headline)
+                        .foregroundStyle(.tint)
+                    Text("Picks up where it stopped.")
+                        .font(Typography.note)
+                        .foregroundStyle(Color.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("home.resume")
+        }
+    }
+
+    private var showNewSection: some View {
+        Section {
+            Button {
+                model.showPendingResults()
+            } label: {
+                Label {
+                    Text("Show ^[\(model.pendingNewCount) new item](inflect: true)")
+                } icon: {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .labelStyle(.quiet)
+                .foregroundStyle(Color.primary)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("results.showNew")
+        }
+    }
+
+    @ViewBuilder private var categorySection: some View {
+        if model.isScanning {
+            // These are the finds so far; the scan is still going (004 FR-009).
+            Section {
+                categoryRows
+            } header: {
+                Text("Found so far")
+                    .accessibilityIdentifier("results.foundSoFar")
+            }
+        } else {
+            Section { categoryRows }
+        }
+    }
+
+    /// Rows keep the categories' fixed order, so they never reshuffle under a finger.
+    private var categoryRows: some View {
+        ForEach(model.results.categories) { result in
+            NavigationLink(value: Route.category(result.category)) {
+                CategoryRow(category: result.category)
+            }
+            .accessibilityIdentifier("results.category.\(result.category.rawValue)")
+        }
+    }
+
+    private var updatingSection: some View {
+        Section {
+            DelayedProgress(caption: "Updating results…")
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("results.updating")
+                .quietRow()
+        }
+    }
+
+    /// The periphery, last: what was not checked, when it was, and the notices.
+    @ViewBuilder private func footerSection(showsScanAgain: Bool, showsReviewNote: Bool)
+        -> some View
+    {
+        let notScanned = model.results.notScannedCount
+        if notScanned > 0 || showsScanAgain || !HomeNotices.isEmpty(model) || showsReviewNote {
+            Section {
+                if notScanned > 0 { ICloudFootnote(count: notScanned).quietRow() }
+                if showsScanAgain { ScanAgainLine().quietRow() }
+                if !HomeNotices.isEmpty(model) { HomeNotices().quietRow() }
+                if showsReviewNote { ReviewNote().quietRow() }
             }
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
-/// Reviews the whole selection across all categories at once.
-struct ReviewAllButton: View {
-    @Environment(AppModel.self) private var model
-    @State private var showConfirm = false
+extension View {
+    /// A row that sits on the screen's background: no card, no separator.
+    fileprivate func quietRow(top: CGFloat = Space.s, bottom: CGFloat = Space.s) -> some View {
+        listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(
+                EdgeInsets(top: top, leading: Space.l, bottom: bottom, trailing: Space.l)
+            )
+            // In a list a Label puts its icon in a wide column; here the icon sits by the words.
+            .labelStyle(.titleAndIcon)
+    }
+}
+
+// MARK: Hero
+
+/// How much can be freed, said once and large. Reads the selection summary, so it always agrees
+/// with the Review button and the Confirm sheet. It is what the button will act on, never a sum of
+/// category totals (Large Videos is never preselected).
+struct HomeHero: View {
+    let summary: SelectionSummary
+    let isScanning: Bool
 
     var body: some View {
-        Button {
-            showConfirm = true
-        } label: {
-            Label("Remove All Selected (\(model.selection.count))", systemImage: "trash")
+        Group {
+            if summary.count == 0 {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Nothing selected yet")
+                        .font(.title2.weight(.semibold))
+                    Text("Open a category to choose what to remove.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            } else {
+                HeroFigure(
+                    overline: overline, value: Format.byteValue(summary.bytes), caption: caption,
+                    spokenValue: SpokenBytes.string(summary.bytes))
+            }
         }
-        .disabled(model.selection.isEmpty)
-        .accessibilityIdentifier("results.reviewAll")
-        .sheet(isPresented: $showConfirm) { ConfirmSheet() }
+        .accessibilityIdentifier("home.hero")
+    }
+
+    private var overline: String {
+        switch (isScanning, summary.isEstimate) {
+        case (false, false): String(localized: "You can free")
+        case (false, true): String(localized: "You can free about")
+        case (true, false): String(localized: "So far you can free")
+        case (true, true): String(localized: "So far you can free about")
+        }
+    }
+
+    private var caption: String {
+        let count = summary.count
+        return isScanning
+            ? String(
+                agreeing: AttributedString(
+                    localized:
+                        "from ^[\(count) item](inflect: true) selected so far. You choose what goes."
+                ))
+            : String(
+                agreeing: AttributedString(
+                    localized:
+                        "from ^[\(count) selected item](inflect: true). You choose what goes."))
+    }
+}
+
+// MARK: Rows
+
+/// One category: what it is, how much of it is selected (in words), and how much space that is.
+/// The figure is the size of what is selected, so it reconciles with the hero; when nothing is
+/// selected it shows what could be removed, in secondary.
+struct CategoryRow: View {
+    let category: CleanupCategory
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 28
+
+    var body: some View {
+        let tally = model.summary.perCategory[category]
+        let detail = tally.map(Self.detail)
+        let figure = tally.map(Self.figure)
+        Group {
+            if typeSize.isAccessibilitySize {
+                // Stacked, so nothing is cut off at the largest sizes.
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    HStack(spacing: Space.m) {
+                        icon
+                        title
+                    }
+                    if let detail { detailText(detail) }
+                    if let figure { figureText(figure) }
+                }
+            } else {
+                HStack(spacing: Space.m) {
+                    icon
+                    VStack(alignment: .leading, spacing: 2) {
+                        title
+                        if let detail { detailText(detail) }
+                    }
+                    Spacer(minLength: Space.m)
+                    if let figure { figureText(figure) }
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenLabel(tally: tally, detail: detail))
+    }
+
+    private var icon: some View {
+        Image(systemName: category.systemImage)
+            .foregroundStyle(.secondary)
+            .frame(width: iconWidth)
+            .accessibilityHidden(true)
+    }
+
+    private var title: some View {
+        Text(category.title).font(.body)
+    }
+
+    /// The words that say what is selected: decision text, so primary and not a footnote.
+    private func detailText(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(.primary)
+    }
+
+    private func figureText(_ figure: Figure) -> some View {
+        Text(Format.bytes(figure.bytes, estimate: figure.isEstimate))
+            .font(.body.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(figure.isSelection ? .primary : .secondary)
+    }
+
+    private func spokenLabel(tally: CategoryTally?, detail: String?) -> String {
+        guard let tally, let detail else { return category.title }
+        let figure = Self.figure(tally)
+        return
+            "\(category.title), \(SpokenBytes.string(figure.bytes, estimate: figure.isEstimate)), \(detail)"
+    }
+
+    struct Figure {
+        var bytes: Int64
+        var isEstimate: Bool
+        var isSelection: Bool
+    }
+
+    static func figure(_ tally: CategoryTally) -> Figure {
+        tally.selected > 0
+            ? Figure(
+                bytes: tally.selectedBytes, isEstimate: tally.selectedIsEstimate, isSelection: true)
+            : Figure(
+                bytes: tally.removableBytes, isEstimate: tally.removableIsEstimate,
+                isSelection: false)
+    }
+
+    /// "All 3 selected", "2 of 4 selected", "None selected"; for a single item "Selected" and
+    /// "Not selected". When a keeper was chosen for removal too, only the count is said.
+    static func detail(_ tally: CategoryTally) -> String {
+        let selected = tally.selected
+        let total = tally.removable
+        if selected == 0 {
+            return total == 1
+                ? String(localized: "Not selected") : String(localized: "None selected")
+        }
+        guard selected == tally.selectedRemovable else {
+            return String(localized: "\(selected) selected")
+        }
+        if selected == total {
+            return total == 1
+                ? String(localized: "Selected") : String(localized: "All \(total) selected")
+        }
+        return String(localized: "\(selected) of \(total) selected")
+    }
+}
+
+/// The review that was open last time, offered when it was too old to open by itself.
+private struct ContinueSection: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let category: CleanupCategory? = model.continueRoute.compactMap {
+            if case .category(let c) = $0 { c } else { nil }
+        }.first
+        Section {
+            HStack(spacing: Space.s) {
+                Button {
+                    model.continueReviewing()
+                } label: {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text("Continue reviewing")
+                            .font(.headline)
+                            .foregroundStyle(.tint)
+                        if let category {
+                            Text("\(category.title), \(model.selectedCount(in: category)) selected")
+                                .font(Typography.note)
+                                .foregroundStyle(Color.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("home.continue")
+                Button {
+                    model.dismissContinue()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss")
+                .accessibilityIdentifier("home.continueDismiss")
+            }
+        }
+    }
+}
+
+// MARK: Scan Again
+
+/// "Scanned 3 minutes ago" and the way to scan again, quietly. The text is drawn inside a timeline
+/// that ticks once a minute, so it stays right without redrawing every second.
+struct ScanAgainLine: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            // Side by side normally; stacked at accessibility sizes.
+            let layout =
+                typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
+                : AnyLayout(HStackLayout(spacing: Space.m))
+            layout {
+                scanned(at: context.date)
+                if !typeSize.isAccessibilitySize { Spacer(minLength: Space.m) }
+                scanButton
+            }
+        }
+    }
+
+    @ViewBuilder private func scanned(at now: Date) -> some View {
+        if let date = model.lastScanDate {
+            Text(Format.scanned(date, now: now))
+                .font(Typography.note)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("home.lastScan")
+        }
+    }
+
+    private var scanButton: some View {
+        Button {
+            model.startScan()
+        } label: {
+            Group {
+                if model.hasFinishedFullScan {
+                    Text("Scan Again")
+                } else {
+                    Text("Scan Library")
+                }
+            }
+            .font(.body)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("home.scan")
     }
 }

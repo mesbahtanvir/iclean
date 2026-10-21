@@ -99,11 +99,16 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        switch model.access {
-        case .full, .limited:
-            HomeView()
-        case .notDetermined, .denied:
-            AccessView()
+        // Limited access is Home with a quiet note, not a different screen.
+        let hasAccess = model.access == .full || model.access == .limited
+        ZStack {
+            if hasAccess {
+                HomeView().transition(.opacity)
+            } else {
+                AccessView().transition(.opacity)
+            }
         }
+        // Allowing access fades to Home: the app heard you, and nothing more.
+        .calmAnimation(value: hasAccess)
     }
 }
