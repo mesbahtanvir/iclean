@@ -75,7 +75,7 @@ struct ResultsView: View {
                         .foregroundStyle(.tint)
                     Text("Picks up where it stopped.")
                         .font(Typography.note)
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
@@ -184,7 +184,7 @@ struct HomeHero: View {
                         .font(.title2.weight(.semibold))
                     Text("Open a category to choose what to remove.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
@@ -350,7 +350,7 @@ private struct ContinueSection: View {
                         if let category {
                             Text("\(category.title), \(model.selectedCount(in: category)) selected")
                                 .font(Typography.note)
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Palette.quietText)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -402,7 +402,7 @@ struct ScanAgainLine: View {
         if let date = model.lastScanDate {
             Text(Format.scanned(date, now: now))
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .accessibilityIdentifier("home.lastScan")
         }
     }

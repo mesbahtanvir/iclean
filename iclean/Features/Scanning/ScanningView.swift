@@ -23,24 +23,24 @@ struct ScanningView: View {
             if starting {
                 Text("Results appear here as they’re found.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             } else if let p {
                 // One text, "12,408 of 30,112 checked": a test and VoiceOver read it whole.
                 Text("\(p.processed, format: .number) of \(p.total, format: .number) checked")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
             if let failed = p?.failed, failed > 0 {
                 Text("\(failed, format: .number) couldn’t be checked")
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
                     .accessibilityIdentifier("scan.failed")
             }
             controls(paused: paused)
             if !paused, let note = whenYouLeave {
                 Text(note)
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("scan.whenYouLeave")
             }
@@ -108,7 +108,7 @@ struct ScanningView: View {
             model.stopScan()
         } label: {
             Text("Stop")
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Palette.quietText)
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }

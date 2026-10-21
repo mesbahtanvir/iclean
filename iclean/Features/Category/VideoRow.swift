@@ -103,7 +103,7 @@ struct VideoRow: View {
             if let line = detail(item) {
                 Text(line)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
     }

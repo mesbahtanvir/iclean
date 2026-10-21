@@ -21,7 +21,7 @@ struct HeroFigure: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Text(overline)
                 .font(.headline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
             Text(value)
                 .heroFigureFont()
                 .lineLimit(1)
@@ -30,7 +30,7 @@ struct HeroFigure: View {
                 .calmAnimation(value: value)
             Text(caption)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -71,7 +71,7 @@ struct QuietNote: View {
         Label {
             text
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: systemImage)
@@ -194,7 +194,7 @@ struct DelayedProgress: View {
                 if let caption {
                     Text(caption)
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
             }
         }

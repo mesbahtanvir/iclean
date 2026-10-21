@@ -96,7 +96,7 @@ struct CategoryBarDetail: View {
         if tally.selected > 0 {
             Text(destination(tally))
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .padding(.horizontal, Space.l)
         }
     }
@@ -146,7 +146,7 @@ struct CategorySummaryLine: View {
         let tally = model.summary.perCategory[category]
         line(size: tally.map { Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate) })
             .font(Typography.note)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Palette.quietText)
             .padding(.horizontal, Space.l)
     }
 
@@ -189,7 +189,7 @@ struct GroupHeader: View {
                     title.font(.headline)
                     selectedText(selected)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
                 if !typeSize.isAccessibilitySize { Spacer(minLength: Space.s) }
                 HStack(spacing: Space.xs) {

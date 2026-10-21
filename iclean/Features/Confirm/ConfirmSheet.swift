@@ -251,7 +251,7 @@ struct ConfirmSheet: View {
             "\(count) items were left out because they changed since the scan (deleted, edited, favorited or no longer suggested). They stay in your library."
         )
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("confirm.dropped")
     }
@@ -290,7 +290,7 @@ struct ConfirmSheet: View {
             }
         }
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)

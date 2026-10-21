@@ -32,7 +32,7 @@ struct HomeMessage<Actions: View>: View {
                         .accessibilityAddTraits(.isHeader)
                     message
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     actions

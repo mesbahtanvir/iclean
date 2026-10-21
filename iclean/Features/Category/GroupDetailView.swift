@@ -133,7 +133,7 @@ struct GroupDetailView: View {
             if group.type == .similarShots {
                 Text("Turn off a photo’s Remove switch to keep it.")
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
         .padding(.horizontal, inset ? Space.l : 0)
@@ -256,12 +256,12 @@ private struct CompareCard: View {
             } else {
                 Text("No date")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
             if let item {
                 Text(Format.facts(of: item))
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
     }
@@ -280,7 +280,7 @@ private struct CompareCard: View {
                 if item?.metadata.isFavorite == true {
                     Text("Marked as a favorite")
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                         .accessibilityIdentifier("group.keeperReason.\(assetID)")
                 }
             } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {

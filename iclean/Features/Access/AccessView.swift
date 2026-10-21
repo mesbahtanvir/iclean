@@ -169,23 +169,25 @@ struct AccessView: View {
     }
 }
 
-/// One quiet reassurance: a secondary glyph in a fixed column, so the words of every row start at
-/// the same place, and the text below it.
+/// One reassurance: a secondary glyph in a fixed column, so the words of every row start at the same
+/// place, and the words in the primary colour at reading size. They answer the worry that comes
+/// before tapping Allow, so they are not a caveat to set in gray.
 private struct TrustRow: View {
     let systemImage: String
     let text: Text
 
-    @ScaledMetric(relativeTo: .subheadline) private var glyphWidth: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var glyphWidth: CGFloat = 28
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.m) {
             Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
                 .frame(width: glyphWidth)
                 .accessibilityHidden(true)
             text
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+        .font(.body)
     }
 }

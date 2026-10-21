@@ -55,7 +55,7 @@ struct ReviewNote: View {
             "Nothing is removed until you confirm. Removed items go to Recently Deleted in Photos."
         )
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .fixedSize(horizontal: false, vertical: true)

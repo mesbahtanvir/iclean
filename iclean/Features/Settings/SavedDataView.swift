@@ -174,7 +174,7 @@ struct SavedDataView: View {
                 if inventory.resultsBytes != nil, let built = inventory.resultsBuiltAt {
                     Text("Updated \(built.formatted(.relative(presentation: .named)))")
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
             }
         }
