@@ -1,304 +1,223 @@
 import CleanupKit
 import SwiftUI
 
-/// Items or groups in one category, with selection toggles.
+/// Items or groups in one category, with selection toggles (spec 009 6.5 and 6.6).
+///
+/// The body reads the results and never the selection: the bottom bar, the toolbar button and the
+/// summary line are their own views reading `model.summary`, and every photo reads its own state, so
+/// a toggle does not run this body again.
 struct CategoryView: View {
     let category: CleanupCategory
 
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.displayScale) private var displayScale
     @State private var showConfirm = false
     @State private var viewing: String?
     /// Warms the pictures just ahead of the scroll.
     @State private var prefetcher = ThumbnailPrefetcher()
+    /// The width of the scroll view: the columns, and so the pixels each picture needs, come from it.
+    @State private var width: CGFloat = 0
 
-    private let columns = [GridItem(.adaptive(minimum: 104), spacing: 4)]
+    /// How the entries are laid out.
+    private enum Layout { case videoList, flatGrid, groups }
 
     var body: some View {
         let result = model.results.category(category)
+        // Hoisted once per body: the flat list of ids is a flatMap over every group.
+        let members = result?.allMembers ?? []
+        let layout: Layout =
+            category == .largeVideos
+            ? .videoList : (result?.groups.first?.type == .single ? .flatGrid : .groups)
         ScrollViewReader { proxy in
             ScrollView {
                 // Lazy: a library with thousands of groups must not build them all when it opens.
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    Text(category.explanation)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                    if model.pendingNewCount > 0 {
-                        // The list never changes under the person; new finds wait behind this (004 FR-010).
-                        Button {
-                            model.showPendingResults()
-                        } label: {
-                            Label(
-                                "\(model.pendingNewCount) new results. Show",
-                                systemImage: "sparkles")
-                        }
-                        .buttonStyle(.bordered)
-                        .padding(.horizontal)
-                        .accessibilityIdentifier("category.showNew")
-                    }
+                LazyVStack(alignment: .leading, spacing: Space.xl) {
+                    intro(result, layout: layout)
                     if let result {
-                        if category == .largeVideos {
-                            listLayout(result)
-                        } else if result.groups.first?.type == .single {
-                            LazyVGrid(columns: columns, spacing: 4) {
-                                ForEach(result.allMembers, id: \.self) { cell($0, group: nil) }
-                            }
-                        } else {
-                            ForEach(result.groups) { group in groupSection(group) }
+                        if width > 0 {
+                            content(result, members: members, layout: layout)
                         }
                     } else if model.launchPhase != .ready || model.isBuildingResults {
                         // Results are still being restored or built: never say "nothing" before they are.
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
+                        DelayedProgress()
                             .accessibilityIdentifier("category.loading")
                     } else {
-                        ContentUnavailableView("Nothing here", systemImage: "checkmark.seal")
+                        ContentUnavailableView {
+                            Label("All Clear", systemImage: "checkmark.circle")
+                        } description: {
+                            Text("Nothing left to review here.")
+                        }
+                    }
+                    if typeSize.isAccessibilitySize, result != nil {
+                        CategoryBarDetail(category: category)
                     }
                 }
-                .padding(.vertical)
+                .padding(.vertical, Space.l)
+            }
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.width
+            } action: {
+                width = $0
             }
             // A restored screen opens on the photo the person last touched.
-            .onAppear { scrollToRestoredPhoto(proxy, in: result) }
+            .onAppear { scrollToRestoredPhoto(proxy, in: result, layout: layout) }
             // Not `allMembers.count`: that builds the whole list of ids each time the body runs.
-            .onChange(of: result?.groups.count) { scrollToRestoredPhoto(proxy, in: result) }
+            .onChange(of: result?.groups.count) {
+                scrollToRestoredPhoto(proxy, in: result, layout: layout)
+            }
         }
         .environment(prefetcher)
-        .task(id: result?.groups.count) { updatePrefetchList() }
+        .task(id: PrefetchKey(count: members.count, pixels: pixelSize(layout))) {
+            prefetcher.use(
+                library: model.environment.library, ids: members, pixelSize: pixelSize(layout))
+        }
         .onDisappear { prefetcher.stopAll() }
         .navigationTitle(category.title)
+        #if os(iOS)
+            // At accessibility sizes the title, the back button and "Select All Videos" cannot
+            // share one line, so the title gets its own.
+            .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .large : .inline)
+        #endif
         .task { await model.measureSizes(in: category) }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { selectAllButton(result) }
+            ToolbarItem(placement: .primaryAction) { SelectSuggestedButton(category: category) }
         }
-        .safeAreaInset(edge: .bottom) { removeBar }
+        .pinnedBar(isPresented: true) {
+            CategoryRemoveBar(category: category) { showConfirm = true }
+        }
         .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
+        .photoViewer($viewing)
+    }
+
+    // MARK: Sizes
+
+    private struct PrefetchKey: Equatable {
+        let count: Int
+        let pixels: Int
+    }
+
+    /// The smallest a photo may be: wider on a Mac and at accessibility sizes, so a cell stays
+    /// large enough for its glyphs.
+    private var columnMinimum: CGFloat {
         #if os(macOS)
-            // There is no full-screen cover on the Mac; the viewer is a sheet there.
-            .sheet(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+            150
         #else
-            .fullScreenCover(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+            typeSize.isAccessibilitySize ? 150 : 104
         #endif
     }
 
-    private var viewingBinding: Binding<Viewing?> {
-        Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })
+    private var pixelCap: Int {
+        #if os(macOS)
+            768
+        #else
+            512
+        #endif
     }
 
-    private func updatePrefetchList() {
-        let ids = model.results.category(category)?.allMembers ?? []
-        prefetcher.use(library: model.environment.library, ids: ids, pixelSize: 300)
-    }
-
-    private func scrollToRestoredPhoto(_ proxy: ScrollViewProxy, in result: CategoryResult?) {
-        guard let id = model.restoredFocus, result?.allMembers.contains(id) == true else { return }
-        proxy.scrollTo(id, anchor: .center)
-    }
-
-    // MARK: Layouts
-
-    private func groupSection(_ group: ResultGroup) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            NavigationLink(value: Route.group(category, containing: group)) {
-                HStack {
-                    Group {
-                        if group.type == .similarShots {
-                            Text("\(group.members.count) similar shots")
-                        } else {
-                            Text("\(group.members.count) copies")
-                        }
-                    }
-                    .font(.headline)
-                    Image(systemName: "chevron.right").font(.footnote)
-                    Spacer()
-                }
-            }
-            .accessibilityIdentifier("category.group.\(group.id)")
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(group.members, id: \.self) { cell($0, group: group) }
-            }
+    /// The pixels each picture needs, from the real width of a cell (`GridMetrics`).
+    private func pixelSize(_ layout: Layout) -> Int {
+        switch layout {
+        case .videoList:
+            // A 72 pt preview.
+            return GridMetrics.pixels(
+                width: VideoRow.previewSide, minimum: VideoRow.previewSide, spacing: 0,
+                scale: displayScale, cap: pixelCap)
+        case .flatGrid, .groups:
+            guard width > 0 else { return 256 }
+            return GridMetrics.pixels(
+                width: width, minimum: columnMinimum, spacing: Gutter.grid, scale: displayScale,
+                cap: pixelCap)
         }
-        .padding(.horizontal, 4)
     }
 
-    private func listLayout(_ result: CategoryResult) -> some View {
-        LazyVStack(spacing: 8) {
-            ForEach(result.allMembers, id: \.self) { id in
-                let item = model.results.items[id]
-                HStack(spacing: 12) {
-                    Thumbnail(assetID: id)
-                        .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    VStack(alignment: .leading) {
-                        Text(
-                            Format.bytes(
-                                item?.effectiveByteSize ?? 0, estimate: item?.sizeIsEstimate ?? true
-                            )
-                        )
-                        .font(.headline)
-                        if let d = item?.metadata.duration {
-                            Text(Format.duration(d)).foregroundStyle(.secondary)
-                        }
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: columnMinimum), spacing: Gutter.grid)]
+    }
+
+    // MARK: Content
+
+    /// Two lines above the photos, at the 16 pt gutter: what the default is, and how much there is.
+    private func intro(_ result: CategoryResult?, layout: Layout) -> some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text(category.explanation)
+                .font(.subheadline)
+                .padding(.horizontal, Space.l)
+            if let result {
+                CategorySummaryLine(
+                    category: category, count: result.groups.count, isGrouped: layout == .groups)
+            }
+            if model.pendingNewCount > 0 {
+                // The list never changes under the person; new finds wait behind this (004 FR-010).
+                Button {
+                    model.showPendingResults()
+                } label: {
+                    Label {
+                        Text("Show ^[\(model.pendingNewCount) new item](inflect: true)")
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
                     }
-                    Spacer()
-                    SelectionMark(selected: model.isSelected(id), style: .onSurface)
                 }
-                .padding(.horizontal)
-                .contentShape(Rectangle())
-                .onTapGesture { model.toggle(id) }
-                .onAppear { prefetcher.appeared(id) }
-                .onDisappear { prefetcher.disappeared(id) }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAddTraits(model.isSelected(id) ? .isSelected : [])
-                .accessibilityIdentifier("category.item.\(id)")
-                .accessibilityAction(named: "View full screen") { viewing = id }
+                .buttonStyle(.bordered)
+                .padding(.horizontal, Space.l)
+                .padding(.top, Space.xs)
+                .accessibilityIdentifier("category.showNew")
             }
         }
     }
 
-    private func cell(_ id: String, group: ResultGroup?) -> some View {
+    @ViewBuilder private func content(
+        _ result: CategoryResult, members: [String], layout: Layout
+    ) -> some View {
+        let pixels = pixelSize(layout)
+        switch layout {
+        case .videoList:
+            LazyVStack(spacing: 0) {
+                ForEach(members, id: \.self) { id in
+                    VideoRow(assetID: id, pixelSize: pixels) { viewing = id }
+                }
+            }
+        case .flatGrid:
+            LazyVGrid(columns: columns, spacing: Gutter.grid) {
+                ForEach(members, id: \.self) { cell($0, group: nil, pixels: pixels) }
+            }
+        case .groups:
+            ForEach(result.groups) { group in
+                VStack(alignment: .leading, spacing: Space.s) {
+                    GroupHeader(category: category, group: group)
+                    LazyVGrid(columns: columns, spacing: Gutter.grid) {
+                        ForEach(group.members, id: \.self) {
+                            cell($0, group: group, pixels: pixels)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func cell(_ id: String, group: ResultGroup?, pixels: Int) -> some View {
         ItemCell(
             assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-            confidence: group?.confidence ?? .normal, onView: { viewing = id })
+            confidence: group?.confidence ?? .normal, pixelSize: pixels, onView: { viewing = id })
     }
 
-    // MARK: Bars
+    // MARK: Restoring the place
 
-    private func selectAllButton(_ result: CategoryResult?) -> some View {
-        let ids = result?.removable ?? []
-        let all = !ids.isEmpty && ids.allSatisfy(model.isSelected)
-        return Button(all ? "Deselect All" : "Select All") {
-            model.setSelected(ids, !all)
-        }
-        .accessibilityIdentifier("category.selectAll")
-    }
-
-    private var removeBar: some View {
-        let count = model.selectedCount(in: category)
-        return Button {
-            showConfirm = true
-        } label: {
-            Text("Remove \(count) Selected")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .disabled(count == 0)
-        .padding()
-        .background(.bar)
-        .accessibilityIdentifier("category.removeSelected")
-    }
-}
-
-private struct Viewing: Identifiable {
-    let id: String
-}
-
-/// One photo with its badges. Tap toggles selection.
-struct ItemCell: View {
-    let assetID: String
-    var isKeeper: Bool
-    var confidence: Confidence = .normal
-    var onView: () -> Void
-
-    @Environment(AppModel.self) private var model
-    @Environment(ThumbnailPrefetcher.self) private var prefetcher
-
-    var body: some View {
-        let item = model.results.items[assetID]
-        let selected = model.isSelected(assetID)
-        Thumbnail(assetID: assetID)
-            // Only the picture is dimmed: dimming the whole cell would draw it, and everything
-            // on it, as one extra layer for every cell on screen.
-            .opacity(selected ? 0.75 : 1)
-            .aspectRatio(1, contentMode: .fit)
-            .overlay(alignment: .topTrailing) {
-                SelectionMark(selected: selected).padding(6)
+    /// In two steps: a photo in a group lives in a nested lazy grid that does not exist until its
+    /// section is on screen, so the section is scrolled to first and then the photo.
+    private func scrollToRestoredPhoto(
+        _ proxy: ScrollViewProxy, in result: CategoryResult?, layout: Layout
+    ) {
+        guard let id = model.restoredFocus, let result else { return }
+        guard let group = result.groups.first(where: { $0.members.contains(id) }) else { return }
+        if layout == .groups {
+            proxy.scrollTo(group.id, anchor: .top)
+            Task {
+                try? await Task.sleep(for: .milliseconds(80))
+                proxy.scrollTo(id, anchor: .center)
             }
-            .overlay(alignment: .topLeading) {
-                Button(action: onView) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.caption.bold())
-                        .foregroundStyle(.white)
-                        .padding(6)
-                        .background(Color.black.opacity(0.4), in: Circle())
-                }
-                .padding(4)
-                .accessibilityHidden(true)
-            }
-            .overlay(alignment: .bottomLeading) {
-                HStack(spacing: 4) {
-                    if isKeeper { Badge(text: "Keep", systemImage: "checkmark.seal.fill") }
-                    if item?.metadata.isFavorite == true {
-                        Badge(text: nil, systemImage: "heart.fill")
-                    }
-                    if let albums = item?.metadata.albumNames, !albums.isEmpty {
-                        Badge(text: nil, systemImage: "rectangle.stack")
-                            .accessibilityIdentifier("category.albumBadge")
-                    }
-                    if item?.analysisSource == .cloudPreview || confidence == .lower {
-                        Badge(text: nil, systemImage: "icloud")
-                            .accessibilityIdentifier("category.previewOnlyBadge")
-                    }
-                }
-                .padding(4)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { model.toggle(assetID) }
-            .onLongPressGesture(minimumDuration: 0.4) { onView() }
-            .onAppear { prefetcher.appeared(assetID) }
-            .onDisappear { prefetcher.disappeared(assetID) }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(label(item: item))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityIdentifier("category.item.\(assetID)")
-            .accessibilityAction(named: "View full screen", onView)
-            .accessibilityAction(named: "Always keep") {
-                Task { await model.alwaysKeep(assetID) }
-            }
-    }
-
-    private func label(item: CleanupKit.LibraryItem?) -> String {
-        var parts: [String] = []
-        if let date = item?.metadata.captureDate {
-            parts.append(date.formatted(date: .abbreviated, time: .shortened))
+        } else {
+            proxy.scrollTo(id, anchor: .center)
         }
-        if isKeeper { parts.append(String(localized: "Suggested to keep")) }
-        if item?.metadata.isFavorite == true { parts.append(String(localized: "Favorite")) }
-        if let albums = item?.metadata.albumNames, !albums.isEmpty {
-            parts.append(String(localized: "In albums: \(albums.joined(separator: ", "))"))
-        }
-        if item?.analysisSource == .cloudPreview || confidence == .lower {
-            parts.append(String(localized: "Checked from a preview only"))
-        }
-        parts.append(
-            model.isSelected(assetID)
-                ? String(localized: "Selected for removal") : String(localized: "Not selected"))
-        return parts.joined(separator: ", ")
-    }
-}
-
-struct Badge: View {
-    let text: String?
-    let systemImage: String
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: systemImage)
-            // On a fixed-size thumbnail there is no room for large text: show the icon
-            // only. The cell's VoiceOver label still says "Suggested to keep".
-            if let text, !typeSize.isAccessibilitySize { Text(text) }
-        }
-        .font(.caption2.bold())
-        .foregroundStyle(.white)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 3)
-        // A solid tint, not a blur: a blur per badge on every visible cell is costly to scroll.
-        .background(Color.black.opacity(0.5), in: Capsule())
-        .accessibilityIdentifier(text == "Keep" ? "category.keeperBadge" : "")
     }
 }

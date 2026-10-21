@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 
@@ -27,6 +28,10 @@ public protocol PhotoLibrary: Sendable {
     func stopPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit)
     /// Size of the item's files on the phone, or nil when not stored locally.
     func localByteSize(for assetID: String) async -> Int64?
+    /// A video ready to play, only when its file is on the phone. Nil for a video that is only in
+    /// iCloud, for anything that is not a video, and for libraries that cannot play one. Never
+    /// downloads (FR-014).
+    func playerItem(for assetID: String) async -> PlayableVideo?
     /// Moves items to Recently Deleted. iOS shows its own confirmation first.
     func remove(_ assetIDs: [String]) async -> RemovalResult
     /// Changes made to the library while the app is running.
@@ -50,7 +55,20 @@ public struct ThumbnailImage: @unchecked Sendable {
     }
 }
 
+/// A video of the phone's own storage, ready to play. Wraps the player item because it is not
+/// `Sendable`; it is handed to one player on the main actor and never shared.
+public struct PlayableVideo: @unchecked Sendable {
+    public let item: AVPlayerItem
+
+    public init(item: AVPlayerItem) {
+        self.item = item
+    }
+}
+
 extension PhotoLibrary {
+    /// For libraries that cannot play a video (the demo library, tests): nothing to play.
+    public func playerItem(for assetID: String) async -> PlayableVideo? { nil }
+
     /// For libraries with no faster path (the demo library, tests): the preview, once.
     public func thumbnails(for assetID: String, pixelSize: Int, fit: ThumbnailFit) -> AsyncStream<
         ThumbnailImage
