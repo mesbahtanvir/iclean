@@ -321,6 +321,22 @@
             private static func displayReady(_ image: NSImage) -> CGImage? { cgImage(image) }
         #endif
 
+        // MARK: Playback
+
+        /// A player item for a video whose file is on the phone. Network access is off, so a video
+        /// that is only in iCloud gives nil and is never downloaded to play it.
+        public func playerItem(for assetID: String) async -> PlayableVideo? {
+            guard let asset = asset(assetID), asset.mediaType == .video else { return nil }
+            return await withCheckedContinuation { continuation in
+                let once = Once()
+                imageManager.requestPlayerItem(
+                    forVideo: asset, options: NetworkOffOptions.video()
+                ) { item, _ in
+                    once.run { continuation.resume(returning: item.map(PlayableVideo.init)) }
+                }
+            }
+        }
+
         // MARK: Sizes
 
         public func localByteSize(for assetID: String) async -> Int64? {

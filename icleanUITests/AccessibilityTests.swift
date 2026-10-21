@@ -17,6 +17,9 @@ final class AccessibilityTests: XCTestCase {
         "settings.recentScans", "settings.baseline", "settings.savedData",
         "saved.clearResults", "saved.resetChoices", "saved.erase",
         "results.notScanned",
+        // The "Kept" pill on a photo is capped at the xLarge text size by design (spec 009 4.3): it
+        // sits on a thumbnail, and at accessibility sizes the grid gets wider cells instead.
+        "category.keeperBadge",
         "Removed items go to Recently Deleted in the Photos app.",
         "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
     ]
