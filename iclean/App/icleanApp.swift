@@ -116,7 +116,12 @@ struct RootView: View {
         let hasAccess = model.access == .full || model.access == .limited
         ZStack {
             if hasAccess {
-                HomeView().transition(.opacity)
+                #if os(macOS)
+                    // A sidebar and a detail pane, not a phone's stack of screens.
+                    SplitRootView().transition(.opacity)
+                #else
+                    HomeView().transition(.opacity)
+                #endif
             } else {
                 AccessView().transition(.opacity)
             }

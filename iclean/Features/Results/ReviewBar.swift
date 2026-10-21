@@ -44,14 +44,17 @@ struct ReviewBar: View {
 
 /// "Nothing is removed until you confirm." The reassurance that sits with the action it qualifies.
 struct ReviewNote: View {
+    /// Centred under a pinned button on a phone; leading under the hero on a Mac.
+    var alignment: TextAlignment = .center
+
     var body: some View {
         Text(
             "Nothing is removed until you confirm. Removed items go to Recently Deleted in Photos."
         )
         .font(Typography.note)
         .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(alignment)
+        .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .center)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("results.reviewNote")
     }

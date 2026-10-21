@@ -65,44 +65,11 @@ struct ResultsView: View {
     /// An interrupted scan with results: the way to carry on is the top row, and "Scan Again" is
     /// not offered beside it.
     private var resumeSection: some View {
-        Section {
-            Button {
-                model.startScan()
-            } label: {
-                VStack(alignment: .leading, spacing: Space.xs) {
-                    Text("Resume Scan")
-                        .font(.headline)
-                        .foregroundStyle(.tint)
-                    Text("Picks up where it stopped.")
-                        .font(Typography.note)
-                        .foregroundStyle(Color.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("home.resume")
-        }
+        Section { ResumeScanRow() }
     }
 
     private var showNewSection: some View {
-        Section {
-            Button {
-                model.showPendingResults()
-            } label: {
-                Label {
-                    Text("Show ^[\(model.pendingNewCount) new item](inflect: true)")
-                } icon: {
-                    Image(systemName: "arrow.down.circle")
-                }
-                .labelStyle(.quiet)
-                .foregroundStyle(Color.primary)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("results.showNew")
-        }
+        Section { ShowNewItemsRow() }
     }
 
     @ViewBuilder private var categorySection: some View {
@@ -154,9 +121,57 @@ struct ResultsView: View {
     }
 }
 
+/// "Resume Scan" over "Picks up where it stopped.": the way to carry on after an interrupted scan.
+/// A row in Home's list on a phone, and in the sidebar footer on a Mac.
+struct ResumeScanRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            model.startScan()
+        } label: {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Text("Resume Scan")
+                    .font(.headline)
+                    .foregroundStyle(.tint)
+                Text("Picks up where it stopped.")
+                    .font(Typography.note)
+                    .foregroundStyle(Color.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: Hit.minimum, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("home.resume")
+    }
+}
+
+/// "Show 3 new items": newer results that were held back while the person was looking at a list.
+struct ShowNewItemsRow: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            model.showPendingResults()
+        } label: {
+            Label {
+                Text("Show ^[\(model.pendingNewCount) new item](inflect: true)")
+            } icon: {
+                Image(systemName: "arrow.down.circle")
+            }
+            .labelStyle(.quiet)
+            .foregroundStyle(Color.primary)
+            .frame(maxWidth: .infinity, minHeight: Hit.minimum, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("results.showNew")
+    }
+}
+
 extension View {
     /// A row that sits on the screen's background: no card, no separator.
-    fileprivate func quietRow(top: CGFloat = Space.s, bottom: CGFloat = Space.s) -> some View {
+    func quietRow(top: CGFloat = Space.s, bottom: CGFloat = Space.s) -> some View {
         listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(
@@ -332,45 +347,51 @@ struct CategoryRow: View {
 
 /// The review that was open last time, offered when it was too old to open by itself.
 private struct ContinueSection: View {
+    var body: some View {
+        Section { ContinueReviewingRow() }
+    }
+}
+
+/// "Continue reviewing" over "Duplicates, 3 selected", and a dismiss button. A row in Home's list on
+/// a phone, and in the sidebar footer on a Mac.
+struct ContinueReviewingRow: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         let category: CleanupCategory? = model.continueRoute.compactMap {
             if case .category(let c) = $0 { c } else { nil }
         }.first
-        Section {
-            HStack(spacing: Space.s) {
-                Button {
-                    model.continueReviewing()
-                } label: {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        Text("Continue reviewing")
-                            .font(.headline)
-                            .foregroundStyle(.tint)
-                        if let category {
-                            Text("\(category.title), \(model.selectedCount(in: category)) selected")
-                                .font(Typography.note)
-                                .foregroundStyle(Color.secondary)
-                        }
+        HStack(spacing: Space.s) {
+            Button {
+                model.continueReviewing()
+            } label: {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Continue reviewing")
+                        .font(.headline)
+                        .foregroundStyle(.tint)
+                    if let category {
+                        Text("\(category.title), \(model.selectedCount(in: category)) selected")
+                            .font(Typography.note)
+                            .foregroundStyle(Color.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("home.continue")
-                Button {
-                    model.dismissContinue()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color.secondary)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Dismiss")
-                .accessibilityIdentifier("home.continueDismiss")
+                .frame(maxWidth: .infinity, minHeight: Hit.minimum, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("home.continue")
+            Button {
+                model.dismissContinue()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.secondary)
+                    .frame(minWidth: Hit.minimum, minHeight: Hit.minimum)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Dismiss")
+            .accessibilityIdentifier("home.continueDismiss")
         }
     }
 }
@@ -380,19 +401,23 @@ private struct ContinueSection: View {
 /// "Scanned 3 minutes ago" and the way to scan again, quietly. The text is drawn inside a timeline
 /// that ticks once a minute, so it stays right without redrawing every second.
 struct ScanAgainLine: View {
+    /// Stacked even at normal sizes: the Mac sidebar is too narrow to hold both side by side.
+    var stacked = false
+
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         TimelineView(.everyMinute) { context in
             // Side by side normally; stacked at accessibility sizes.
+            let stack = stacked || typeSize.isAccessibilitySize
             let layout =
-                typeSize.isAccessibilitySize
+                stack
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
                 : AnyLayout(HStackLayout(spacing: Space.m))
             layout {
                 scanned(at: context.date)
-                if !typeSize.isAccessibilitySize { Spacer(minLength: Space.m) }
+                if !stack { Spacer(minLength: Space.m) }
                 scanButton
             }
         }
@@ -419,7 +444,7 @@ struct ScanAgainLine: View {
                 }
             }
             .font(.body)
-            .frame(minHeight: 44)
+            .frame(minHeight: Hit.minimum)
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

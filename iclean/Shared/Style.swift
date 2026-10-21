@@ -25,6 +25,17 @@ enum Gutter {
     }
 }
 
+enum Hit {
+    /// The smallest comfortable hit area of a quiet button: a fingertip on a phone, a pointer on a Mac.
+    static var minimum: CGFloat {
+        #if os(macOS)
+            28
+        #else
+            44
+        #endif
+    }
+}
+
 enum Radius {
     /// Thumbnails and video thumbnails.
     static let tile: CGFloat = 8

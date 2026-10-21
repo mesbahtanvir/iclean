@@ -80,16 +80,7 @@ struct HomeView: View {
     private func withNotices<Content: View>(
         iCloud: Bool = false, @ViewBuilder _ content: () -> Content
     ) -> some View {
-        content()
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    if iCloud { ICloudFootnote(count: model.results.notScannedCount) }
-                    HomeNotices()
-                }
-                .padding(.horizontal, Space.l)
-                .padding(.vertical, Space.m)
-                .readableColumn()
-            }
+        content().homeNotices(iCloud: iCloud)
     }
 
     private func restore(_ restored: RestoredRoute?) {

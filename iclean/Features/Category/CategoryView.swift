@@ -12,6 +12,9 @@ struct CategoryView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.displayScale) private var displayScale
+    #if os(macOS)
+        @Environment(\.openConfirm) private var openConfirm
+    #endif
     @State private var showConfirm = false
     @State private var viewing: String?
     /// Warms the pictures just ahead of the scroll.
@@ -84,16 +87,21 @@ struct CategoryView: View {
             ToolbarItem(placement: .primaryAction) { SelectSuggestedButton(category: category) }
         }
         .pinnedBar(isPresented: true) {
-            CategoryRemoveBar(category: category) { showConfirm = true }
+            CategoryRemoveBar(category: category) { requestConfirm() }
         }
         .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
         .photoViewer($viewing)
+    }
+
+    /// Opens the Confirm sheet. In the Mac window the shell owns it, so it outlives this screen.
+    private func requestConfirm() {
         #if os(macOS)
-            // Tells the Edit menu which category this is and how to open its Confirm sheet.
-            .focusedSceneValue(
-                \.reviewActions,
-                ReviewActions(category: category, review: { showConfirm = true }))
+            if let openConfirm {
+                openConfirm(category)
+                return
+            }
         #endif
+        showConfirm = true
     }
 
     // MARK: Sizes

@@ -8,6 +8,9 @@ import SwiftUI
 /// nothing else. It does not announce anything: the one VoiceOver announcement at the end of a scan
 /// is posted by the model once the final results are built.
 struct ScanningView: View {
+    /// False on the Mac, where Pause, Resume and Stop are in the toolbar and this is status only.
+    var showsControls = true
+
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -36,7 +39,7 @@ struct ScanningView: View {
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("scan.failed")
             }
-            controls(paused: paused)
+            if showsControls { controls(paused: paused) }
             if !paused, let note = whenYouLeave {
                 Text(note)
                     .font(Typography.note)
@@ -56,6 +59,10 @@ struct ScanningView: View {
         Group {
             if starting {
                 ProgressView()
+                    #if os(macOS)
+                        // A bar, like the running one, not a spinner.
+                        .progressViewStyle(.linear)
+                    #endif
             } else {
                 ProgressView(value: p?.fraction ?? 0)
             }
@@ -109,7 +116,7 @@ struct ScanningView: View {
         } label: {
             Text("Stop")
                 .foregroundStyle(Color.secondary)
-                .frame(minHeight: 44)
+                .frame(minHeight: Hit.minimum)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

@@ -21,6 +21,12 @@
         @Entry var reviewActions: ReviewActions?
     }
 
+    extension EnvironmentValues {
+        /// Opens the Confirm sheet for a category (nil: for everything). The shell owns the sheet, so
+        /// it lives as long as the window does and a screen can disappear while its receipt is up.
+        @Entry var openConfirm: (@MainActor (CleanupCategory?) -> Void)?
+    }
+
     /// Counts the sheets that are up (the Confirm sheet, the viewer). The menu commands read it and
     /// switch themselves off while one is: a sheet is a question, and it should be answered first.
     @MainActor @Observable
