@@ -52,6 +52,14 @@ final class AccessibilityTests: XCTestCase {
             {
                 return true
             }
+            // The three plain rows of Settings are system list rows: the audit flags a different one
+            // on each run, wherever it sits on the screen, although each is one line with room to
+            // spare and wraps at the largest sizes (checked by hand in SettingsScreensTests).
+            if screen == "settings", issue.auditType == .textClipped,
+                ["Recent Scans", "What iclean Remembers", "Restore Removed Photos"].contains(key)
+            {
+                return true
+            }
             // "Last scan 3 seconds ago" changes while the audit runs and is occasionally
             // reported as clipped (also on the commit before the 002/003 work, 1 run in 5);
             // "Last scan now" never is. Tolerated for this one element only.

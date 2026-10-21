@@ -25,6 +25,8 @@ final class ScreenshotTour: XCTestCase {
     func testLight() { tour("light", appearance: .light) }
     func testDark() { tour("dark", appearance: .dark) }
     func testLargeText() { tour("largetext", appearance: .light) }
+    /// The very largest accessibility size, where layouts break first.
+    func testLargestText() { tour("xxxl", appearance: .light) }
 
     // MARK: Helpers
 
@@ -33,6 +35,11 @@ final class ScreenshotTour: XCTestCase {
         if variant == "largetext" {
             arguments += [
                 "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
+            ]
+        }
+        if variant == "xxxl" {
+            arguments += [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             ]
         }
         return launchApp(scenario: scenario, extraArguments: arguments)
@@ -53,6 +60,26 @@ final class ScreenshotTour: XCTestCase {
 
     private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)[id].firstMatch
+    }
+
+    /// At large text a long list is taller than the screen, so a row can be off it and not tappable:
+    /// scroll until it can be tapped.
+    @discardableResult
+    private func reveal(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+        let target = element(app, id)
+        _ = target.waitForExistence(timeout: 5)
+        var swipes = 0
+        while !target.isHittable, swipes < 6 {
+            app.swipeUp()
+            swipes += 1
+        }
+        // The row may instead be above the part that is showing.
+        swipes = 0
+        while !target.isHittable, swipes < 12 {
+            app.swipeDown()
+            swipes += 1
+        }
+        return target
     }
 
     private func back(_ app: XCUIApplication) {
@@ -118,8 +145,8 @@ final class ScreenshotTour: XCTestCase {
         app.swipeDown()
 
         for category in ["duplicates", "similar", "blurry", "screenshots", "largeVideos"] {
-            let row = element(app, "results.category.\(category)")
-            guard row.waitForExistence(timeout: 3) else { continue }
+            let row = reveal(app, "results.category.\(category)")
+            guard row.exists else { continue }
             row.tap()
             settle(1.0)
             shot(app, "04-category-\(category)")
@@ -182,7 +209,7 @@ final class ScreenshotTour: XCTestCase {
         }
 
         // The summary after removing, last because it changes the library.
-        element(app, "results.category.duplicates").tap()
+        reveal(app, "results.category.duplicates").tap()
         let remove = element(app, "category.removeSelected")
         if remove.waitForExistence(timeout: 5) {
             remove.tap()
