@@ -127,15 +127,25 @@ public struct ReviewIntent: Codable, Equatable, Sendable {
         var results = results
         let protected = Set(results.items.values.filter { $0.metadata.isFavorite }.map(\.assetID))
             .union(keepMarks)
-        for (id, _) in keeperChoices.sorted(by: { $0.value < $1.value }) {
+        if !keeperChoices.isEmpty {
+            // One pass over the groups finds where each chosen photo is; replaying a choice then
+            // touches only its own group instead of looking through all of them.
+            var places: [String: [(category: Int, group: Int)]] = [:]
             for ci in results.categories.indices {
-                for gi in results.categories[ci].groups.indices {
-                    var group = results.categories[ci].groups[gi]
-                    guard group.type != .single, group.members.contains(id) else { continue }
+                for (gi, group) in results.categories[ci].groups.enumerated()
+                where group.type != .single {
+                    for member in group.members where keeperChoices[member] != nil {
+                        places[member, default: []].append((ci, gi))
+                    }
+                }
+            }
+            for (id, _) in keeperChoices.sorted(by: { $0.value < $1.value }) {
+                for place in places[id] ?? [] {
                     // Favorites and "always keep" photos stay keepers; the chosen one joins them.
-                    let stay = group.keepers.filter { protected.contains($0) }
-                    group.keepers = stay.union([id])
-                    results.categories[ci].groups[gi] = group
+                    let stay = results.categories[place.category].groups[place.group].keepers
+                        .filter { protected.contains($0) }
+                    results.categories[place.category].groups[place.group].keepers = stay.union([id]
+                    )
                 }
             }
         }
