@@ -9,9 +9,15 @@ struct SettingsView: View {
         List {
             Section {
                 Label {
-                    Text(
-                        "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
-                    )
+                    #if os(macOS)
+                        Text(
+                            "Everything stays on this Mac. iclean never connects to the internet, has no account, and collects nothing."
+                        )
+                    #else
+                        Text(
+                            "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
+                        )
+                    #endif
                 } icon: {
                     Image(systemName: "lock.shield")
                 }
@@ -35,11 +41,15 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Recent Scans") { RecentScansView() }
                     .accessibilityIdentifier("settings.recentScans")
+                NavigationLink("Saved on this iPhone") { SavedDataView() }
+                    .accessibilityIdentifier("settings.savedData")
             }
             #if DEBUG
                 Section {
-                    NavigationLink("Baseline Library (Debug)") { BaselineView(autoRun: false) }
-                        .accessibilityIdentifier("settings.baseline")
+                    NavigationLink("Baseline Library (Debug)") {
+                        BaselineView(autoRun: false, standalone: false)
+                    }
+                    .accessibilityIdentifier("settings.baseline")
                 }
             #endif
         }

@@ -36,6 +36,21 @@ Open `iclean.xcodeproj` and run the `iclean` scheme, or build from the command l
 xcodebuild build -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
+Build and run the Mac app (Apple silicon, macOS 15 or later; spec 005 stage S2). It uses the
+demo library with the `-UITesting` launch argument, so no real photos are touched:
+
+```bash
+xcodebuild build -project iclean.xcodeproj -scheme iclean -destination 'platform=macOS' -derivedDataPath build/DerivedDataMac CODE_SIGNING_ALLOWED=NO
+```
+
+```bash
+build/DerivedDataMac/Build/Products/Debug/iclean.app/Contents/MacOS/iclean -UITesting -DemoScenario large30k -DemoAnalysisLatencyMs 15 -PersistStore -ResetStore -AutoScan -TraceScan
+```
+
+`-DemoScenario large30k` (or `large3k`, `large10k`) is a synthetic library of that many items;
+`-TraceScan` prints progress and each rebuild of the results. In a debug build the CleanupKit package
+is still compiled with optimization (see `Package.swift`): unoptimized it is about 80 times slower.
+
 ## Test
 
 Core logic (no simulator needed):
@@ -48,6 +63,14 @@ UI tests (run against a built-in demo library, no real photos needed):
 
 ```bash
 xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+Large-library benchmark (release build; 30,000 synthetic items; memory by `phys_footprint`). With
+`--open <folder>` it times the results build on a copy of an existing store, `--stages` times each
+part of the per-photo analysis:
+
+```bash
+swift run -c release --package-path Packages/CleanupKit/Benchmarks/ScaleBench ScaleBench --count 30000
 ```
 
 No-network checks (constitution Principle V):
@@ -74,6 +97,9 @@ scripts/seed-simulator.sh "iPhone 17 Pro"
 - `Fixtures/` — labeled test photos (see `Fixtures/README.md`)
 - `specs/001-photo-cleanup/` — spec, plan, research and tasks (Spec Kit)
 - `specs/002-background-scan-progress/` — scan progress outside the app (Spec Kit)
+- `specs/004-phased-cleaning/` — phased cleaning for large libraries (design; part delivered by 008)
+- `specs/008-staged-cleanup-at-scale/` — results while the scan runs, bounded memory and time at
+  30,000 photos
 
 ## Earlier design documents
 

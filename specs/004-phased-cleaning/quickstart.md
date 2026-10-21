@@ -6,7 +6,7 @@ library harness on a real device (`docs/BASELINE_LIBRARY.md`).
 ## Unit guarantees
 
 ```bash
-swift test --package-path Packages/CleanupKit --filter "RunProfileTests|GovernorTests|PhasedScanTests|ResultsContinuityTests|DurableScanTests"
+swift test --package-path Packages/CleanupKit --filter "RunProfileTests|GovernorTests|PhasedScanTests|ReviewIntentTests|DurableScanTests"
 swift test --package-path Packages/CleanupKit -c release --filter ScaleGuardTests
 ```
 

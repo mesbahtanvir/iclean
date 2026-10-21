@@ -1,7 +1,12 @@
-#if os(iOS)
+#if canImport(Photos)
     import AVFoundation
     import Photos
-    import UIKit
+
+    #if canImport(UIKit)
+        import UIKit
+    #elseif canImport(AppKit)
+        import AppKit
+    #endif
 
     /// PhotoKit implementation of `PhotoLibrary` (research R2, R7, R8, R10).
     public final class PhotoKitLibrary: NSObject, PhotoLibrary, PHPhotoLibraryChangeObserver,
@@ -72,8 +77,15 @@
         public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
             guard !assetIDs.isEmpty else { return [] }
             var assets: [PHAsset] = []
-            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil).enumerateObjects {
+            // The same view of the library as the full enumeration: the person's own library, bursts
+            // included, and nothing hidden. A photo that is hidden, in Recently Deleted or outside
+            // a limited selection is simply not returned, which is what a check before removing wants.
+            let options = PHFetchOptions()
+            options.includeAssetSourceTypes = [.typeUserLibrary]
+            options.includeAllBurstAssets = true
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
                 asset, _, _ in
+                guard !asset.isHidden else { return }
                 if asset.mediaType == .image || asset.mediaType == .video { assets.append(asset) }
             }
             return assets.map { asset in
@@ -86,6 +98,24 @@
                     }
                 return Self.metadata(for: asset, albums: names)
             }
+        }
+
+        public func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp] {
+            guard !assetIDs.isEmpty else { return [:] }
+            let options = PHFetchOptions()
+            options.includeAssetSourceTypes = [.typeUserLibrary]
+            options.includeAllBurstAssets = true
+            var out: [String: AssetStamp] = [:]
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
+                asset, _, _ in
+                guard !asset.isHidden, asset.mediaType == .image || asset.mediaType == .video
+                else { return }
+                out[asset.localIdentifier] = AssetStamp(
+                    modificationDate: asset.modificationDate, isFavorite: asset.isFavorite,
+                    hasAdjustments: asset.hasAdjustments, pixelWidth: asset.pixelWidth,
+                    pixelHeight: asset.pixelHeight)
+            }
+            return out
         }
 
         static func metadata(for asset: PHAsset, albums: [String]) -> AssetMetadata {
@@ -112,9 +142,10 @@
                 addedDate: Self.addedDate(of: asset), hasLocation: asset.location != nil)
         }
 
-        /// When the asset was added to the library, where the system says (iOS 26 and later).
+        /// When the asset was added to the library, where the system says (iOS 26, macOS 26 and
+        /// visionOS 26 and later).
         private static func addedDate(of asset: PHAsset) -> Date? {
-            if #available(iOS 26.0, *) { return asset.addedDate }
+            if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) { return asset.addedDate }
             return nil
         }
 
@@ -142,7 +173,8 @@
             guard let asset = asset(assetID) else { return .unavailable }
             let size = CGSize(width: maxPixels, height: maxPixels)
             let (image, inCloud) = await requestImage(
-                asset, size: size, options: NetworkOffOptions.image(deliveryMode: .highQualityFormat))
+                asset, size: size,
+                options: NetworkOffOptions.image(deliveryMode: .highQualityFormat))
             if let image { return .local(image) }
             guard inCloud else { return .unavailable }
             let (thumb, _) = await requestImage(
@@ -161,10 +193,21 @@
                     let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
                     if degraded, options.deliveryMode != .fastFormat { return }
                     let inCloud = (info?[PHImageResultIsInCloudKey] as? Bool) ?? false
-                    once.run { continuation.resume(returning: (image?.cgImage, inCloud)) }
+                    let cgImage = image.flatMap(Self.cgImage)
+                    once.run { continuation.resume(returning: (cgImage, inCloud)) }
                 }
             }
         }
+
+        /// The image PhotoKit hands back is a `UIImage` on iOS and visionOS and an `NSImage` on
+        /// the Mac; the rest of the package only knows `CGImage`.
+        #if canImport(UIKit)
+            private static func cgImage(_ image: UIImage) -> CGImage? { image.cgImage }
+        #elseif canImport(AppKit)
+            private static func cgImage(_ image: NSImage) -> CGImage? {
+                image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            }
+        #endif
 
         // MARK: Sizes
 
@@ -217,7 +260,7 @@
             var found: [String] = []
             assets.enumerateObjects { asset, _, _ in found.append(asset.localIdentifier) }
             let missing = Set(assetIDs).subtracting(found)
-            // One request, so iOS shows one confirmation for the whole selection.
+            // One request, so the system shows one confirmation for the whole selection.
             do {
                 try await PHPhotoLibrary.shared().performChanges {
                     PHAssetChangeRequest.deleteAssets(assets)

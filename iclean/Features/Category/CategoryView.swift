@@ -13,46 +13,81 @@ struct CategoryView: View {
 
     var body: some View {
         let result = model.results.category(category)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(category.explanation)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-                if let result {
-                    if category == .largeVideos {
-                        listLayout(result)
-                    } else if result.groups.first?.type == .single {
-                        LazyVGrid(columns: columns, spacing: 4) {
-                            ForEach(result.allMembers, id: \.self) { cell($0, group: nil) }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(category.explanation)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                    if model.pendingNewCount > 0 {
+                        // The list never changes under the person; new finds wait behind this (004 FR-010).
+                        Button {
+                            model.showPendingResults()
+                        } label: {
+                            Label(
+                                "\(model.pendingNewCount) new results. Show",
+                                systemImage: "sparkles")
                         }
-                    } else {
-                        ForEach(result.groups) { group in groupSection(group) }
+                        .buttonStyle(.bordered)
+                        .padding(.horizontal)
+                        .accessibilityIdentifier("category.showNew")
                     }
-                } else {
-                    ContentUnavailableView("Nothing here", systemImage: "checkmark.seal")
+                    if let result {
+                        if category == .largeVideos {
+                            listLayout(result)
+                        } else if result.groups.first?.type == .single {
+                            LazyVGrid(columns: columns, spacing: 4) {
+                                ForEach(result.allMembers, id: \.self) { cell($0, group: nil) }
+                            }
+                        } else {
+                            ForEach(result.groups) { group in groupSection(group) }
+                        }
+                    } else if model.launchPhase != .ready || model.isBuildingResults {
+                        // Results are still being restored or built: never say "nothing" before they are.
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                            .accessibilityIdentifier("category.loading")
+                    } else {
+                        ContentUnavailableView("Nothing here", systemImage: "checkmark.seal")
+                    }
                 }
+                .padding(.vertical)
             }
-            .padding(.vertical)
+            // A restored screen opens on the photo the person last touched.
+            .onAppear { scrollToRestoredPhoto(proxy, in: result) }
+            .onChange(of: result?.allMembers.count) { scrollToRestoredPhoto(proxy, in: result) }
         }
         .navigationTitle(category.title)
+        .task { await model.measureSizes(in: category) }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { selectAllButton(result) }
+            ToolbarItem(placement: .primaryAction) { selectAllButton(result) }
         }
         .safeAreaInset(edge: .bottom) { removeBar }
         .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
-        .fullScreenCover(item: Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })) {
-            PhotoViewer(assetID: $0.id)
-        }
+        #if os(macOS)
+            // There is no full-screen cover on the Mac; the viewer is a sheet there.
+            .sheet(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+        #else
+            .fullScreenCover(item: viewingBinding) { PhotoViewer(assetID: $0.id) }
+        #endif
+    }
+
+    private var viewingBinding: Binding<Viewing?> {
+        Binding(get: { viewing.map(Viewing.init) }, set: { viewing = $0?.id })
+    }
+
+    private func scrollToRestoredPhoto(_ proxy: ScrollViewProxy, in result: CategoryResult?) {
+        guard let id = model.restoredFocus, result?.allMembers.contains(id) == true else { return }
+        proxy.scrollTo(id, anchor: .center)
     }
 
     // MARK: Layouts
 
     private func groupSection(_ group: ResultGroup) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            NavigationLink {
-                GroupDetailView(groupID: group.id, category: category)
-            } label: {
+            NavigationLink(value: Route.group(category, containing: group)) {
                 HStack {
                     Group {
                         if group.type == .similarShots {
@@ -83,8 +118,12 @@ struct CategoryView: View {
                         .frame(width: 72, height: 72)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     VStack(alignment: .leading) {
-                        Text(Format.bytes(item?.effectiveByteSize ?? 0, estimate: item?.sizeIsEstimate ?? true))
-                            .font(.headline)
+                        Text(
+                            Format.bytes(
+                                item?.effectiveByteSize ?? 0, estimate: item?.sizeIsEstimate ?? true
+                            )
+                        )
+                        .font(.headline)
                         if let d = item?.metadata.duration {
                             Text(Format.duration(d)).foregroundStyle(.secondary)
                         }
@@ -173,7 +212,9 @@ struct ItemCell: View {
             .overlay(alignment: .bottomLeading) {
                 HStack(spacing: 4) {
                     if isKeeper { Badge(text: "Keep", systemImage: "checkmark.seal.fill") }
-                    if item?.metadata.isFavorite == true { Badge(text: nil, systemImage: "heart.fill") }
+                    if item?.metadata.isFavorite == true {
+                        Badge(text: nil, systemImage: "heart.fill")
+                    }
                     if let albums = item?.metadata.albumNames, !albums.isEmpty {
                         Badge(text: nil, systemImage: "rectangle.stack")
                             .accessibilityIdentifier("category.albumBadge")
@@ -213,7 +254,9 @@ struct ItemCell: View {
         if item?.analysisSource == .cloudPreview || confidence == .lower {
             parts.append(String(localized: "Checked from a preview only"))
         }
-        parts.append(model.isSelected(assetID) ? String(localized: "Selected for removal") : String(localized: "Not selected"))
+        parts.append(
+            model.isSelected(assetID)
+                ? String(localized: "Selected for removal") : String(localized: "Not selected"))
         return parts.joined(separator: ", ")
     }
 }

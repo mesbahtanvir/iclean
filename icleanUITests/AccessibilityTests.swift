@@ -14,7 +14,8 @@ final class AccessibilityTests: XCTestCase {
     /// sizing. Anything else fails the test.
     private let systemCapped: Set<String> = [
         "category.selectAll", "confirm.cancel", "settings.deleteAllData",
-        "settings.recentScans", "settings.baseline",
+        "settings.recentScans", "settings.baseline", "settings.savedData",
+        "saved.clearResults", "saved.resetChoices", "saved.erase",
         "results.notScanned",
         "Removed items go to Recently Deleted in the Photos app.",
         "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
@@ -37,7 +38,9 @@ final class AccessibilityTests: XCTestCase {
             // list text like the controls above. Checked by hand at the largest accessibility text
             // size: it wraps and nothing is cut off. The clipped-text issue has no element.
             if screen == "results" {
-                if issue.auditType == .dynamicType, key.hasPrefix("Remove All Selected") { return true }
+                if issue.auditType == .dynamicType, key.hasPrefix("Remove All Selected") {
+                    return true
+                }
                 if issue.auditType == .textClipped, key.isEmpty { return true }
             }
             print(
@@ -65,6 +68,11 @@ final class AccessibilityTests: XCTestCase {
         app.buttons["home.settings"].tap()
         XCTAssertTrue(app.buttons["settings.deleteAllData"].waitForExistence(timeout: 5))
         try check(app, "settings")
+        let saved = app.descendants(matching: .any)["settings.savedData"].firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5))
+        saved.tap()
+        XCTAssertTrue(app.buttons["saved.clearResults"].waitForExistence(timeout: 5))
+        try check(app, "saved")
     }
 
     func testAccessScreen() throws {

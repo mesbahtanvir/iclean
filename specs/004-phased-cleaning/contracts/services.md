@@ -82,7 +82,7 @@ seen groups, shown keepers, and explicit deselections from the previous snapshot
 - **G2** The final snapshot equals a one-shot build over the same items, for random block orders
   and sizes (`PhasedScanTests.finalEqualsOneShot`).
 - **G3** An update never undoes a selection, a keeper the user saw, a keep mark, or a removal
-  (`ResultsContinuityTests`).
+  (`ReviewIntentTests`).
 - **G4** No category shows its empty state while a step that feeds it is unfinished
   (`PhasedScanTests.noEarlyClean`).
 - **G5** A kill in any step repeats at most one piece (`DurableScanTests`, parameterized by step).

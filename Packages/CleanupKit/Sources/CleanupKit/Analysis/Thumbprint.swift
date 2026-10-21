@@ -43,20 +43,20 @@ public enum Thumbprint {
         return zip(x, y).reduce(0) { $0 + abs($1.0 - $1.1) } / Double(x.count)
     }
 
-    private static func values(_ data: Data) -> [Double]? {
+    static func values(_ data: Data) -> [Double]? {
         guard data.count == side * side else { return nil }
         return data.map(Double.init)
     }
 
-    private static func mean(_ v: [Double]) -> Double { v.reduce(0, +) / Double(v.count) }
+    static func mean(_ v: [Double]) -> Double { v.reduce(0, +) / Double(v.count) }
 
-    private static func isFlat(_ v: [Double]) -> Bool {
+    static func isFlat(_ v: [Double]) -> Bool {
         let m = mean(v)
         return v.reduce(0) { $0 + ($1 - m) * ($1 - m) } / Double(v.count) < 1
     }
 
     /// Each pixel minus the average of its 5×5 neighbourhood.
-    private static func highPass(_ v: [Double]) -> [Double] {
+    static func highPass(_ v: [Double]) -> [Double] {
         let n = side
         var out = [Double](repeating: 0, count: v.count)
         for y in 0..<n {
@@ -78,7 +78,7 @@ public enum Thumbprint {
         return out
     }
 
-    private static func correlation(_ x: [Double], _ y: [Double]) -> Double {
+    static func correlation(_ x: [Double], _ y: [Double]) -> Double {
         let mx = mean(x)
         let my = mean(y)
         var sxy = 0.0

@@ -48,30 +48,32 @@ public struct DuplicatePhotoDetector: CategoryDetector {
 /// Shared by photo and video duplicate detection.
 enum DuplicateGrouping {
     static func group(
-        _ items: [LibraryItem], extraCheck: (LibraryItem, LibraryItem) -> Bool = { _, _ in true }
+        _ items: [LibraryItem], extraCheck: ((LibraryItem, LibraryItem) -> Bool)? = nil
     ) -> [[LibraryItem]] {
         let hashes = items.map { $0.analysis?.dHash ?? 0 }
-        let pairs = HashIndex(maxDistance: DuplicateThresholds.hashDistance).candidatePairs(hashes)
+        var matcher = ThumbprintMatcher(items.map { $0.analysis?.thumbprint ?? Data() })
+        // Read once, so the loop over millions of candidate pairs never copies an item.
+        let edited = items.map(\.metadata.hasAdjustments)
+        let ratio = items.map(\.metadata.aspectRatio)
         var uf = UnionFind(count: items.count)
-        for (i, j) in pairs {
-            let a = items[i]
-            let b = items[j]
+        HashIndex(maxDistance: DuplicateThresholds.hashDistance).forEachCandidatePair(hashes) {
+            i, j in
+            // Two photos already known to be copies of one another need no second proof.
+            guard uf.find(i) != uf.find(j) else { return }
             // Edited versions are never duplicates of their originals.
-            guard a.metadata.hasAdjustments == b.metadata.hasAdjustments else { continue }
-            guard sameAspect(a.metadata, b.metadata), extraCheck(a, b) else { continue }
-            let ta = a.analysis?.thumbprint ?? Data()
-            let tb = b.analysis?.thumbprint ?? Data()
-            guard Thumbprint.detailSimilarity(ta, tb) >= DuplicateThresholds.thumbprint,
-                Thumbprint.meanAbsoluteDifference(ta, tb) <= DuplicateThresholds.brightness
-            else { continue }
+            guard edited[i] == edited[j], sameAspect(ratio[i], ratio[j]) else { return }
+            if let extraCheck, !extraCheck(items[i], items[j]) { return }
+            guard matcher.confirms(i, j) else { return }
             uf.union(i, j)
         }
         return uf.groups().map { $0.map { items[$0] } }
     }
 
     static func sameAspect(_ a: AssetMetadata, _ b: AssetMetadata) -> Bool {
-        let ra = a.aspectRatio
-        let rb = b.aspectRatio
+        sameAspect(a.aspectRatio, b.aspectRatio)
+    }
+
+    static func sameAspect(_ ra: Double, _ rb: Double) -> Bool {
         guard ra > 0, rb > 0 else { return false }
         return abs(ra - rb) / max(ra, rb) <= DuplicateThresholds.aspectRatio
     }

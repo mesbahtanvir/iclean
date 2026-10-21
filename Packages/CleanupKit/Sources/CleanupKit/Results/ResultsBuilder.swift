@@ -157,9 +157,15 @@ public struct DefaultResultsBuilder: ResultsBuilder {
         }
         selection.subtract(protected)
 
+        // Only what is listed is kept, and without fingerprints: the screens need nothing else,
+        // and keeping every item of a large library with its fingerprints cost hundreds of MB.
+        var shown: [String: LibraryItem] = [:]
+        for c in categories {
+            for id in c.allMembers { shown[id] = byID[id]?.withoutFingerprints }
+        }
         return CleanupResults(
             categories: categories, defaultSelection: selection,
             notScannedCount: items.filter { $0.analysisSource == .notScanned }.count,
-            items: byID)
+            items: shown)
     }
 }

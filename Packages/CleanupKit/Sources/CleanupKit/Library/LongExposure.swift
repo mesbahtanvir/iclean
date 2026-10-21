@@ -1,4 +1,4 @@
-#if os(iOS)
+#if canImport(Photos)
     import Photos
 
     /// Detects Live Photos with the Long Exposure effect (FR-003a).

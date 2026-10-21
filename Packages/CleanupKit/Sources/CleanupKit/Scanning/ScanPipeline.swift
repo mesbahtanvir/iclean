@@ -29,6 +29,7 @@ public actor ScanPipeline: Scanner {
     private let policy: ScanRetryPolicy
     private let features: ProFeatures
     private let pauseWaitLimit: Duration
+    private let minProgressInterval: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
     /// Identifies this process. A chunk leased by another incarnation was left behind
     /// by a process that died (003 FR-005).
@@ -36,7 +37,7 @@ public actor ScanPipeline: Scanner {
 
     private var task: Task<Void, Never>?
     private var isPaused = false
-    private var pauseReason: ScanPauseReason?
+    private(set) var pauseReason: ScanPauseReason?
     /// Set once a paused scan has saved everything it processed.
     private var pausedAndSaved = false
     /// How many `pause()` calls returned because the run loop acknowledged the pause,
@@ -44,9 +45,24 @@ public actor ScanPipeline: Scanner {
     /// acknowledgement without timing.
     private(set) var pauseAcknowledgements = 0
     private var stopRequested = false
+    /// Checkpoints that failed one after another. A few in a row mean the store cannot be written.
+    private var saveFailures = 0
+    static let saveFailureLimit = 3
+    /// Results whose checkpoint failed. They go out with the next checkpoint, and the scan does
+    /// not claim to be complete while any are left, so a full disk never loses photos quietly.
+    private var unsaved: [LibraryItem] = []
+    /// The chunks those results belong to: written in the same transaction as the results, so a
+    /// chunk is never stored as unfinished next to results that say it is done.
+    private var unsavedChunks: [ScanChunk] = []
+    private var runKind: ScanKind = .full
     private var session: ScanSession?
     private var chunks: [ScanChunk] = []
     private var sinceProgress = 0
+    private var lastProgressAt: ContinuousClock.Instant?
+    /// Moves up whenever the stored results changed enough to be worth showing: quick wins
+    /// stored, a block of photos finished (spec 008). The app rebuilds its results when it moves.
+    private var publishedRevision = 0
+    private var nextBlockEdge = ScanBlocks.first
     /// What the store holds for the running job. `pause()` writes this, never the
     /// in-memory counters, which run ahead of the saved results while a chunk is in
     /// flight (review fix: a kill after a pause must not leave counters above the results).
@@ -64,11 +80,14 @@ public actor ScanPipeline: Scanner {
     ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
     ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
     ///     acknowledge; tests raise it so a slow machine cannot hit it.
+    ///   - minProgressInterval: at most one progress event per interval while items finish.
+    ///     Events that carry a change of state or a new block are never held back. A 30,000-item
+    ///     scan otherwise sent about 4,000 events, each one a screen update and a system call.
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
         policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
-        pauseWaitLimit: Duration = .seconds(2),
+        pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         }
@@ -83,6 +102,7 @@ public actor ScanPipeline: Scanner {
         self.policy = policy
         self.features = features
         self.pauseWaitLimit = pauseWaitLimit
+        self.minProgressInterval = minProgressInterval
         self.thermalState = thermalState
     }
 
@@ -113,6 +133,9 @@ public actor ScanPipeline: Scanner {
         // Take the run slot before the first await: a full scan started meanwhile is
         // refused instead of running alongside this check.
         task = Task {}
+        // Cleared before the first await, so a stop() that arrives while the session is being
+        // read is still seen after it.
+        stopRequested = false
         if let s = try? await store.currentSession(), s.isActive {
             task = nil
             // An unfinished job waits for the user's Resume (001 FR-005a).
@@ -120,9 +143,12 @@ public actor ScanPipeline: Scanner {
                 processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
                 state: s.state, failed: s.failedItems)
         }
+        if stopRequested {
+            task = nil
+            return snapshot()
+        }
         isPaused = false
         pauseReason = nil
-        stopRequested = false
         let work = Task { await self.run(kind: .quickCheck) { _ in } }
         task = Task { _ = await work.value }
         let result = await work.value
@@ -135,7 +161,9 @@ public actor ScanPipeline: Scanner {
         let alreadyPaused = isPaused
         isPaused = true
         // A pause the user asked for is never turned into an automatic one.
-        if !alreadyPaused || pauseReason != .user { pauseReason = reason }
+        if !alreadyPaused || (pauseReason != .user && pauseReason != .storageUnavailable) {
+            pauseReason = reason
+        }
         if !alreadyPaused { pausedAndSaved = false }
         if session != nil {
             session?.state = .paused
@@ -154,6 +182,7 @@ public actor ScanPipeline: Scanner {
         isPaused = false
         pauseReason = nil
         pausedAndSaved = false
+        saveFailures = 0
         if session?.state == .paused {
             session?.state = .running
             if var s = storedSession, s.state == .paused {
@@ -197,10 +226,17 @@ public actor ScanPipeline: Scanner {
         -> ScanProgress
     {
         sinceProgress = 0
+        lastProgressAt = nil
+        publishedRevision = 0
         storedSession = nil
         storedLeased = nil
         needsCatchUp = false
+        saveFailures = 0
+        unsaved = []
+        unsavedChunks = []
+        runKind = kind
         guard await loadJob(kind: kind) else { return await finish(progress: progress) }
+        nextBlockEdge = ScanBlocks.edge(after: session?.processedItems ?? 0)
         progress(snapshot())
         var caughtUp = false
         while !stopRequested {
@@ -221,7 +257,34 @@ public actor ScanPipeline: Scanner {
             }
             await runChunk(at: index, progress: progress)
         }
+        await saveUnsaved(progress: progress)
         return await finish(progress: progress)
+    }
+
+    /// Tries once more to write results that earlier checkpoints could not. A full scan waits for
+    /// the person to fix the problem (and tap Resume); a quick check has nobody to ask, so it ends
+    /// and the next check finds the photos again, because they are not in the store.
+    private func saveUnsaved(progress: @Sendable (ScanProgress) -> Void) async {
+        while !unsaved.isEmpty, !stopRequested {
+            let written: Bool
+            if let s = session {
+                written =
+                    (try? await store.checkpoint(items: unsaved, chunks: unsavedChunks, session: s))
+                    != nil
+            } else {
+                written = (try? await store.upsert(unsaved)) != nil
+            }
+            if written {
+                unsaved = []
+                unsavedChunks = []
+                saveFailures = 0
+                return
+            }
+            guard runKind == .full else { return }
+            saveFailures = Self.saveFailureLimit
+            pauseForStorage()
+            await waitWhilePaused(progress: progress)
+        }
     }
 
     /// Loads the unfinished job, adopts one from an older app version, or plans a new
@@ -289,11 +352,10 @@ public actor ScanPipeline: Scanner {
 
     private func plan(kind: ScanKind, adopting previous: ScanSession?) async -> Bool {
         let library = await self.library.fetchAllItems()
-        let stored = (try? await store.items()) ?? []
+        let stored = (try? await store.itemSummaries()) ?? []
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: kind, policy: policy, features: features)
-        try? await store.deleteItems(plan.gone)
-        await writeRefreshed(plan.refreshed)
+        await apply(plan)
         var s: ScanSession
         if var previous {
             previous.kind = kind == .full ? .full : previous.kind
@@ -312,13 +374,26 @@ public actor ScanPipeline: Scanner {
         return true
     }
 
-    /// Saves refreshed metadata in slices, so a library whose every item changed at once (the first
-    /// scan after an update that reads a new property) never needs one long transaction or holds
-    /// every record in memory together. Each slice is complete on its own, so a stop in the middle
-    /// keeps what was written and the next check writes the rest.
-    private func writeRefreshed(_ items: [LibraryItem]) async {
-        for start in stride(from: 0, to: items.count, by: 500) {
-            try? await store.upsert(Array(items[start..<min(start + 500, items.count)]))
+    /// Writes what a plan decided besides the analysis itself: items that left the library are
+    /// forgotten, changed metadata is refreshed, and items that need no analysis are stored right
+    /// away so they can be listed before any photo is opened (spec 008 quick wins).
+    private func apply(_ plan: ScanPlan) async {
+        try? await store.deleteItems(plan.gone)
+        // In slices, so a library whose every item changed at once (the first scan after an update
+        // that reads a new property) never needs one long transaction or holds every record in
+        // memory together. Each slice is complete on its own, so a stop in the middle keeps what
+        // was written and the next check writes the rest.
+        for start in stride(from: 0, to: plan.refreshed.count, by: 500) {
+            try? await store.refreshMetadata(
+                Array(plan.refreshed[start..<min(start + 500, plan.refreshed.count)]))
+        }
+        for start in stride(from: 0, to: plan.quickWins.count, by: 500) {
+            let slice = plan.quickWins[start..<min(start + 500, plan.quickWins.count)]
+            try? await store.upsert(
+                slice.map { LibraryItem(metadata: $0, analysisSource: .metadataOnly, analysis: nil) })
+        }
+        if !plan.gone.isEmpty || !plan.refreshed.isEmpty || !plan.quickWins.isEmpty {
+            publishedRevision += 1
         }
     }
 
@@ -327,20 +402,24 @@ public actor ScanPipeline: Scanner {
     private func catchUp() async {
         guard let jobID = session?.id else { return }
         let library = await self.library.fetchAllItems()
-        let stored = (try? await store.items()) ?? []
+        let stored = (try? await store.itemSummaries()) ?? []
         // A quick-check diff: only new or changed items, never a retry of items this job
         // already gave up on.
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: .quickCheck, policy: policy)
-        try? await store.deleteItems(plan.gone)
-        await writeRefreshed(plan.refreshed)
+            library: library, stored: stored, kind: .quickCheck, policy: policy,
+            features: features)
+        await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
         let covered = Set(
             chunks.filter { $0.state != .done }.flatMap { c in
                 c.undoneIndices.map { c.assetIDs[$0] }
             })
-        let ids = plan.toAnalyze.map(\.assetID).filter { !covered.contains($0) }
+        // Results that are analyzed but not yet written are not new photos.
+        let waiting = Set(unsaved.map(\.assetID))
+        let ids = plan.toAnalyze.map(\.assetID).filter {
+            !covered.contains($0) && !waiting.contains($0)
+        }
         guard !ids.isEmpty else { return }
         let new = ScanPlanner.chunks(
             jobID: jobID, assetIDs: ids, size: policy.chunkSize,
@@ -354,7 +433,9 @@ public actor ScanPipeline: Scanner {
 
     private func finish(progress: @Sendable (ScanProgress) -> Void) async -> ScanProgress {
         if var final = session {
-            if final.state != .stopped { final.state = stopRequested ? .stopped : .completed }
+            if final.state != .stopped {
+                final.state = stopRequested || !unsaved.isEmpty ? .stopped : .completed
+            }
             final.finishedAt = .now
             session = final
             // Saving an ended session also removes its chunks, in one transaction.
@@ -368,6 +449,8 @@ public actor ScanPipeline: Scanner {
         pauseReason = nil
         session = nil
         chunks = []
+        unsaved = []
+        unsavedChunks = []
         storedSession = nil
         storedLeased = nil
         return final
@@ -456,6 +539,9 @@ public actor ScanPipeline: Scanner {
                         storedSession = s
                         storedLeased = chunk
                         results.removeAll()
+                        saveFailures = 0
+                    } else {
+                        noteSaveFailure()
                     }
                 } else if (try? await store.saveChunks([chunk], session: nil)) != nil {
                     storedLeased = chunk
@@ -536,14 +622,29 @@ public actor ScanPipeline: Scanner {
         chunk.inFlightIndex = nil
         chunks[index] = chunk
         await stampAttempts(&results)
-        if let s = session,
-            (try? await store.checkpoint(items: results, chunk: chunk, session: s)) != nil
-        {
-            storedSession = s
-            storedLeased = nil
+        if let s = session {
+            // Results an earlier checkpoint could not write go out together with these.
+            let pending = unsaved + results
+            let owed = unsavedChunks + [chunk]
+            if (try? await store.checkpoint(items: pending, chunks: owed, session: s)) != nil {
+                storedSession = s
+                storedLeased = nil
+                saveFailures = 0
+                unsaved = []
+                unsavedChunks = []
+            } else {
+                unsaved = pending
+                unsavedChunks = owed
+                noteSaveFailure()
+            }
         }
-        if isPaused { pausedAndSaved = true }
-        progress(snapshot())
+        if isPaused, pauseReason != .storageUnavailable { pausedAndSaved = true }
+        if unsaved.isEmpty, let done = session?.processedItems, done >= nextBlockEdge {
+            // A block of photos is finished and saved: the results can be rebuilt from the store.
+            publishedRevision += 1
+            nextBlockEdge = ScanBlocks.edge(after: done)
+        }
+        emit(snapshot(), progress)
     }
 
     /// Records one finished item. `session` is read and written in place: pause() may
@@ -567,9 +668,11 @@ public actor ScanPipeline: Scanner {
         sinceProgress += 1
         // While pausing or stopping, the only progress event comes after the release
         // checkpoint, so a paused event always means "saved" (002 G1).
-        if sinceProgress >= progressEvery, !isPaused, !stopRequested {
+        if sinceProgress >= progressEvery, !isPaused, !stopRequested,
+            lastProgressAt.map({ ContinuousClock.now - $0 >= minProgressInterval }) ?? true
+        {
             sinceProgress = 0
-            progress(snapshot())
+            emit(snapshot(), progress)
         }
     }
 
@@ -583,6 +686,22 @@ public actor ScanPipeline: Scanner {
         }
     }
 
+    /// A checkpoint failed. After a few in a row a full scan stops and says so: going on would
+    /// analyze photos whose results cannot be kept.
+    private func noteSaveFailure() {
+        saveFailures += 1
+        if saveFailures >= Self.saveFailureLimit { pauseForStorage() }
+    }
+
+    private func pauseForStorage() {
+        // A quick check has nobody to resume it, so it never pauses: it ends, and the photos it
+        // could not save are found again by the next one.
+        guard runKind == .full, pauseReason != .storageUnavailable else { return }
+        isPaused = true
+        pauseReason = .storageUnavailable
+        session?.state = .paused
+    }
+
     // MARK: Waiting
 
     private func waitWhilePaused(progress: @Sendable (ScanProgress) -> Void) async {
@@ -591,7 +710,7 @@ public actor ScanPipeline: Scanner {
             // Nothing is in flight here, so the store is already complete. Checked on
             // every pass: a pause requested during a heat wait must still be reported
             // and acknowledged (review fix).
-            pausedAndSaved = true
+            if pauseReason != .storageUnavailable { pausedAndSaved = true }
             let now = snapshot()
             if now != last {
                 progress(now)
@@ -623,7 +742,13 @@ public actor ScanPipeline: Scanner {
         return ScanProgress(
             processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
             state: paused ? .paused : s.state, isThermalPaused: !paused && isTooHot,
-            pauseReason: paused ? pauseReason : nil, failed: s.failedItems)
+            pauseReason: paused ? pauseReason : nil, failed: s.failedItems,
+            publishedRevision: publishedRevision)
+    }
+
+    private func emit(_ event: ScanProgress, _ progress: @Sendable (ScanProgress) -> Void) {
+        lastProgressAt = .now
+        progress(event)
     }
 
     static func seconds(_ d: Duration) -> TimeInterval {
@@ -633,12 +758,14 @@ public actor ScanPipeline: Scanner {
     /// One item: preview plus analysis, under the per-item time limit (003 FR-007).
     /// A failed analysis is retried by the chunk; a missing preview is a result.
     /// Without Pro, videos are not analyzed (004 FR-004a): no frame is requested, and the item
-    /// is stored with its metadata only so Large Videos can rank it.
+    /// is stored with its metadata only so Large Videos can rank it. The same holds for screenshots
+    /// in every edition: they are listed by kind, never grouped with photos (no detector reads
+    /// their analysis), so opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
         analyzeVideos: Bool
     ) async -> ItemOutcome {
-        if m.kind.isVideo, !analyzeVideos {
+        if m.kind == .screenshot || (m.kind.isVideo && !analyzeVideos) {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
         }
         let outcome: Timeout.Outcome<ItemOutcome> = await Timeout.run(limit) {

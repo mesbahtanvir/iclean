@@ -4,6 +4,13 @@
 **Date:** 2026-08-12
 **Companion to:** [DESIGN.md](DESIGN.md) (product) and [SCAN_PIPELINE.md](SCAN_PIPELINE.md) (the read path). This document owns the **write half** — where every trust and honesty promise actually executes: the commit engine, photo-library authorization, entitlements, telemetry, and the release checklist.
 
+> **Superseded in part (spec 007).** The shipped app stores its data in SwiftData in the app's
+> Application Support folder, not in GRDB, and not in an App Group container; there is no
+> `commit_journal` table. A removal runs an immutable plan checked against the library when the
+> confirm sheet opens, and results are rebuilt afterwards, instead of being recovered from a
+> journal. See `specs/007-persistent-session/` and `specs/008-staged-cleanup-at-scale/`. The
+> text below is the original design and is kept for its reasoning.
+
 ---
 
 ## 1. Module Architecture & Deployment Target

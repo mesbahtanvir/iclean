@@ -22,10 +22,10 @@ struct PhotoViewer: View {
                 .background(.black)
                 .accessibilityLabel("Photo")
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { dismiss() }
                     }
-                    ToolbarItemGroup(placement: .bottomBar) {
+                    ToolbarItemGroup(placement: Self.actionsPlacement) {
                         Button {
                             model.toggle(assetID)
                         } label: {
@@ -47,5 +47,18 @@ struct PhotoViewer: View {
                     }
                 }
         }
+        #if os(macOS)
+            // A sheet on the Mac has no size of its own.
+            .frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+        #endif
+    }
+
+    /// The bottom bar on iPhone; the Mac has none, so the actions go in the window toolbar.
+    private static var actionsPlacement: ToolbarItemPlacement {
+        #if os(macOS)
+            .primaryAction
+        #else
+            .bottomBar
+        #endif
     }
 }

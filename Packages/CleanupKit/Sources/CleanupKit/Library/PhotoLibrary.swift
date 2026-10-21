@@ -10,6 +10,9 @@ public protocol PhotoLibrary: Sendable {
     /// Current metadata for these items only; items no longer in the library are left
     /// out (003: a chunk fetches its own items without enumerating the library).
     func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata]
+    /// The few facts that tell whether each of these photos is still the photo that was analyzed.
+    /// Cheaper than `fetchItems(withIDs:)`; photos no longer in the library are left out.
+    func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp]
     func preview(for assetID: String, maxPixels: Int) async -> PreviewResult
     /// Size of the item's files on the phone, or nil when not stored locally.
     func localByteSize(for assetID: String) async -> Int64?
@@ -23,6 +26,38 @@ extension PhotoLibrary {
     public func fetchItems(withIDs assetIDs: [String]) async -> [AssetMetadata] {
         let wanted = Set(assetIDs)
         return await fetchAllItems().filter { wanted.contains($0.assetID) }
+    }
+
+    public func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp] {
+        var out: [String: AssetStamp] = [:]
+        for m in await fetchItems(withIDs: assetIDs) { out[m.assetID] = AssetStamp(m) }
+        return out
+    }
+}
+
+/// What tells whether a photo changed since it was analyzed.
+public struct AssetStamp: Sendable, Equatable {
+    public var modificationDate: Date?
+    public var isFavorite: Bool
+    public var hasAdjustments: Bool
+    public var pixelWidth: Int
+    public var pixelHeight: Int
+
+    public init(
+        modificationDate: Date?, isFavorite: Bool, hasAdjustments: Bool, pixelWidth: Int,
+        pixelHeight: Int
+    ) {
+        self.modificationDate = modificationDate
+        self.isFavorite = isFavorite
+        self.hasAdjustments = hasAdjustments
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+    }
+
+    public init(_ m: AssetMetadata) {
+        self.init(
+            modificationDate: m.modificationDate, isFavorite: m.isFavorite,
+            hasAdjustments: m.hasAdjustments, pixelWidth: m.pixelWidth, pixelHeight: m.pixelHeight)
     }
 }
 

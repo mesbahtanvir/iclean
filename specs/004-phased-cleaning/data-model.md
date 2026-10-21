@@ -40,6 +40,15 @@ keep their columns and are read as a fallback.
 | `stopAfterStep` | Int8? | set by "Stop after this step" |
 | `effort` | String? | the user's setting at start, for the record |
 
+> **Note (2026-10-18): superseded by [specs/007-persistent-session](../007-persistent-session/data-model.md).**
+> `ResultsSnapshotRecord`, `itemsRevision` and `seenGroups` below are replaced. The saved results are
+> one `StateRecord` row with key `results` and a `basedOnRevision`. The store revision is
+> `StoreMetaRecord.resultsRevision`, bumped only by writes that change what results are built from (a
+> new or changed item, a removal, a keep mark, a measured size replacing an estimate), not by every item
+> write and not by scan bookkeeping. `seenGroups` lives in the `decisions` payload, and the continuity
+> of the person's choices is delivered by asset-keyed overrides replayed by one applier on every
+> publish. The two sections below describe the earlier plan and are kept for history.
+
 ## ResultsSnapshot (new, `ResultsSnapshotRecord`, one row)
 
 | Field | Type | Meaning |
