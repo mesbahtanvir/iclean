@@ -263,7 +263,339 @@
     "%lld of %lld": {},
     "Recent Scans": {},
     "No scans yet.": {},
-    "Updating results\u2026": {}
+    "Updating results\u2026": {},
+    "Remove %lld Photos?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove %lld Photo?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove %lld Photos?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Move %lld Photos to Recently Deleted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Photo to Recently Deleted"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Photos to Recently Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld photos move to Recently Deleted.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld photo moves to Recently Deleted."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld photos move to Recently Deleted."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Remove %lld Videos?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove %lld Video?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove %lld Videos?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Move %lld Videos to Recently Deleted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Video to Recently Deleted"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Videos to Recently Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld videos move to Recently Deleted.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld video moves to Recently Deleted."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld videos move to Recently Deleted."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Move %lld Items to Recently Deleted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Item to Recently Deleted"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Move %lld Items to Recently Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld items move to Recently Deleted.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item moves to Recently Deleted."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items move to Recently Deleted."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld items were left out because they changed since the scan (deleted, edited, favorited or no longer suggested). They stay in your library.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item was left out because it changed since the scan (deleted, edited, favorited or no longer suggested). It stays in your library."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items were left out because they changed since the scan (deleted, edited, favorited or no longer suggested). They stay in your library."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Nothing will be kept from %lld sets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Nothing will be kept from %lld set"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Nothing will be kept from %lld sets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "You\u2019ve selected every photo in %lld sets, so none of them will stay in your library.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "You\u2019ve selected every photo in %lld set, so none of them will stay in your library."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "You\u2019ve selected every photo in %lld sets, so none of them will stay in your library."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Remove Always Keep from %lld photos?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove Always Keep from %lld photo?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remove Always Keep from %lld photos?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld items checked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item checked"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items checked"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Checked for new photos %lld times \u00b7 last %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked for new photos %#@count@ \u00b7 last %2$@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg time"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg times"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }
