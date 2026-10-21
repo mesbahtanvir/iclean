@@ -71,8 +71,8 @@ goes on. A list they have open never changes; new finds wait behind "N new resul
 they return to Home. What they unselected, the keeper they chose and what they removed survive every
 update. When the scan ends the results are those of a one-shot scan of the same library.
 
-**Independent Test**: `StagedCleanupTests` (blocks, revision, newest first), `ResultsContinuityTests`
-(choices over a rebuild), and the equality test `resultsFromTheLeanPathEqualResultsFromTheFullReader`;
+**Independent Test**: `StagedCleanupTests` (blocks, revision, newest first), `ReviewIntentTests`
+(choices over a rebuild; 007 replaced 008's `ResultsContinuityTests`), and the equality test `resultsFromTheLeanPathEqualResultsFromTheFullReader`;
 the `large30k` run, which published results at 512, 1,536, 4,928, 8,960, 13,600, 23,936 and 30,000 photos.
 
 **Acceptance Scenarios**:
@@ -80,11 +80,13 @@ the `large30k` run, which published results at 512, 1,536, 4,928, 8,960, 13,600,
 1. **Given** a block of photos is finished and saved, **When** the pipeline reports progress, **Then**
    `publishedRevision` has moved and the app rebuilds results from the store.
 2. **Given** the person has a category or group open, **When** a rebuild finishes, **Then** nothing on
-   that screen changes; the rebuild is held as `pendingResults` and shown when they return to Home or tap
+   that screen changes; the rebuild is held as `pendingBuild` and shown when they return to Home or tap
    the prompt.
 3. **Given** the person unmarked a photo, marked another, chose a keeper, or removed photos, **When** the
    next rebuild is shown, **Then** each of those decisions still holds, and removed photos are not listed
-   again (`ReviewChoices`, applied by `ResultsContinuity.merge`).
+   again (`ReviewIntent`, applied over every build; photos removed in this run are dropped by
+   `AppModel.removedInSession`). 008 first did this with `ReviewChoices` and
+   `ResultsContinuity.merge`; merging with 007 replaced them by `ReviewIntent`.
 4. **Given** the scan is running and nothing has been found, **When** Home shows, **Then** it says the app
    is looking, never "Your library looks clean".
 5. **Given** the scan ended, **When** the last rebuild is shown, **Then** categories, groups, keepers and
@@ -126,7 +128,7 @@ equality and digest checks in the Validation section.
 - **FR-004**: The scan MUST bump `publishedRevision` after the first 500 photos, then 1,000, then every
   2,500 (`ScanBlocks`), counted from the job's processed items, also after a resume.
 - **FR-005**: Planning, catch-up and resume MUST read `Store.itemSummaries()`; refreshed metadata MUST be
-  written with `refreshMetadata`, which leaves the analysis alone; measured sizes with `saveSizes`.
+  written with `refreshMetadata`, which leaves the analysis alone; measured sizes with `setSizes` (007; one query per 500 ids).
 - **FR-006**: The app MUST build results with `ResultsLoader` (items without feature prints; prints for
   `SimilarShotsDetector.photosThatMayNeedFeaturePrints` only). The result MUST equal the builder's result
   over `items()`.

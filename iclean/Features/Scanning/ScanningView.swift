@@ -85,6 +85,8 @@ struct ScanningView: View {
             switch p.pauseReason {
             case .stoppedOutsideApp: return String(localized: "Stopped from outside iclean")
             case .backgroundLimit: return String(localized: "Paused while you were away")
+            case .storageUnavailable:
+                return String(localized: "Couldn't save progress. Free up space, then tap Resume.")
             case .user, nil: return String(localized: "Paused")
             }
         }

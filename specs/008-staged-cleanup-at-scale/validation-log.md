@@ -68,6 +68,45 @@ Not done on the Mac: Settings scene, commands, app delegate, icon, the access sc
 no library, sleep/wake auto-pause (untested), PhotoKit on a real Mac library (never run: the access
 screen and the delete confirmation are unverified), the Mac UI-test plan.
 
+## After merging with 007 (persistent session), 2026-10-20
+
+The two features rebuild and save results in different ways. The merged design is 007's `ReviewIntent`
+and revision-stamped `rebuild()`, with 008's scan-block triggers, throttling, "N new results" banner,
+lean reads and video measuring on top. What the merge exposed, and how it was checked.
+
+**Found on the Mac with a 30,000-item demo library, fixed.** After a scan the app rebuilt its results
+about every 10 s with nothing scanning (revision 944 to 948 in 40 s, 75% CPU, no snapshot ever saved).
+Cause: 008 measured only the Large Videos on screen, and 007 builds again whenever the store moves. A
+measured size changes which videos rank in the top 50, so each build showed new unmeasured videos, and
+the cycle ran through all ~900 videos. Fix: `SizeMeasurer.measureVideos()` measures every video without
+a size in one pass (one cheap read each) and the app builds once more; test
+`StagedCleanupTests.measureVideosFillsEverySizeInOnePassAndMovesTheRevisionOnce`. After the fix: two
+builds, 0% CPU, snapshot saved at the store's revision.
+
+**Other merge corrections.** A snapshot is no longer made while a scan is writing (the store moves every
+chunk, so the compare-and-set refuses it); `refreshMetadata` moves the revision when a favorite, album or
+date changed; `resultInputs()` reads without feature prints (it was the 644 MB read again); `setSizes`
+looks ids up 500 at a time; the launch check of what is shown is made 1,000 photos at a time.
+
+**ScaleBench at 30,000 items (release)**, `--no-full-items`:
+
+| Step | Time | Memory |
+|---|---|---|
+| `resultInputs()` (lean read) | 2.4 s | 181 MB |
+| build results and slim them | 0.6 s | 237 MB peak |
+| seal the snapshot | 72 ms | 302 KB, 255 MB peak |
+| open the snapshot and make results | 47 ms | 86 MB |
+
+**Mac app, same library (debug build).** Scan 3 min 51 s with results published every ~2,500 photos.
+Hard kill after the scan: relaunch restored 16,893 items from the snapshot in 1 s with no rebuild and
+0% CPU. Hard kill at 6,016 of 30,000: relaunch showed the 6,016 photos' results in 1 s and resumed at
+6,016; the final results (2,213 duplicates, 12,012 similar, 1,232 blurry, 1,386 screenshots, 50 large
+videos) equal the uninterrupted run's. Footprint 263 MB idle, 419 MB peak (`footprint`, not RSS).
+One build took 57 s while the package tests ran at the same time; a cold build on the quiet machine
+took 8 s on the same store, so that was contention (not proven beyond that one comparison).
+
+Still unverified: a window on a real Mac library, the iPhone background case (see Open).
+
 ## Open
 
 - A 30,000-photo scan on a phone in the background. The author's phone was not connected. What the

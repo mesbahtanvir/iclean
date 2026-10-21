@@ -21,14 +21,8 @@ public struct ResultsLoader: Sendable {
     }
 
     public func load() async throws -> CleanupResults {
-        var items = try await store.itemsWithoutFeaturePrints()
-        let keepMarks = try await store.keepMarks()
-        let wanted = SimilarShotsDetector.photosThatMayNeedFeaturePrints(items)
-        let prints = try await store.featurePrints(for: wanted)
-        for i in items.indices where items[i].analysis != nil {
-            if let print = prints[items[i].assetID] { items[i].analysis?.featurePrint = print }
-        }
-        return builder.buildResults(items: items, keepMarks: keepMarks)
+        let inputs = try await store.resultInputs()
+        return builder.buildResults(items: inputs.items, keepMarks: inputs.keepMarks)
     }
 }
 

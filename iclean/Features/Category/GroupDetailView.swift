@@ -10,20 +10,34 @@ struct GroupDetailView: View {
 
     var body: some View {
         let group = model.results.category(category)?.groups.first { $0.id == groupID }
-        ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: 12) {
-                ForEach(group?.members ?? [], id: \.self) { id in
-                    column(id, group: group!)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 12) {
+                    ForEach(group?.members ?? [], id: \.self) { id in
+                        column(id, group: group!)
+                    }
+                }
+                .padding()
+                .scrollTargetLayout()
+            }
+            // A restored screen opens on the copy the person last touched.
+            .onAppear {
+                if let id = model.restoredFocus, group?.members.contains(id) == true {
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
-            .padding()
-            .scrollTargetLayout()
         }
         .scrollTargetBehavior(.viewAligned)
         .accessibilityIdentifier("group.compare")
         .navigationTitle(category.title)
         .overlay {
-            if group == nil { ContentUnavailableView("Group removed", systemImage: "checkmark") }
+            if group == nil {
+                if model.launchPhase != .ready || model.isBuildingResults {
+                    ProgressView().accessibilityIdentifier("group.loading")
+                } else {
+                    ContentUnavailableView("Group removed", systemImage: "checkmark")
+                }
+            }
         }
     }
 

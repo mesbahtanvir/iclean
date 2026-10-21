@@ -42,8 +42,12 @@ Power and battery signals use `UIDevice` and `ProcessInfo`; the Mac signals belo
 a store revision counter. Possibly a separate blob entity, decided by spike S1
 (see [data-model.md](data-model.md)).
 
+> **Note (2026-10-18):** `ResultsSnapshotRecord` and the store revision counter are superseded by
+> [specs/007-persistent-session](../007-persistent-session/data-model.md) (`StateRecord` key `results`,
+> `StoreMetaRecord.resultsRevision`).
+
 **Testing**: Swift Testing in `CleanupKit` (table-driven `RunProfileTests`, `GovernorTests`
-with a manual clock, `PhasedScanTests`, `ResultsContinuityTests`, `ScaleGuardTests`,
+with a manual clock, `PhasedScanTests`, `ReviewIntentTests`, `ScaleGuardTests`,
 extended `DurableScanTests` per step); a 30,000-item fake-library scenario; the Release
 benchmark in `research-prototypes/bench30k` promoted to a maintained target (T003); XCUITests
 with launch arguments for injected conditions (`-iclean-conditions`, `-iclean-device`);
@@ -152,6 +156,14 @@ protocol with live and fake implementations (an `AsyncStream` of conditions), an
 clock replaces `Date` and `Task.sleep`, so a 30-minute thermal ramp runs in milliseconds.
 
 ### D4. Results while running
+
+> **Note (2026-10-18): superseded in part by [specs/007-persistent-session](../007-persistent-session/plan.md).**
+> The saved snapshot (`ResultsSnapshotRecord`), `itemsRevision` and `seenGroups` named here are
+> replaced by a `StateRecord` row with key `results` and a `basedOnRevision` (the store revision,
+> bumped only by result-relevant writes), shown only when it matches; `seenGroups` lives in the
+> `decisions` payload. Continuity (item 3 below) is delivered by asset-keyed overrides replayed by one
+> applier on every publish. Block-boundary publishes must go through that applier and the same
+> compare-and-set save, and a removal does not patch a snapshot (007 research R6).
 
 1. At each block and step boundary the app builds a snapshot from the items stored so far with
    the same `ResultsBuilder` as today, off the main thread, and publishes it with an epoch.

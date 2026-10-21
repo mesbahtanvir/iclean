@@ -243,6 +243,9 @@ public enum ScanPauseReason: String, Sendable, Codable {
     case stoppedOutsideApp
     /// The app ran out of background time. Resumes by itself when the app is back.
     case backgroundLimit
+    /// Saving progress failed several times in a row (a full disk, for one). Stays paused until
+    /// the user taps Resume, because going on without saving would lose the results.
+    case storageUnavailable
 }
 
 public struct ScanProgress: Sendable, Hashable {

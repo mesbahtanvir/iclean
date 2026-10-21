@@ -83,7 +83,9 @@
 
         // MARK: Steps
 
-        private func prepare() async throws -> ([String: RenderedFile], BaselinePhotoKit.ImportSummary) {
+        private func prepare() async throws -> (
+            [String: RenderedFile], BaselinePhotoKit.ImportSummary
+        ) {
             phase = .working("Drawing the baseline photos and videos")
             emit("rendering \(catalog.assets.count) assets")
             let folder = FileManager.default.temporaryDirectory.appending(path: "iclean-baseline")
@@ -96,8 +98,11 @@
 
             phase = .working("Adding the baseline assets to Photos")
             emit("importing")
-            let summary = try await BaselinePhotoKit.importMissing(catalog: catalog, rendered: rendered)
-            emit("imported \(summary.imported), already there \(summary.alreadyThere), \(String(format: "%.1f", summary.seconds)) s")
+            let summary = try await BaselinePhotoKit.importMissing(
+                catalog: catalog, rendered: rendered)
+            emit(
+                "imported \(summary.imported), already there \(summary.alreadyThere), \(String(format: "%.1f", summary.seconds)) s"
+            )
             return (rendered, summary)
         }
 
@@ -119,74 +124,13 @@
 
     struct BaselineView: View {
         var autoRun: Bool
+        /// False when pushed inside another navigation stack (Settings), which must not be nested.
+        var standalone = true
         @State private var model = BaselineViewModel()
 
         var body: some View {
-            NavigationStack {
-                List {
-                    Section {
-                        switch model.phase {
-                        case .idle:
-                            Text("Ready").accessibilityIdentifier("baseline.status")
-                        case .working(let what):
-                            HStack(spacing: 12) {
-                                ProgressView()
-                                Text(what).accessibilityIdentifier("baseline.status")
-                            }
-                        case .done:
-                            Text("Finished").accessibilityIdentifier("baseline.status")
-                        case .failed(let why):
-                            Text(why).foregroundStyle(.red).accessibilityIdentifier("baseline.status")
-                        }
-                        if let report = model.report {
-                            Text(report.passed ? "PASS" : "FAIL")
-                                .font(.title.bold())
-                                .foregroundStyle(report.passed ? .green : .red)
-                                .accessibilityIdentifier("baseline.result")
-                        }
-                    }
-                    Section {
-                        Button("Run Baseline Check") { Task { await model.runAll() } }
-                            .accessibilityIdentifier("baseline.run")
-                        Button("Add Baseline Photos Only") { Task { await model.importOnly() } }
-                            .accessibilityIdentifier("baseline.import")
-                        Button("Remove Baseline Photos", role: .destructive) {
-                            Task { await model.removeAll() }
-                        }
-                        .accessibilityIdentifier("baseline.remove")
-                    } footer: {
-                        Text("Adds about 73 small test photos and videos to the Photos library in an album called \"iclean Baseline\", scans only those, and compares the result with what is expected. With iCloud Photos on they sync like any photo; remove them afterwards.")
-                    }
-                    if let report = model.report {
-                        Section("Checks") {
-                            ForEach(report.checks, id: \.id) { check in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Label(check.title, systemImage: icon(check.status))
-                                        .foregroundStyle(color(check.status))
-                                    if !check.detail.isEmpty {
-                                        Text(check.detail).font(.footnote).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        Section("Device") {
-                            Text("\(report.device.platform) \(report.device.model)")
-                            Text(report.device.osVersion)
-                            Text("Scan \(String(format: "%.1f", report.timings["scanSeconds"] ?? 0)) s")
-                        }
-                    }
-                    if !model.log.isEmpty {
-                        Section("Log") {
-                            ForEach(Array(model.log.enumerated()), id: \.offset) { _, line in
-                                Text(line).font(.caption.monospaced())
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Baseline Library")
-                #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                #endif
+            Group {
+                if standalone { NavigationStack { list } } else { list }
             }
             .task {
                 guard autoRun else { return }
@@ -196,6 +140,75 @@
                     await model.runAll()
                 }
             }
+        }
+
+        private var list: some View {
+            List {
+                Section {
+                    switch model.phase {
+                    case .idle:
+                        Text("Ready").accessibilityIdentifier("baseline.status")
+                    case .working(let what):
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text(what).accessibilityIdentifier("baseline.status")
+                        }
+                    case .done:
+                        Text("Finished").accessibilityIdentifier("baseline.status")
+                    case .failed(let why):
+                        Text(why).foregroundStyle(.red).accessibilityIdentifier("baseline.status")
+                    }
+                    if let report = model.report {
+                        Text(report.passed ? "PASS" : "FAIL")
+                            .font(.title.bold())
+                            .foregroundStyle(report.passed ? .green : .red)
+                            .accessibilityIdentifier("baseline.result")
+                    }
+                }
+                Section {
+                    Button("Run Baseline Check") { Task { await model.runAll() } }
+                        .accessibilityIdentifier("baseline.run")
+                    Button("Add Baseline Photos Only") { Task { await model.importOnly() } }
+                        .accessibilityIdentifier("baseline.import")
+                    Button("Remove Baseline Photos", role: .destructive) {
+                        Task { await model.removeAll() }
+                    }
+                    .accessibilityIdentifier("baseline.remove")
+                } footer: {
+                    Text(
+                        "Adds about 73 small test photos and videos to the Photos library in an album called \"iclean Baseline\", scans only those, and compares the result with what is expected. With iCloud Photos on they sync like any photo; remove them afterwards."
+                    )
+                }
+                if let report = model.report {
+                    Section("Checks") {
+                        ForEach(report.checks, id: \.id) { check in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label(check.title, systemImage: icon(check.status))
+                                    .foregroundStyle(color(check.status))
+                                if !check.detail.isEmpty {
+                                    Text(check.detail).font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    Section("Device") {
+                        Text("\(report.device.platform) \(report.device.model)")
+                        Text(report.device.osVersion)
+                        Text("Scan \(String(format: "%.1f", report.timings["scanSeconds"] ?? 0)) s")
+                    }
+                }
+                if !model.log.isEmpty {
+                    Section("Log") {
+                        ForEach(Array(model.log.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption.monospaced())
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Baseline Library")
+            #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+            #endif
         }
 
         private func icon(_ s: BaselineStatus) -> String {

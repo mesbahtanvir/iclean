@@ -74,6 +74,39 @@ import Testing
         #expect(back.analysis?.thumbprint.count == 1024)
     }
 
+    // MARK: Sizes
+
+    @Test func measureVideosFillsEverySizeInOnePassAndMovesTheRevisionOnce() async throws {
+        let lib = FakePhotoLibrary()
+        lib.add(Make.meta("p"), preview: .local(image))
+        lib.add(
+            Make.meta("v1", kind: .video, duration: 30), preview: .local(image), size: 5_000_000)
+        lib.add(
+            Make.meta("v2", kind: .video, duration: 10), preview: .local(image), size: 9_000_000)
+        // Not on the phone: gets an estimate, marked as one.
+        lib.add(
+            Make.meta("v3", kind: .video, duration: 20), preview: .local(image), size: nil)
+        let store = try InMemoryStore.make()
+        try await store.upsert(
+            await lib.fetchAllItems().map {
+                LibraryItem(metadata: $0, analysisSource: .metadataOnly, analysis: nil)
+            })
+        let measurer = SizeMeasurer(library: lib, store: store)
+        let before = try await store.revision()
+
+        #expect(await measurer.measureVideos() == 3)
+        let sizes = try await store.sizes(for: ["p", "v1", "v2", "v3"])
+        #expect(sizes["v1"] == MeasuredSize(bytes: 5_000_000, isEstimated: false))
+        #expect(sizes["v2"] == MeasuredSize(bytes: 9_000_000, isEstimated: false))
+        #expect(sizes["v3"]?.isEstimated == true)
+        #expect(sizes["p"] == nil, "a photo's size is read only when its category is opened")
+        #expect(try await store.revision() == before + 1)
+
+        // Nothing is left to measure: no write, so the results are not built again for it.
+        #expect(await measurer.measureVideos() == 0)
+        #expect(try await store.revision() == before + 1)
+    }
+
     // MARK: Quick wins in the pipeline
 
     @Test func screenshotsAndVideosAreListedBeforeAnyPhotoIsOpened() async throws {

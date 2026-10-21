@@ -57,8 +57,11 @@ struct icleanApp: App {
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active: Task { await model.onForeground() }
-                case .background: model.onBackground()
-                default: break
+                case .inactive: model.flushForBackground()
+                case .background:
+                    model.flushForBackground()
+                    model.onBackground()
+                @unknown default: break
                 }
             }
     }

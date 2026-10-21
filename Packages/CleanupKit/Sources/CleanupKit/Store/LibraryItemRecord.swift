@@ -88,11 +88,13 @@ final class LibraryItemRecord {
     }
 
     /// Everything but the two fingerprint blobs: what a scan plan needs (spec 008).
-    static var summaryKeyPaths: [PartialKeyPath<LibraryItemRecord>] { [
-        \.assetID, \.kindRaw, \.captureDate, \.modificationDate, \.pixelWidth, \.pixelHeight,
-        \.duration, \.isFavorite, \.hasAdjustments, \.isPortrait, \.isLongExposure, \.burstID,
-        \.albumNames, \.analysisSourceRaw, \.scanAttempts, \.addedDate, \.hasLocation,
-    ] }
+    static var summaryKeyPaths: [PartialKeyPath<LibraryItemRecord>] {
+        [
+            \.assetID, \.kindRaw, \.captureDate, \.modificationDate, \.pixelWidth, \.pixelHeight,
+            \.duration, \.isFavorite, \.hasAdjustments, \.isPortrait, \.isLongExposure, \.burstID,
+            \.albumNames, \.analysisSourceRaw, \.scanAttempts, \.addedDate, \.hasLocation,
+        ]
+    }
 
     /// Everything but the feature print, the larger blob.
     static var withoutFeaturePrintKeyPaths: [PartialKeyPath<LibraryItemRecord>] {
@@ -154,6 +156,36 @@ final class LibraryItemRecord {
         albumNames = m.albumNames
         addedDate = m.addedDate
         hasLocation = m.hasLocation
+    }
+
+    /// Whether the descriptive fields differ from `m`. Shared by the projection compare and by
+    /// `refreshMetadata`, which writes these fields alone.
+    func metadataDiffers(from m: AssetMetadata) -> Bool {
+        kindRaw != m.kind.rawValue || captureDate != m.captureDate
+            || modificationDate != m.modificationDate || pixelWidth != m.pixelWidth
+            || pixelHeight != m.pixelHeight || duration != m.duration
+            || isFavorite != m.isFavorite || hasAdjustments != m.hasAdjustments
+            || isPortrait != m.isPortrait || isLongExposure != m.isLongExposure
+            || burstID != m.burstID || albumNames != m.albumNames || addedDate != m.addedDate
+            || hasLocation != m.hasLocation
+    }
+
+    /// Whether writing `item` over this record would change anything results are built from.
+    /// Bookkeeping (`analyzedAt`, `scanAttempts`, `scanFailure`) is not part of it, so a retry
+    /// counter or a re-save of identical values never makes saved results look stale.
+    func resultsProjectionDiffers(from item: LibraryItem) -> Bool {
+        if metadataDiffers(from: item.metadata) { return true }
+        if analysisSourceRaw != item.analysisSource.rawValue { return true }
+        if byteSize != item.byteSize || isSizeEstimated != item.isSizeEstimated { return true }
+        let a = item.analysisSource.hasAnalysis ? item.analysis : nil
+        if dHashBits != a.map({ Int64(bitPattern: $0.dHash) }) { return true }
+        if thumbprint != a?.thumbprint || featurePrint != a?.featurePrint { return true }
+        if sharpness != a?.sharpness || aestheticsScore != a?.aestheticsScore
+            || faceQuality != a?.faceQuality
+        {
+            return true
+        }
+        return false
     }
 
     var item: LibraryItem {

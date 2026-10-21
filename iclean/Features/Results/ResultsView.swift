@@ -54,7 +54,7 @@ struct ResultsView: View {
             }
             Section {
                 ForEach(results.categories) { result in
-                    NavigationLink(value: result.category) {
+                    NavigationLink(value: Route.category(result.category)) {
                         CategoryRow(category: result.category)
                     }
                     .accessibilityIdentifier("results.category.\(result.category.rawValue)")

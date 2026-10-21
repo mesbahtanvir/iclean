@@ -152,6 +152,8 @@ let count = args.firstIndex(of: "--count").flatMap { Int(args[$0 + 1]) } ?? 30_0
 let latencyMs = args.firstIndex(of: "--latency-ms").flatMap { Int(args[$0 + 1]) } ?? 0
 let chunk = args.firstIndex(of: "--chunk").flatMap { Int(args[$0 + 1]) } ?? 32
 let skipResults = args.contains("--no-results")
+/// Leaves out the old `items()` read, so the lean path's memory is not measured on top of it.
+let skipFullItems = args.contains("--no-full-items")
 
 if args.contains("--stages") {
     await runStageTimings(
@@ -245,7 +247,7 @@ do {
 }
 
 // 2. Everything is stored now: reload results the way the app does after a scan.
-if !skipResults {
+if !skipResults && !skipFullItems {
     sampler.reset()
     var start = ContinuousClock.now
     let items = try await store.items()
@@ -257,6 +259,32 @@ if !skipResults {
     report("buildResults", start, sampler)
     print(
         "  categories: \(results.categories.map { "\($0.category.rawValue)=\($0.groups.count)" })")
+}
+
+// 2b. The app's path since spec 007: lean inputs, build, slim, save as the snapshot, restore it.
+if !skipResults {
+    sampler.reset()
+    var start = ContinuousClock.now
+    let inputs = try await store.resultInputs()
+    report("store.resultInputs() (\(inputs.items.count))", start, sampler)
+    sampler.reset()
+    start = ContinuousClock.now
+    let detectors = StandardPipeline.detectors()
+    let slim = DefaultResultsBuilder(detectors: detectors)
+        .buildResults(items: inputs.items, keepMarks: inputs.keepMarks).slimmed()
+    report("buildResults + slimmed", start, sampler)
+    let key = BuilderKey(detectors: detectors.map(\.category), features: .free, access: .full)
+    sampler.reset()
+    start = ContinuousClock.now
+    let sealed = try StateCodec.seal(
+        ResultsSnapshot(
+            results: slim, builderKey: key, itemCount: inputs.items.count,
+            keepMarkCount: inputs.keepMarks.count))
+    report("snapshot seal (\(sealed.count / 1024) KB)", start, sampler)
+    sampler.reset()
+    start = ContinuousClock.now
+    let restored = try StateCodec.open(sealed, as: ResultsSnapshot.self).results()
+    report("snapshot open + results() (\(restored.items.count) items)", start, sampler)
 }
 
 // 3. A second scan over the finished store: the planning cost of a rescan or a resume.

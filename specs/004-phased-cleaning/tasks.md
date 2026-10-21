@@ -41,10 +41,10 @@ different files and can run in parallel.
 ## Phase 4: User Story 2 - Review while the scan continues (P2)
 
 - [ ] T030 [US2] Make `ScanPipeline` run steps 2 to 4 in order with phase-tagged chunks and emit `blockCompleted`; parameterize `DurableScanTests` by step (G5).
-- [ ] T031 [US2] Create `Results/ResultsSnapshot.swift`; give the builder a continuity input; replace `AppModel.apply` with the merge rule and track explicit deselections (G3). *Partly in 008 T022: the builder is unchanged; `ReviewChoices` and `ResultsContinuity` carry the person's decisions over every rebuild; no saved snapshot yet.*
+- [ ] T031 [US2] Create `Results/ResultsSnapshot.swift`; give the builder a continuity input; replace `AppModel.apply` with the merge rule and track explicit deselections (G3). *Partly in 008 T022: the builder is unchanged; 007's `ReviewIntent` carries the person's decisions over every rebuild (008 first used `ReviewChoices` and `ResultsContinuity`, replaced when the two were merged); the saved snapshot is 007.*
 - [ ] T032 [US2] Frozen category lists and the "N new" prompt in `CategoryView`; keeper continuity. *Partly in 008 T022: results are held while a list is open and shown behind "N new results. Show"; only chosen keepers are carried over (008 Decision 1).*
 - [ ] T033 [US2] "found so far, checked N of M" labels and the suppressed empty state (G4). *Partly in 008 T023: "Found so far · checked N of M" in the header and a "Looking for things" state; not on every row.*
-- [ ] T034 [US2] Tests `PhasedScanTests.finalEqualsOneShot` over random block sizes and orders (G2) and `ResultsContinuityTests`; newest-first resume.
+- [ ] T034 [US2] Tests `PhasedScanTests.finalEqualsOneShot` over random block sizes and orders (G2) and `ReviewIntentTests`; newest-first resume.
 - [ ] T035 [US2] UI test: open a category while a scan runs, toggle and change a keeper, wait for an update, check the list is unchanged and the prompt works.
 - [ ] T036 [US2] Plan rows show live state; Recent Scans lists each step.
 

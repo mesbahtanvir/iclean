@@ -10,7 +10,7 @@ Task numbers of the matching 004 task are in brackets.
 
 ## Scale
 
-- [X] T010 `Store`: `itemSummaries`, `itemsWithoutFeaturePrints`, `featurePrints(for:)`, `refreshMetadata`, `saveSizes` [004 T050]
+- [X] T010 `Store`: `itemSummaries`, `itemsWithoutFeaturePrints`, `featurePrints(for:)`, `refreshMetadata`, `setSizes` (007's, after the merge) [004 T050]
 - [X] T011 `ScanPlanner`: summaries in, metadata-only refreshes out, newest first, quick wins; `ScanPipeline` plan, catch-up and `apply(plan)` use them [004 T013]
 - [X] T012 `ResultsLoader` (prints only for photos with a time neighbour) and `DefaultResultsBuilder` keeps listed items only, without fingerprints [004 T050]
 - [X] T013 `HashIndex.forEachCandidatePair`, `ThumbprintMatcher` (exact, cached, block-sum bound), `DuplicateGrouping` skips pairs already joined [004 T005]
@@ -21,7 +21,7 @@ Task numbers of the matching 004 task are in brackets.
 
 - [X] T020 Quick wins stored by the plan; screenshots never opened; aesthetics only where blur reads it [004 T020]
 - [X] T021 `ScanBlocks`, `ScanProgress.publishedRevision`, `minProgressInterval` [004 T030]
-- [X] T022 `AppModel`: rebuild on revision, hold while a list is open, `ReviewChoices` over every rebuild, pacing, sizes only on demand [004 T031, T032]
+- [X] T022 `AppModel`: rebuild on revision, hold while a list is open, `ReviewIntent` over every rebuild (after the merge with 007; `ReviewChoices` is gone), pacing, sizes only on demand [004 T031, T032]
 - [X] T023 Home, Results, Category: "Found so far · checked N of M", "Looking for things to clean up", "N new results. Show" [004 T033]
 - [X] T024 `ScanContinuation` and `MacScanKeepAlive` update the system display and the log at most once a second
 - [ ] T025 Per-row "still checking" (004 FR-009 wants it on every row); only the section header says it now
@@ -29,7 +29,7 @@ Task numbers of the matching 004 task are in brackets.
 
 ## Test
 
-- [X] T030 `StagedCleanupTests`, `ResultsContinuityTests`, `ThumbprintMatcherTests`
+- [X] T030 `StagedCleanupTests`, `ThumbprintMatcherTests` (`ResultsContinuityTests` became `ReviewIntentTests.aKeeperThatWasOnlyShownIsNotPinned`)
 - [X] T031 Whole package suite, `scripts/check-no-network.sh`, iOS simulator and macOS builds
 - [X] T032 `large30k` on the Mac: staged results, memory, kill and resume ([validation-log.md](validation-log.md))
 - [X] T033 UI tests for staged results (`StagedResultsTests`) on the simulator
