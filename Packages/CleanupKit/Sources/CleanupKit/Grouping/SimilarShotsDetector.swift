@@ -134,6 +134,15 @@ public struct SimilarShotsDetector: CategoryDetector {
     /// `featurePrintDistance` is `.infinity` when Vision was unavailable for either photo.
     func isSameMoment(_ a: LibraryItem, _ b: LibraryItem, featurePrintDistance fp: Double) -> Bool {
         if let burst = a.metadata.burstID, burst == b.metadata.burstID { return true }
+        // A print left out on purpose (spec 010) belongs to a photo that had no neighbour when it was
+        // analyzed. Reaching one here means a neighbour arrived since and the photo has not been
+        // analyzed again yet. Comparing thumbprints alone would group photos that merely share a
+        // layout, so such a pair waits for the repair instead.
+        if a.analysis?.skippedVision.contains(.featurePrint) == true
+            || b.analysis?.skippedVision.contains(.featurePrint) == true
+        {
+            return false
+        }
         let t = Thumbprint.similarity(a.analysis?.thumbprint ?? Data(), b.analysis?.thumbprint ?? Data())
         if fp.isFinite {
             return fp < SimilarThresholds.featurePrint

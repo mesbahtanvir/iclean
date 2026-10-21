@@ -31,12 +31,20 @@ public struct ScanChunk: Sendable, Hashable, Identifiable {
     /// The process incarnation that leased the chunk; nil when not running.
     public var owner: UUID?
     public var lastError: String?
+    /// Bit `i` is set when no feature print is wanted for `assetIDs[i]` (spec 010). Decided by the
+    /// plan, which sees the whole library, and carried here so a resumed job analyzes its photos as
+    /// planned without enumerating the library again (003 FR-004). Zero asks for every print, which
+    /// is what a chunk stored by an earlier build means.
+    public var skipPrintMask: UInt64
+    /// Bit `i` is set when no face quality is wanted for `assetIDs[i]`.
+    public var skipFaceMask: UInt64
 
     public init(
         jobID: UUID, sequence: Int, assetIDs: [String], state: ScanChunkState = .pending,
         doneMask: UInt64 = 0, attempts: Int = 0, crashes: Int = 0, isolate: Bool = false,
         suspectIndex: Int? = nil, inFlightIndex: Int? = nil, notBefore: Date? = nil,
-        owner: UUID? = nil, lastError: String? = nil
+        owner: UUID? = nil, lastError: String? = nil, skipPrintMask: UInt64 = 0,
+        skipFaceMask: UInt64 = 0
     ) {
         precondition(assetIDs.count <= Self.maxSize, "a chunk holds at most 64 items")
         self.jobID = jobID
@@ -52,6 +60,8 @@ public struct ScanChunk: Sendable, Hashable, Identifiable {
         self.notBefore = notBefore
         self.owner = owner
         self.lastError = lastError
+        self.skipPrintMask = skipPrintMask
+        self.skipFaceMask = skipFaceMask
     }
 
     public var id: String { Self.key(jobID: jobID, sequence: sequence) }
@@ -61,6 +71,21 @@ public struct ScanChunk: Sendable, Hashable, Identifiable {
     }
 
     public func isDone(_ index: Int) -> Bool { doneMask & (1 << UInt64(index)) != 0 }
+
+    /// The Vision work to leave out for `assetIDs[index]`.
+    public func skippedVision(at index: Int) -> VisionWork {
+        let bit: UInt64 = 1 << UInt64(index)
+        var skipped: VisionWork = []
+        if skipPrintMask & bit != 0 { skipped.insert(.featurePrint) }
+        if skipFaceMask & bit != 0 { skipped.insert(.faceQuality) }
+        return skipped
+    }
+
+    public mutating func skipVision(_ work: VisionWork, at index: Int) {
+        let bit: UInt64 = 1 << UInt64(index)
+        if work.contains(.featurePrint) { skipPrintMask |= bit }
+        if work.contains(.faceQuality) { skipFaceMask |= bit }
+    }
 
     public mutating func markDone(_ index: Int) { doneMask |= 1 << UInt64(index) }
 

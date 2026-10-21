@@ -198,7 +198,7 @@ if args.contains("--real-scan") {
     o.profile = args.firstIndex(of: "--profile").map { args[$0 + 1] } ?? ""
     o.keep = args.firstIndex(of: "--keep").map { args[$0 + 1] }
     o.demo = args.contains("--demo")
-    o.deferVision = args.contains("--what-if-defer-vision")
+    o.completeVision = args.contains("--no-defer-vision")
     let sampler = PeakSampler()
     try await runRealScan(o, sampler: sampler)
     sampler.stop()

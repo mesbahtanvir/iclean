@@ -114,10 +114,14 @@ public struct Analysis: Sendable, Hashable {
     public var sharpness: Double
     public var aestheticsScore: Double?
     public var faceQuality: Double?
+    /// Vision work the analyzer was told not to do because no detector can read it for this photo
+    /// (spec 010). Distinct from a request that failed, which leaves an empty print and nothing here.
+    public var skippedVision: VisionWork
 
     public init(
         dHash: UInt64, thumbprint: Data = Data(), featurePrint: Data, sharpness: Double,
-        aestheticsScore: Double? = nil, faceQuality: Double? = nil
+        aestheticsScore: Double? = nil, faceQuality: Double? = nil,
+        skippedVision: VisionWork = []
     ) {
         self.dHash = dHash
         self.thumbprint = thumbprint
@@ -125,6 +129,7 @@ public struct Analysis: Sendable, Hashable {
         self.sharpness = sharpness
         self.aestheticsScore = aestheticsScore
         self.faceQuality = faceQuality
+        self.skippedVision = skippedVision
     }
 }
 
@@ -177,6 +182,8 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
         var copy = self
         copy.analysis?.thumbprint = Data()
         copy.analysis?.featurePrint = Data()
+        // Which Vision work the scan left out is bookkeeping for the scan, not for a screen.
+        copy.analysis?.skippedVision = []
         return copy
     }
 

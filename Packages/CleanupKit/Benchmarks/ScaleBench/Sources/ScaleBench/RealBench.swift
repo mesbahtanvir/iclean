@@ -448,9 +448,9 @@ struct RealScanOptions {
     var keep: String?
     /// The app's own `large30k` demo library instead of the bench's.
     var demo = false
-    /// A what-if, not something the app does: no feature print or face quality for a photo with no
-    /// neighbour within the similar-shots window. Results differ; only the time is of interest.
-    var deferVision = false
+    /// Runs every photo's feature print and face quality, as the scan did before spec 010. The app
+    /// defers them for photos no detector can read them for; the results are the same either way.
+    var completeVision = false
 }
 
 /// A full scan with the real analyzer, then the results build the app does after it. Prints the
@@ -527,6 +527,18 @@ func runRealScan(_ o: RealScanOptions, sampler: PeakSampler) async throws {
         withUnsafeBytes(of: a.faceQuality ?? -9) { mix($0) }
     }
     print("  analysis digest (without feature prints) \(String(analysisDigest, radix: 16))")
+    // What the scan left out (spec 010): a feature print's bytes change with every run, so two runs
+    // are compared by how many photos have one and how many were skipped, not by digest.
+    let photos = inputs.items.filter { $0.analysis != nil }
+    let withPrint = photos.filter { !($0.analysis?.featurePrint.isEmpty ?? true) }.count
+    let skippedPrint = photos.filter { $0.analysis?.skippedVision.contains(.featurePrint) == true }
+        .count
+    let skippedFace = photos.filter { $0.analysis?.skippedVision.contains(.faceQuality) == true }
+        .count
+    let withFace = photos.filter { $0.analysis?.faceQuality != nil }.count
+    print(
+        "  vision: \(photos.count) analyzed, \(withPrint) read with a feature print, \(skippedPrint) prints and \(skippedFace) face scores skipped, \(withFace) with a face score"
+    )
 }
 
 func scanProfile(_ o: RealScanOptions) -> ScanProfile {
@@ -541,51 +553,9 @@ func scanProfile(_ o: RealScanOptions) -> ScanProfile {
 }
 
 func makeScanner(_ o: RealScanOptions, library: RealLibrary, store: Store) -> ScanPipeline {
-    let analyzer: Analyzer =
-        o.deferVision ? DeferredVisionAnalyzer(library: library) : DefaultAnalyzer()
-    return ScanPipeline(
-        library: library, store: store, analyzer: analyzer, profile: scanProfile(o),
-        progressEvery: 10, minProgressInterval: .milliseconds(250))
-}
-
-/// DefaultAnalyzer without the Vision requests nothing will read: the feature print and the face
-/// quality only matter to photos that can be grouped as similar shots, those with another photo
-/// within 60 seconds or in the same burst (spec 008, Decision 2). For measuring what that could save.
-struct DeferredVisionAnalyzer: Analyzer {
-    let needsVision: Set<String>
-
-    init(library: RealLibrary) {
-        let photos = library.metadata.filter { $0.kind == .photo || $0.kind == .livePhoto }
-            .sorted { ($0.captureDate ?? .distantPast) < ($1.captureDate ?? .distantPast) }
-        var needs = Set<String>()
-        for i in photos.indices {
-            guard let d = photos[i].captureDate else { continue }
-            let next = i + 1 < photos.count ? photos[i + 1].captureDate : nil
-            let before = i > 0 ? photos[i - 1].captureDate : nil
-            if next.map({ $0.timeIntervalSince(d) <= 60 }) ?? false
-                || before.map({ d.timeIntervalSince($0) <= 60 }) ?? false
-                || photos[i].burstID != nil
-            {
-                needs.insert(photos[i].assetID)
-            }
-        }
-        needsVision = needs
-    }
-
-    func analyze(_ image: CGImage, metadata m: AssetMetadata) async throws -> Analysis {
-        let hash = dHash(image)
-        let wants = needsVision.contains(m.assetID)
-        let print = wants ? ((try? await FeaturePrint.compute(image)) ?? Data()) : Data()
-        let sharpness = Sharpness.score(image)
-        let isPhoto = m.kind == .photo || m.kind == .livePhoto
-        let mayBeBlurry =
-            isPhoto && !m.isPortrait && !m.isLongExposure && sharpness < 0.55 + 0.05
-        let aesthetics = mayBeBlurry ? await Aesthetics.score(image) : nil
-        let faces = wants && isPhoto ? await FaceQuality.score(image) : nil
-        return Analysis(
-            dHash: hash, thumbprint: Thumbprint.compute(image), featurePrint: print,
-            sharpness: sharpness, aestheticsScore: aesthetics, faceQuality: faces)
-    }
+    ScanPipeline(
+        library: library, store: store, analyzer: DefaultAnalyzer(), profile: scanProfile(o),
+        progressEvery: 10, deferVision: !o.completeVision, minProgressInterval: .milliseconds(250))
 }
 
 // MARK: Vision probe

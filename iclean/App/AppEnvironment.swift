@@ -38,7 +38,7 @@ struct AppEnvironment: Sendable {
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
                 profile: LaunchArguments.scanProfile, features: features,
-                minProgressInterval: .milliseconds(250)),
+                deferVision: LaunchArguments.deferVision, minProgressInterval: .milliseconds(250)),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
@@ -99,6 +99,19 @@ enum LaunchArguments {
         #endif
         profile.chunkSize = chunkSize
         return profile
+    }
+
+    /// Whether the scan leaves out the feature print and face quality of photos no detector can read
+    /// them for (spec 010). DEBUG only: `-DeferVision off` runs them for every photo, so the two scans
+    /// can be timed against each other on a device. The results are the same either way.
+    static var deferVision: Bool {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-DeferVision"), i + 1 < args.count {
+                return args[i + 1] != "off"
+            }
+        #endif
+        return true
     }
 
     /// What Pro unlocks. Always free in a release build: the one-time Pro purchase is not

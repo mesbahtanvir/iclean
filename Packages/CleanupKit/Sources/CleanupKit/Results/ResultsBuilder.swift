@@ -159,9 +159,17 @@ public struct DefaultResultsBuilder: ResultsBuilder {
 
         // Only what is listed is kept, and without fingerprints: the screens need nothing else,
         // and keeping every item of a large library with its fingerprints cost hundreds of MB.
+        // Face quality is read only to choose the keeper of a similar-shots group (also after a keeper
+        // is removed), so only those members keep it. A scan may leave it out of photos nothing can
+        // group (spec 010); dropping it from every other listed item makes a deferred scan's results
+        // and a complete scan's results equal values.
         var shown: [String: LibraryItem] = [:]
         for c in categories {
-            for id in c.allMembers { shown[id] = byID[id]?.withoutFingerprints }
+            for id in c.allMembers {
+                var item = byID[id]?.withoutFingerprints
+                if c.category != .similar { item?.analysis?.faceQuality = nil }
+                shown[id] = item
+            }
         }
         return CleanupResults(
             categories: categories, defaultSelection: selection,
