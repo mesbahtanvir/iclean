@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// One row of Large Videos, the highest-regret list in the app, so the richest row (spec 009 6.6):
+/// One row of Large Videos, the highest-regret list in the app, so the richest row (spec 011 6.6):
 /// a 72 pt preview with its length, the size as the headline over "date · length", and a selection
 /// mark that is visible on a plain row in light mode.
 ///

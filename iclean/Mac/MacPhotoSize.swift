@@ -3,7 +3,7 @@
     import SwiftUI
 
     /// How large the photos are in a category's grid: the one preference iclean keeps for the Mac
-    /// (spec 009 section 6.15). The number is the smallest width a photo may have, so the grid fits as
+    /// (spec 011 section 6.15). The number is the smallest width a photo may have, so the grid fits as
     /// many columns as that allows.
     enum PhotoSize {
         static let key = "gridCellSize"

@@ -17,11 +17,11 @@ final class AccessibilityTests: XCTestCase {
         "settings.recentScans", "settings.baseline", "settings.savedData",
         "saved.clearResults", "saved.resetChoices", "saved.erase",
         "results.notScanned",
-        // The "Kept" pill on a photo is capped at the xLarge text size by design (spec 009 4.3): it
+        // The "Kept" pill on a photo is capped at the xLarge text size by design (spec 011 4.3): it
         // sits on a thumbnail, and at accessibility sizes the grid gets wider cells instead.
         "category.keeperBadge",
         // The pinned Review bar stops growing at accessibility1, so it stays a control at the
-        // largest sizes instead of covering a third of the screen (spec 009 4.3).
+        // largest sizes instead of covering a third of the screen (spec 011 4.3).
         "results.reviewAll.title", "results.reviewAll.size",
         // Every other pinned bar is capped the same way (`actionShape(pinned: true)`): the Category
         // Remove bar (the audit reports its two texts), the Confirm and Done buttons and the Access
@@ -32,7 +32,7 @@ final class AccessibilityTests: XCTestCase {
         "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
     ]
 
-    /// Settings and What iclean Remembers (spec 009 sections 6.11, 6.12): rows that are system list
+    /// Settings and What iclean Remembers (spec 011 sections 6.11, 6.12): rows that are system list
     /// text the same way (section footers and headers, which iOS caps at the largest sizes), matched by
     /// prefix, and the ids of the tool buttons. Checked by hand at the largest accessibility size: they
     /// wrap and nothing is cut off.

@@ -3,7 +3,7 @@
     import SwiftUI
 
     /// The Settings window (Command-comma): two tabs, General and Your Data, in a fixed 480 pt
-    /// column (spec 009 section 6.15). The same rows, tools and dialogs as the iPhone's Settings, but
+    /// column (spec 011 section 6.15). The same rows, tools and dialogs as the iPhone's Settings, but
     /// on two panes instead of pushed screens: a Mac has no back button to find its way home.
     struct MacSettingsView: View {
         enum Tab: Hashable {

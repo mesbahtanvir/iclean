@@ -3,7 +3,7 @@
     import CleanupKit
     import SwiftUI
 
-    /// Large Videos on a Mac: a native table, the highest-regret list in the app (spec 009 section
+    /// Large Videos on a Mac: a native table, the highest-regret list in the app (spec 011 section
     /// 6.15). A checkbox to select a video for removal, a 56 pt preview, then its size (largest
     /// first, which a click on a header changes), length and date.
     ///

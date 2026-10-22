@@ -1,7 +1,7 @@
 #if os(macOS)
     import SwiftUI
 
-    /// The Help window: what removing does and how to undo it (spec 009 sections 6.14 and 6.15).
+    /// The Help window: what removing does and how to undo it (spec 011 sections 6.14 and 6.15).
     /// Local text only; no page is loaded and no link leaves the app.
     enum HowRemovalWorks {
         static let windowID = "restore"

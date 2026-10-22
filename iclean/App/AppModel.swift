@@ -152,7 +152,7 @@ final class AppModel {
         }
         #if DEBUG
             // `-DemoStoreProblem volatile` or `failed`: shows Home's notices for a store that cannot
-            // keep anything, or cannot be read, without breaking a real store (spec 009 section 6.2).
+            // keep anything, or cannot be read, without breaking a real store (spec 011 section 6.2).
             if let demo = Self.demoStoreProblem {
                 if demo == "volatile" { storeProblem = .volatile("demo") }
                 if demo == "failed" {

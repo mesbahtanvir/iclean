@@ -2,7 +2,7 @@ import CleanupKit
 import SwiftUI
 
 /// Home when there is something to show: the hero (how much can be freed), the scan status while a
-/// scan runs, the categories, and the one next step pinned at the bottom (spec 009 section 6.3).
+/// scan runs, the categories, and the one next step pinned at the bottom (spec 011 section 6.3).
 ///
 /// Everything here reads the cached `model.summary`. Nothing reads the scan's progress (only the
 /// status card does), so a progress tick never re-evaluates the rows, and no photo file is read.

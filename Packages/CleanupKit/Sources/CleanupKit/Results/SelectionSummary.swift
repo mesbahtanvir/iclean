@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where every listed photo sits and what it weighs, built once per set of results (spec 009).
+/// Where every listed photo sits and what it weighs, built once per set of results (spec 011).
 ///
 /// A photo is in exactly one category (the builder assigns each photo once), so a lookup by id is
 /// enough. Without it, totalling a selection meant searching every category's members for every

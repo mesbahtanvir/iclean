@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// One photo in a grid, and the whole verdict language of the app (spec 009 6.5):
+/// One photo in a grid, and the whole verdict language of the app (spec 011 6.5):
 ///
 /// - not selected: the picture at full strength with a white ring top-trailing;
 /// - selected for removal: the picture alone is darkened by a 28% scrim and a neutral trash mark

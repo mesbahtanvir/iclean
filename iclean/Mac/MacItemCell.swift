@@ -3,7 +3,7 @@
     import CleanupKit
     import SwiftUI
 
-    /// One photo in a grid on a Mac (spec 009 sections 6.5 and 6.15): the phone's verdict language,
+    /// One photo in a grid on a Mac (spec 011 sections 6.5 and 6.15): the phone's verdict language,
     /// with a pointer and a keyboard instead of a finger.
     ///
     /// - At rest it is the photo alone. The check mark and the expand control appear when the pointer

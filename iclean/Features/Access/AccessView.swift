@@ -2,7 +2,7 @@ import CleanupKit
 import SwiftUI
 
 /// Asks for Photos access, or says it is off. One column: a symbol, a title, a sentence, two quiet
-/// reassurances, and one full-width button (spec 009 section 6.1). Limited access is not a state
+/// reassurances, and one full-width button (spec 011 section 6.1). Limited access is not a state
 /// here; it is a quiet note on Home.
 struct AccessView: View {
     @Environment(AppModel.self) private var model

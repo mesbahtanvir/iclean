@@ -23,7 +23,7 @@ private struct ViewedItem: Identifiable {
     let id: String
 }
 
-/// Full-screen view of one item (spec 009 6.8): one black stage, a state line and two labelled
+/// Full-screen view of one item (spec 011 6.8): one black stage, a state line and two labelled
 /// buttons at the bottom, real zoom for a photo, and playback for a video that is on the device.
 struct PhotoViewer: View {
     let assetID: String

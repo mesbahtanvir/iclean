@@ -3,7 +3,7 @@ import Testing
 
 @testable import CleanupKit
 
-/// Two facts Home must not guess (spec 009 section 0): whether a full scan ever ran to the end, and
+/// Two facts Home must not guess (spec 011 section 0): whether a full scan ever ran to the end, and
 /// how many photos the store holds.
 @Suite struct LaunchFactsTests {
     func day(_ n: Int) -> Date { Date(timeIntervalSince1970: 1_700_000_000 + Double(n) * 86_400) }

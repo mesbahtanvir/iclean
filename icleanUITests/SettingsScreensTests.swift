@@ -1,6 +1,6 @@
 import XCTest
 
-/// Spec 009 sections 6.11 to 6.14: Settings, What iclean Remembers, Recent Scans and the restore
+/// Spec 011 sections 6.11 to 6.14: Settings, What iclean Remembers, Recent Scans and the restore
 /// help. The delete and reset flows are also covered by EdgeCaseTests and PersistentSessionTests.
 @MainActor
 final class SettingsScreensTests: XCTestCase {

@@ -53,7 +53,7 @@ is still compiled with optimization (see `Package.swift`): unoptimized it is abo
 
 A debug Mac build can save its own windows (a sheet included) as PNG files, without Screen Recording
 permission, with `-SnapshotTo`, `-SelectSidebar`, `-OpenSheet` and `-ShowScreen`. The launch line for
-each screen and the list of things to check by hand are in `specs/009-calm-polish/mac-checks.md`.
+each screen and the list of things to check by hand are in `specs/011-calm-polish/mac-checks.md`.
 
 ## Test
 

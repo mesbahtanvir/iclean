@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// What iclean remembers between runs, and the tools for it (Constitution IV, spec 009 section
+/// What iclean remembers between runs, and the tools for it (Constitution IV, spec 011 section
 /// 6.12). Each tool is its own section with a footer that says what it does and what it leaves alone.
 struct SavedDataView: View {
     @Environment(AppModel.self) private var model

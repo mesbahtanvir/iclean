@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// The scan, as a quiet status: a background job, not the screen's subject (spec 009 section 6.4).
+/// The scan, as a quiet status: a background job, not the screen's subject (spec 011 section 6.4).
 /// One list row with the status, a thin bar, one count line, Pause and Stop, and one footnote.
 ///
 /// This is the only view that reads `model.progress`, so a progress tick re-evaluates this row and

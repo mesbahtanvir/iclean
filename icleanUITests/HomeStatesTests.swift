@@ -1,6 +1,6 @@
 import XCTest
 
-/// Spec 009 section 6.2: Home is one of a few states, resolved in a fixed order, and each says one
+/// Spec 011 section 6.2: Home is one of a few states, resolved in a fixed order, and each says one
 /// thing. The Settings gear, the notices and the scan control behave the same in all of them.
 @MainActor
 final class HomeStatesTests: XCTestCase {

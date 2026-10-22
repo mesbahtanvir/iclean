@@ -3,7 +3,7 @@
     import Observation
     import SwiftUI
 
-    /// Where the keyboard can go in a grid of photos, and what a range is (spec 009 section 6.15;
+    /// Where the keyboard can go in a grid of photos, and what a range is (spec 011 section 6.15;
     /// spec 005 FR-015 and FR-016). Plain data and arithmetic, so it can be reasoned about (and tested)
     /// without a window. Built once for a set of results: a step or a range is then a lookup, not a
     /// walk through thousands of ids.

@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-// The pieces of the Confirm sheet (spec 009 section 6.9). Each is small and reads only values it is
+// The pieces of the Confirm sheet (spec 011 section 6.9). Each is small and reads only values it is
 // handed, so the sheet's body stays short and nothing here reads the photo library.
 
 /// What the sheet shows, worked out once when the plan arrives and never again in `body`.

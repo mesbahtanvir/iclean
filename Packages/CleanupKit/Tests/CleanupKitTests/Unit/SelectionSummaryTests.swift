@@ -3,7 +3,7 @@ import Testing
 
 @testable import CleanupKit
 
-/// The number the hero, the Review button and the Confirm sheet all read (spec 009 section 9).
+/// The number the hero, the Review button and the Confirm sheet all read (spec 011 section 9).
 @Suite struct SelectionSummaryTests {
     /// Many categories and groups, some sizes estimated, a few photos with no item at all.
     func results(groups: Int = 40) -> CleanupResults {
