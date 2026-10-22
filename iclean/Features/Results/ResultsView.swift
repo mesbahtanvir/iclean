@@ -281,18 +281,33 @@ struct CategoryRow: View {
         Text(text).font(.subheadline).foregroundStyle(.primary)
     }
 
-    private func figureText(_ figure: Figure) -> some View {
-        Text(Format.bytes(figure.bytes, estimate: figure.isEstimate))
-            .font(.body.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(figure.isSelection ? .primary : .secondary)
+    /// The size of what is selected; with nothing selected, "up to" the total that could be freed, so
+    /// the two kinds of figure differ in words and not only in colour.
+    @ViewBuilder private func figureText(_ figure: Figure) -> some View {
+        if figure.isSelection {
+            Text(Format.bytes(figure.bytes, estimate: figure.isEstimate))
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+        } else {
+            Text("up to \(Format.byteValue(figure.bytes))")
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Palette.quietText)
+        }
     }
 
+    /// "Duplicates, about 6.4 megabytes, All 3 selected", or with nothing selected "Large Videos,
+    /// None selected, up to 933 megabytes could be freed": a figure first would sound like a selection.
     private func spokenLabel(tally: CategoryTally?, detail: String?) -> String {
         guard let tally, let detail else { return category.title }
         let figure = Self.figure(tally)
-        return
-            "\(category.title), \(SpokenBytes.string(figure.bytes, estimate: figure.isEstimate)), \(detail)"
+        let size = SpokenBytes.string(figure.bytes)
+        if figure.isSelection {
+            let spoken = SpokenBytes.string(figure.bytes, estimate: figure.isEstimate)
+            return "\(category.title), \(spoken), \(detail)"
+        }
+        return String(localized: "\(category.title), \(detail), up to \(size) could be freed")
     }
 
     struct Figure {
