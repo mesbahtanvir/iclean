@@ -158,9 +158,16 @@ struct GroupDetailView: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             GroupSummaryLine(group: group)
             if group.type == .similarShots {
-                Text("Turn off a photo’s Remove switch to keep it.")
-                    .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                #if os(macOS)
+                    // The Mac's control is a checkbox, not a switch.
+                    Text("Uncheck a photo’s Remove box to keep it.")
+                        .font(Typography.note)
+                        .foregroundStyle(.secondary)
+                #else
+                    Text("Turn off a photo’s Remove switch to keep it.")
+                        .font(Typography.note)
+                        .foregroundStyle(.secondary)
+                #endif
             }
         }
         .padding(.horizontal, inset ? Space.l : 0)
