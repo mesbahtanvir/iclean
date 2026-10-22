@@ -3,22 +3,29 @@
     import SwiftUI
 
     /// The copies of a group side by side (spec 009 section 6.15): up to four in a row, and when there
-    /// are more, further rows of the same. A grid lines up the rows that matter across the copies:
-    /// the photos, then Taken, Dimensions and Size, then the verdict and the Remove checkbox.
+    /// are more, or the pane is narrow, further rows of the same. A grid lines up the rows that
+    /// matter across the copies: the photos, then Taken, Dimensions and Size, then the verdict and
+    /// the Remove checkbox.
     ///
     /// The rows of copies are in a lazy stack and each is a Grid of its own, so a group of many
     /// copies builds (and asks for the pictures of) the rows near the screen only, and the facts
     /// still line up across the copies of a row.
     ///
-    /// Left and Right move between the copies, Space toggles the one the keyboard is on, and Return
-    /// looks at it. The checkbox is the control; the photo opens the viewer.
+    /// A photo is never taller than the window leaves room for: the Remove checkbox and Keep This
+    /// Copy are under it, and they must be on screen with it. A row is as many copies as fit the
+    /// width of the scroll view's content, however narrow, so the last copy is never cut off.
+    ///
+    /// The arrow keys move between the copies (Left and Right along a row, Up and Down by a row),
+    /// Space toggles the one the keyboard is on, Return looks at it and Escape goes back. The
+    /// checkbox is the control; the photo opens the viewer.
     ///
     /// VoiceOver reads one copy at a time, in the order of the copies and not of the grid's rows:
     /// the photo, then one line with its Taken, Dimensions and Size, then the verdict, the checkbox
     /// and the date notes.
     struct MacCompareGrid: View {
         let group: ResultGroup
-        /// The width of the pane, from which the copies' widths are taken.
+        /// The width of the pane, which the copies' widths are taken from until the grid has
+        /// measured its own (a legacy scroll bar takes some of the pane's).
         let width: CGFloat
         /// The shape of every photo of the group.
         let ratio: CGFloat
@@ -26,17 +33,26 @@
         let slotHeight: CGFloat
         let displayScale: CGFloat
         let onView: (String) -> Void
+        /// Delete: opens the Confirm sheet when something is selected. It removes nothing.
+        let onRemove: () -> Void
 
         @Environment(AppModel.self) private var model
         /// The copy the keyboard is on.
         @State private var current: String?
         @FocusState private var hasFocus: Bool
+        /// What the scroll view really has: the width of its content and the height it shows.
+        @State private var contentWidth: CGFloat?
+        @State private var viewportHeight: CGFloat = 0
 
         private static let labelWidth: CGFloat = 84
         private static let gap: CGFloat = Space.l
+        /// A copy is never narrower than this: its facts ("Nov 15, 2023 at 2:14 PM") need it.
+        private static let narrowest: CGFloat = 140
         /// Beyond four copies the rows wrap, with each copy at least this wide and at most the second.
         private static let wrapMinimum: CGFloat = 240
         private static let wrapMaximum: CGFloat = 420
+        /// The least a photo is tall, in a window too short to leave it more.
+        private static let shortest: CGFloat = 240
 
         var body: some View {
             let members = group.members
@@ -45,7 +61,7 @@
                 Array(members[$0..<min($0 + layout.columns, members.count)])
             }
             let pixels = GridMetrics.pixels(
-                width: Double(layout.cardWidth), minimum: Double(layout.cardWidth), spacing: 0,
+                width: Double(layout.photo.width), minimum: Double(layout.photo.width), spacing: 0,
                 scale: Double(displayScale), cap: 1024)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -57,11 +73,23 @@
                     }
                     .padding(Space.l)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // Measured on the content, which is narrower than the pane when the scroll view
+                    // shows a legacy scroll bar.
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.width
+                    } action: {
+                        contentWidth = $0
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: {
+                    viewportHeight = $0
                 }
                 .focusable()
                 .focused($hasFocus)
                 .focusEffectDisabled()
-                .onMoveCommand { move($0, in: members) }
+                .onMoveCommand { move($0, in: members, columns: layout.columns) }
                 .onKeyPress(.space, phases: [.down, .repeat]) { press in
                     guard let current else { return .ignored }
                     // A held key repeats: only the first press toggles.
@@ -73,13 +101,20 @@
                     if !press.isRepeat { onView(current) }
                     return .handled
                 }
+                // Back to the category, from the keyboard.
+                .onExitCommand {
+                    if !MacNavigation.shared.groupPath.isEmpty {
+                        MacNavigation.shared.groupPath.removeLast()
+                    }
+                }
+                .onDeleteCommand(perform: onRemove)
                 // The copy the keyboard moved to may be in a row that is not built yet.
                 .onChange(of: current) { _, new in
                     guard let new, let index = members.firstIndex(of: new) else { return }
                     proxy.scrollTo(index / layout.columns)
                 }
                 .onAppear {
-                    // Left and Right work as soon as the screen is open.
+                    // The arrow keys work as soon as the screen is open.
                     if current == nil {
                         current =
                             model.restoredFocus.flatMap { id in
@@ -88,6 +123,12 @@
                     }
                     hasFocus = true
                 }
+                // A focus asked for while the screen is still being pushed on is often dropped, so it
+                // is asked for again once the push has settled.
+                .task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    if !hasFocus { hasFocus = true }
+                }
             }
         }
 
@@ -95,28 +136,46 @@
 
         private struct Metrics {
             let columns: Int
-            let cardWidth: CGFloat
+            /// The size of every photo of the group.
+            let photo: CGSize
+            /// How far the rows are moved in from the left, to keep them in the middle of a pane
+            /// that is wider than they are.
+            let inset: CGFloat
         }
 
-        /// Up to four copies share the row; more wrap in rows of as many as are wide enough.
+        /// As many copies in a row as fit the width: up to four, and each at least `narrowest` wide
+        /// (`wrapMinimum` when there are more than four). The photo is the card's width and as tall
+        /// as that gives, but no taller than the window leaves room for, keeping its shape; the rows
+        /// are then as wide as their photos.
         private func layout(count: Int) -> Metrics {
-            let available = max(
-                width - 2 * Space.l - Self.labelWidth - Self.gap, Self.wrapMinimum)
-            if count <= 4 {
-                let columns = max(count, 1)
-                let card = (available - Self.gap * CGFloat(columns - 1)) / CGFloat(columns)
-                return Metrics(columns: columns, cardWidth: max(card, 120))
-            }
-            let fit = Int((available + Self.gap) / (Self.wrapMinimum + Self.gap))
-            let columns = min(max(fit, 2), 4)
-            let card = (available - Self.gap * CGFloat(columns - 1)) / CGFloat(columns)
+            let content = contentWidth ?? width
+            let available = max(content - 2 * Space.l - Self.labelWidth - Self.gap, 1)
+            let smallest = count <= 4 ? Self.narrowest : Self.wrapMinimum
+            let fit = max(Int((available + Self.gap) / (smallest + Self.gap)), 1)
+            let columns = max(min(count, 4, fit), 1)
+            var card = (available - Self.gap * CGFloat(columns - 1)) / CGFloat(columns)
+            if count > 4 { card = min(card, Self.wrapMaximum) }
+            card = max(card, 1)
+            let photoWidth = min(card, maxPhotoHeight * ratio)
+            let photo = CGSize(width: photoWidth, height: photoWidth / ratio)
+            let row = Self.labelWidth + CGFloat(columns) * (Self.gap + photo.width)
             return Metrics(
-                columns: columns, cardWidth: min(max(card, Self.wrapMinimum), Self.wrapMaximum))
+                columns: columns, photo: photo,
+                inset: max(0, (content - 2 * Space.l - row) / 2))
+        }
+
+        /// The tallest a photo may be: the window shows the photo and the rows under it, down to the
+        /// Remove checkbox, with the room the facts, the verdict slot and the spacing take.
+        private var maxPhotoHeight: CGFloat {
+            guard viewportHeight > 0 else { return .infinity }
+            // Three facts, the verdict slot, the checkbox, six gaps and the padding above and below.
+            let underneath = 3 * 22 + slotHeight + 24 + 6 * Space.s + 2 * Space.l
+            return max(Self.shortest, viewportHeight - underneath - Space.m)
         }
 
         /// One row of copies: a grid, so Taken, Dimensions and Size sit at one height across them.
         private func copies(_ ids: [String], layout: Metrics, pixels: Int) -> some View {
-            let photo = CGSize(width: layout.cardWidth, height: layout.cardWidth / ratio)
+            let photo = layout.photo
             return Grid(
                 alignment: .topLeading, horizontalSpacing: Self.gap, verticalSpacing: Space.s
             ) {
@@ -128,6 +187,7 @@
                 row(nil, ids, .toggle, photo: photo, pixels: pixels)
                 row(nil, ids, .notes, photo: photo, pixels: pixels)
             }
+            .padding(.leading, layout.inset)
         }
 
         private func row(
@@ -159,24 +219,29 @@
                 photoSize: photo, pixelSize: pixels, slotHeight: slotHeight,
                 onView: {
                     current = id
+                    hasFocus = true
                     onView(id)
                 },
                 parts: [part], fixedWidth: photo.width,
-                ringed: hasFocus && current == id
+                ringed: hasFocus && current == id,
+                // A click on the checkbox or Keep This Copy does not take the keyboard by itself:
+                // it is taken here, so the ring and the keys follow the pointer.
+                onTouch: {
+                    current = id
+                    hasFocus = true
+                }
             )
             .modifier(CopyAccessibility(group: group, assetID: id, part: part))
         }
 
         // MARK: Keyboard
 
-        private func move(_ direction: MoveCommandDirection, in members: [String]) {
+        /// An arrow key: along the row with Left and Right, by a row with Up and Down (the copy under
+        /// or over this one, or the end of a shorter last row; nothing past the first or last row).
+        private func move(_ direction: MoveCommandDirection, in members: [String], columns: Int) {
             guard !members.isEmpty else { return }
-            let i = current.flatMap { members.firstIndex(of: $0) } ?? 0
-            switch direction {
-            case .left: current = members[max(i - 1, 0)]
-            case .right: current = members[min(i + 1, members.count - 1)]
-            default: break
-            }
+            let plan = GridPlan(sections: [members], groupIDs: nil, columns: columns, keepers: [])
+            if let step = plan.step(from: current ?? "", direction) { current = step.id }
         }
     }
 
