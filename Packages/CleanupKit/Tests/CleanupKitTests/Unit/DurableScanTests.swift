@@ -282,8 +282,9 @@ import Testing
         let clock = ContinuousClock()
         let start = clock.now
         let events = await drain(await scanner.startFullScan())
-        // Without the per-item limit this never finishes; the bound leaves room for load.
-        #expect(clock.now - start < .seconds(10))
+        // Without the per-item limit this never finishes; the bound leaves room for load (a CI runner with a
+        // few virtual cores running the whole suite at once took 10 to 15 s over what takes 0.3 s alone).
+        #expect(clock.now - start < .seconds(40))
         #expect(events.last?.state == .completed)
         let hung = try await store.items().first { $0.assetID == "p2" }
         #expect(hung?.scanFailure == .timeout)

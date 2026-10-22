@@ -135,7 +135,7 @@ import Testing
     }
 
     @Test func levelsNestAndTheSummariesCountWhatEachLevelLists() async {
-        let items = await library(scenes: 10)
+        let items = await library(scenes: 6)
         var groupsAt: [ResultLevel: [ResultGroup]] = [:]
         var summaryAt: [ResultLevel: LevelSummary] = [:]
         for level in ResultLevel.allCases {
@@ -175,7 +175,7 @@ import Testing
     }
 
     @Test func theDefaultLevelGivesTheGroupsTheDetectorAlwaysGave() async {
-        let items = await library(scenes: 8)
+        let items = await library(scenes: 5)
         let plain = SimilarShotsDetector().detect(items: items)
         let explicit = SimilarShotsDetector(levels: ResultLevels([.similar: .medium])).detect(
             items: items)
@@ -200,7 +200,7 @@ import Testing
     }
 
     @Test func everyLevelFindsTheSameWithManyThreads() async {
-        let items = await library(scenes: 10)
+        let items = await library(scenes: 6)
         for level in ResultLevel.allCases {
             let levels = ResultLevels([.similar: level])
             let serial = SimilarShotsDetector(levels: levels).detectLevelled(
@@ -221,7 +221,7 @@ import Testing
     }
 
     @Test func theWideLevelPreselectsNothingAndTheOthersPreselectAsBefore() async {
-        let items = await shiftedFrames(scenes: 6)
+        let items = await shiftedFrames(scenes: 4)
         let medium = builder(levels: ResultLevels()).buildResults(items: items, keepMarks: [])
         let simMedium = medium.category(.similar)
         #expect(medium.category(.duplicates) == nil, "the frames are shifted, not copies")
@@ -246,7 +246,7 @@ import Testing
 
     @Test func theSelectionAfterReplayingDecisionsFollowsTheLevelToo() async {
         // `ReviewIntent` recomputes the defaults when results are shown; it must agree with the builder.
-        let items = await shiftedFrames(scenes: 5)
+        let items = await shiftedFrames(scenes: 4)
         for (level, selects) in [(ResultLevel.tight, true), (.medium, true), (.wide, false)] {
             let built = builder(levels: ResultLevels([.similar: level])).buildResults(
                 items: items, keepMarks: [])

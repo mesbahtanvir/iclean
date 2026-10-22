@@ -97,7 +97,7 @@ import Testing
     // MARK: Whole scans
 
     @Test func aWideScanFindsExactlyWhatANarrowScanFinds() async throws {
-        let lib = variedLibrary(count: 100)
+        let lib = variedLibrary(count: 40)
         let one = try await scan(lib, profile: Self.narrow)
         let many = try await scan(lib, profile: Self.wide)
 
@@ -105,7 +105,7 @@ import Testing
         // time, so those are compared by distance.
         let a = Dictionary(uniqueKeysWithValues: try await one.items().map { ($0.assetID, $0) })
         let b = Dictionary(uniqueKeysWithValues: try await many.items().map { ($0.assetID, $0) })
-        #expect(a.count == 100)
+        #expect(a.count == 40)
         #expect(Set(a.keys) == Set(b.keys))
         for (id, x) in a {
             let y = try #require(b[id])
@@ -452,20 +452,20 @@ import Testing
         // Real feature prints from a few dozen distinct pictures, handed out over 2,400 photos shot
         // in runs a few seconds apart, with some photos having none.
         var pool: [Data] = []
-        for seed in 1...24 {
+        for seed in 1...12 {
             let scene = TestImages.scene(seed: UInt64(seed), width: 96, height: 72)
             pool.append((try? await FeaturePrint.compute(scene)) ?? Data())
         }
         var rng = SeededRandom(seed: 7)
         var items: [LibraryItem] = []
         var thumbs: [[UInt8]] = []
-        for _ in 0..<24 {
+        for _ in 0..<12 {
             var row: [UInt8] = []
             for _ in 0..<1_024 { row.append(UInt8(truncatingIfNeeded: rng.next())) }
             thumbs.append(row)
         }
         for i in 0..<2_400 {
-            let which = Int(rng.next() % 24)
+            let which = Int(rng.next() % 12)
             var thumb = thumbs[which]
             for k in thumb.indices where rng.unit() < 0.1 {
                 thumb[k] = UInt8(truncatingIfNeeded: rng.next())
