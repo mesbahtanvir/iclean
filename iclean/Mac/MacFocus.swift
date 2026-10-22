@@ -8,10 +8,14 @@
     // here removes a photo: the commands only open the Confirm sheet, which is the one place a
     // removal is confirmed.
 
-    /// The screen in front, for the Edit menu: which category it shows (nil on the Overview) and how
-    /// to open the Confirm sheet for it.
+    /// The screen in front, for the Edit menu: which category it shows (nil on the Overview), the group
+    /// whose compare screen is on top of it (nil when the category itself is in front), and how to
+    /// open the Confirm sheet for it.
     struct ReviewActions {
         var category: CleanupCategory?
+        /// The `.group` route of the compare screen that is on top of the category, if one is. The
+        /// selection commands then act on that group alone, never on the whole category behind it.
+        var group: Route?
         var review: @MainActor () -> Void
     }
 

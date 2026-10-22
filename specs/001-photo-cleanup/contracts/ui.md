@@ -60,6 +60,10 @@ these are Mac only:
 - Category: `category.removeSelected` is the button in a 40 pt status bar. Large Videos is a table with
   `category.item.<assetID>` on the Size cell of each row. Group compare uses checkboxes for
   `group.toggle.<assetID>` (query `checkBoxes`, not `switches`).
+- Edit menu (no ids; a menu is not queried by id): Select Suggested (Shift-Command-S; "Select All
+  Videos" on Large Videos), Keep All (Option-Command-K) and Remove Selected… (Command-Delete, opens
+  the Confirm sheet only). Command-A stays the system's Select All. Select Suggested and Keep All
+  act on the screen in front: the category, or the group while its compare screen is on top.
 - There is no `home.settings` on the Mac: Settings is the window opened with Command-comma, and the
   Help menu has "How Removal Works".
 

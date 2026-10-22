@@ -245,7 +245,9 @@
         private var reviewActions: ReviewActions? {
             guard hasResults else { return nil }
             let category = selectedCategory
-            return ReviewActions(category: category) {
+            // The group whose compare screen is on top of the category, if there is one: the
+            // selection commands act on it and not on the category behind it.
+            return ReviewActions(category: category, group: navigation.groupPath.last) {
                 confirm = ConfirmRequest(category: category)
             }
         }

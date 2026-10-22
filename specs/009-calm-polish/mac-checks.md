@@ -53,8 +53,10 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
   Command-click toggles; Shift-click selects a range and never a suggested keeper; the context menu
   has View Larger, Always Keep, Select for Removal or Keep, Select the Rest of This Group.
 - Delete, Command-Delete and Edit > Remove Selected… only open the Confirm sheet. In the sheet Return
-  does nothing, Escape cancels. Edit > Select Suggested (Command-A) shows next to the system's
-  Select All: check which of the two the key reaches in a category.
+  does nothing, Escape cancels. Edit > Select Suggested (Shift-Command-S) and Keep All
+  (Option-Command-K) never collide with the system's Select All (Command-A): check that Command-A in
+  Large Videos selects the table's rows and nothing is marked for removal, and that in a group's
+  compare screen the two commands change only that group's copies.
 - Large Videos: sorting by a header, checkbox per row, double-click and Return open the viewer, Space
   toggles the picked rows.
 - Group compare: up to four copies in a row with Taken, Dimensions and Size lined up; checkboxes;
