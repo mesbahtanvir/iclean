@@ -59,13 +59,16 @@ struct SavedDataView: View {
 
     private var clearResultsSection: some View {
         Section {
-            Button("Clear Scan Results") {
+            Button {
                 Task {
                     await model.clearSavedResults()
                     inventory = await model.savedDataInventory()
                 }
+            } label: {
+                FormAction(title: "Clear Scan Results")
             }
             .buttonStyle(.borderless)
+            .tint(Palette.accentText)
             .accessibilityIdentifier("saved.clearResults")
         } footer: {
             Text("iclean rebuilds these from your next scan. Nothing is lost.")
@@ -74,25 +77,30 @@ struct SavedDataView: View {
 
     private var resetSection: some View {
         Section {
-            Button("Reset Your Selections") { confirmReset = true }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("saved.resetChoices")
-                .confirmationDialog(
-                    "Reset Your Selections?", isPresented: $confirmReset, titleVisibility: .visible
-                ) {
-                    Button("Reset") {
-                        Task {
-                            await model.resetReviewChoices()
-                            inventory = await model.savedDataInventory()
-                        }
+            Button {
+                confirmReset = true
+            } label: {
+                FormAction(title: "Reset Your Selections")
+            }
+            .buttonStyle(.borderless)
+            .tint(Palette.accentText)
+            .accessibilityIdentifier("saved.resetChoices")
+            .confirmationDialog(
+                "Reset Your Selections?", isPresented: $confirmReset, titleVisibility: .visible
+            ) {
+                Button("Reset") {
+                    Task {
+                        await model.resetReviewChoices()
+                        inventory = await model.savedDataInventory()
                     }
-                    .accessibilityIdentifier("saved.confirmReset")
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(
-                        "iclean forgets what you selected and which copies you chose to keep. Your photos are not touched."
-                    )
                 }
+                .accessibilityIdentifier("saved.confirmReset")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "iclean forgets what you selected and which copies you chose to keep. Your photos are not touched."
+                )
+            }
         } footer: {
             Text(
                 "Forgets what you selected and which copies you chose to keep. Your photos are not touched."
@@ -102,11 +110,14 @@ struct SavedDataView: View {
 
     private func alwaysKeepSection(_ inventory: AppModel.SavedDataInventory) -> some View {
         Section {
-            Button("Remove Always Keep from All Photos") {
+            Button {
                 alwaysKeepInDialog = inventory.keepMarkCount
                 confirmClearAlwaysKeep = true
+            } label: {
+                FormAction(title: "Remove Always Keep from All Photos")
             }
             .buttonStyle(.borderless)
+            .tint(Palette.accentText)
             .accessibilityIdentifier("saved.clearAlwaysKeep")
             .confirmationDialog(
                 Text("Remove Always Keep from \(alwaysKeepInDialog) photos?"),
@@ -137,20 +148,24 @@ struct SavedDataView: View {
 
     private var eraseSection: some View {
         Section {
-            Button("Delete Saved Data", role: .destructive) { confirmErase = true }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("saved.erase")
-                .confirmationDialog(
-                    "Delete Saved Data?", isPresented: $confirmErase, titleVisibility: .visible
-                ) {
-                    Button("Delete", role: .destructive) {
-                        Task { await model.eraseSavedData() }
-                    }
-                    .accessibilityIdentifier("saved.confirmErase")
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This starts iclean fresh. Your photos are not touched.")
+            Button(role: .destructive) {
+                confirmErase = true
+            } label: {
+                FormAction(title: "Delete Saved Data")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("saved.erase")
+            .confirmationDialog(
+                "Delete Saved Data?", isPresented: $confirmErase, titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task { await model.eraseSavedData() }
                 }
+                .accessibilityIdentifier("saved.confirmErase")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This starts iclean fresh. Your photos are not touched.")
+            }
         } footer: {
             Text(
                 "iclean can’t read its saved data. Deleting it starts fresh. Your photos are not touched."
@@ -190,5 +205,17 @@ struct SavedDataView: View {
         }
         .redacted(reason: .placeholder)
         .accessibilityHidden(true)
+    }
+}
+
+/// The label of a borderless button in a Form row: the whole width of the row and at least 44 pt
+/// tall is the button, not only the words (a borderless button's hit area is its label).
+private struct FormAction: View {
+    let title: LocalizedStringKey
+
+    var body: some View {
+        Text(title)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }

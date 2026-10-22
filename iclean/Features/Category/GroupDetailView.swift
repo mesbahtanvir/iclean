@@ -17,6 +17,8 @@ struct GroupDetailView: View {
     @State private var viewing: String?
     @State private var width: CGFloat = 0
     @ScaledMetric(relativeTo: .body) private var slot: CGFloat = 36
+    /// A slot that holds the "Keep This Copy" button, which is 44 pt or more tall.
+    @ScaledMetric(relativeTo: .body) private var buttonSlot: CGFloat = 50
     @ScaledMetric(relativeTo: .body) private var tallSlot: CGFloat = 60
 
     var body: some View {
@@ -77,7 +79,9 @@ struct GroupDetailView: View {
             scale: Double(displayScale), cap: 1024)
         // A favorite keeper has a second line; every card keeps the same slot height so the
         // Remove switches stay at one height.
-        let slotHeight = group.hasFavoriteKeeper(in: model.results) ? tallSlot : slot
+        let hasButton = group.type != .similarShots
+        let slotHeight =
+            group.hasFavoriteKeeper(in: model.results) ? tallSlot : (hasButton ? buttonSlot : slot)
         if stacked {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Space.xl) {
@@ -290,6 +294,8 @@ private struct CompareCard: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(Palette.accentText)
+                // Large is the 44 pt hit area; the status slot below is tall enough to hold it.
+                .controlSize(.large)
                 .accessibilityIdentifier("group.makeKeeper")
             }
         }
