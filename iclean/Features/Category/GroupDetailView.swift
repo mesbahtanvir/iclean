@@ -288,12 +288,14 @@ private struct CompareCard: View {
                         .accessibilityIdentifier("group.keeperReason.\(assetID)")
                 }
             } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {
-                Button("Keep This Copy") {
+                Button {
                     taps += 1
                     model.makeKeeper(assetID)
+                } label: {
+                    // The label, not the tint: a tint would colour the button's fill too.
+                    Text("Keep This Copy").foregroundStyle(Palette.accentText)
                 }
                 .buttonStyle(.bordered)
-                .tint(Palette.accentText)
                 // Large is the 44 pt hit area; the status slot below is tall enough to hold it.
                 .controlSize(.large)
                 .accessibilityIdentifier("group.makeKeeper")

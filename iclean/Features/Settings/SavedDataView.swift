@@ -68,6 +68,7 @@ struct SavedDataView: View {
                 FormAction(title: "Clear Scan Results")
             }
             .buttonStyle(.borderless)
+            .actionRow()
             .tint(Palette.accentText)
             .accessibilityIdentifier("saved.clearResults")
         } footer: {
@@ -83,6 +84,7 @@ struct SavedDataView: View {
                 FormAction(title: "Reset Your Selections")
             }
             .buttonStyle(.borderless)
+            .actionRow()
             .tint(Palette.accentText)
             .accessibilityIdentifier("saved.resetChoices")
             .confirmationDialog(
@@ -117,6 +119,7 @@ struct SavedDataView: View {
                 FormAction(title: "Remove Always Keep from All Photos")
             }
             .buttonStyle(.borderless)
+            .actionRow()
             .tint(Palette.accentText)
             .accessibilityIdentifier("saved.clearAlwaysKeep")
             .confirmationDialog(
@@ -154,6 +157,7 @@ struct SavedDataView: View {
                 FormAction(title: "Delete Saved Data")
             }
             .buttonStyle(.borderless)
+            .actionRow()
             .accessibilityIdentifier("saved.erase")
             .confirmationDialog(
                 "Delete Saved Data?", isPresented: $confirmErase, titleVisibility: .visible
@@ -217,5 +221,17 @@ private struct FormAction: View {
         Text(title)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// A row that is only an action: its label is already 44 pt tall, so the row adds no padding of
+    /// its own above and below (the sides keep the system's 16 pt).
+    fileprivate func actionRow() -> some View {
+        #if os(iOS)
+            listRowInsets(EdgeInsets(top: 0, leading: Space.l, bottom: 0, trailing: Space.l))
+        #else
+            self
+        #endif
     }
 }

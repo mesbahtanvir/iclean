@@ -135,12 +135,16 @@ struct HomeNothingToShow: View {
     var body: some View {
         HomeMessage(systemImage: symbol, title: title, message: message) {
             // An empty library can only be fixed outside iclean; scanning is still offered.
-            Button("Scan Again") { model.startScan() }
-                .buttonStyle(.bordered)
-                .tint(Palette.accentText)
-                .controlSize(.large)
-                .actionShape()
-                .accessibilityIdentifier("home.scan")
+            Button {
+                model.startScan()
+            } label: {
+                // The label, not the tint: a tint would colour the button's fill too.
+                Text("Scan Again").foregroundStyle(Palette.accentText)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .actionShape()
+            .accessibilityIdentifier("home.scan")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("results.empty")
