@@ -19,10 +19,12 @@ public struct BuilderKey: Codable, Equatable, Sendable {
     public var access: String
     public var timeZone: String
     public var calendar: String
+    /// The level chosen for each category with levels (spec 011); changing one rebuilds the results.
+    public var levels: String?
 
     public init(
         detectors: [CleanupCategory], features: ProFeatures, access: LibraryAccess,
-        calendar: Calendar = .current
+        calendar: Calendar = .current, levels: ResultLevels? = nil
     ) {
         builderVersion = BuilderVersion.current
         thresholds = Self.currentThresholds
@@ -31,6 +33,7 @@ public struct BuilderKey: Codable, Equatable, Sendable {
         self.access = access.rawValue
         timeZone = calendar.timeZone.identifier
         self.calendar = "\(calendar.identifier)"
+        self.levels = (levels ?? ResultLevels()).key
     }
 }
 
@@ -41,7 +44,15 @@ extension BuilderKey {
             "\(DuplicateThresholds.brightness)", "\(DuplicateThresholds.aspectRatio)",
             "sim", "\(SimilarThresholds.window)", "\(SimilarThresholds.thumbprint)",
             "\(SimilarThresholds.featurePrint)", "\(SimilarThresholds.featurePrintAgreement)",
+            "\(SimilarThresholds.tightFeaturePrint)", "\(SimilarThresholds.tightThumbprint)",
+            "\(SimilarThresholds.tightThumbprintWithoutPrint)", "\(SimilarThresholds.wideFeaturePrint)",
+            "\(SimilarThresholds.wideThumbprint)", "\(SimilarThresholds.wideThumbprintWithoutPrint)",
             "blur", "\(BlurThresholds.sharpness)", "\(BlurThresholds.aesthetics)",
+            "unimp", "\(UnimportantThresholds.softSharpness)", "\(UnimportantThresholds.veryShaky)",
+            "\(UnimportantThresholds.shaky)", "\(UnimportantThresholds.alonePoints)",
+            "\(UnimportantThresholds.noLocationPoints)", "\(UnimportantThresholds.lowAestheticsPoints)",
+            "\(UnimportantThresholds.tight)", "\(UnimportantThresholds.medium)",
+            "\(UnimportantThresholds.wide)",
             "vid", "\(DuplicateVideoThresholds.duration)", "\(LargeVideosCategory.limit)",
             "date", "\(DateThresholds.sameMoment)", "\(DateThresholds.savedWindow)",
             "\(DateThresholds.preservedGap)", "\(DateThresholds.sharedStampCount)",
@@ -99,6 +110,9 @@ public struct ResultsSnapshot: Codable, Sendable {
     public struct Category: Codable, Sendable {
         var category: CleanupCategory
         var groups: [Group]
+        /// Spec 011; absent in snapshots saved before it.
+        var level: ResultLevel?
+        var levels: [LevelSummary]?
     }
 
     public var header: Header
@@ -122,7 +136,7 @@ public struct ResultsSnapshot: Codable, Sendable {
                     Group(
                         type: $0.type, members: $0.members, keepers: $0.keepers.sorted(),
                         confidence: $0.confidence, dateNotes: $0.dateNotes)
-                })
+                }, level: c.level, levels: c.levels.isEmpty ? nil : c.levels)
         }
         defaultSelection = results.defaultSelection.sorted()
         notScannedCount = results.notScannedCount
@@ -139,7 +153,7 @@ public struct ResultsSnapshot: Codable, Sendable {
                     ResultGroup(
                         type: $0.type, members: $0.members, keepers: Set($0.keepers),
                         confidence: $0.confidence, dateNotes: $0.dateNotes)
-                })
+                }, level: c.level, levels: c.levels ?? [])
         }
         var byID: [String: LibraryItem] = [:]
         for item in items { byID[item.assetID] = item.libraryItem }

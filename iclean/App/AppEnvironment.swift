@@ -13,6 +13,9 @@ struct AppEnvironment: Sendable {
     let sizeMeasurer: SizeMeasurer
     /// What Pro unlocks for this run. Free for everyone until the purchase exists.
     let features: ProFeatures
+    /// How far Similar Shots and Unimportant look (spec 011). Shared with the detectors, which read it
+    /// whenever results are built.
+    let levels: ResultLevels
 
     static func live() -> AppEnvironment {
         #if DEBUG
@@ -26,13 +29,14 @@ struct AppEnvironment: Sendable {
             opening: { try SwiftDataStore.onDisk() },
             fallback: { try SwiftDataStore.inMemory() },
             erase: { try SwiftDataStore.eraseStoreFiles(in: SwiftDataStore.storeFolder()) })
-        return make(library: library, store: store)
+        return make(library: library, store: store, levels: LevelPreferences.restored())
     }
 
     static func make(
-        library: PhotoLibrary, store: Store, features: ProFeatures = LaunchArguments.features
+        library: PhotoLibrary, store: Store, features: ProFeatures = LaunchArguments.features,
+        levels: ResultLevels = ResultLevels()
     ) -> AppEnvironment {
-        let builder = DefaultResultsBuilder(detectors: Detectors.all(features))
+        let builder = DefaultResultsBuilder(detectors: Detectors.all(features, levels: levels))
         return AppEnvironment(
             library: library, store: store,
             scanner: ScanPipeline(
@@ -43,7 +47,7 @@ struct AppEnvironment: Sendable {
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
             sizeMeasurer: SizeMeasurer(library: library, store: store),
-            features: features)
+            features: features, levels: levels)
     }
 
     #if DEBUG
@@ -67,6 +71,24 @@ struct AppEnvironment: Sendable {
                 library: DemoPhotoLibrary(scenario: LaunchArguments.demoScenario), store: store)
         }
     #endif
+}
+
+/// The levels the person last chose, kept across launches (spec 011).
+enum LevelPreferences {
+    private static func key(_ category: CleanupCategory) -> String { "level.\(category.rawValue)" }
+
+    static func restored() -> ResultLevels {
+        let levels = ResultLevels()
+        for category in CleanupCategory.allCases where category.hasLevels {
+            let raw = UserDefaults.standard.integer(forKey: key(category))
+            if let level = ResultLevel(rawValue: raw) { levels[category] = level }
+        }
+        return levels
+    }
+
+    static func save(_ level: ResultLevel, for category: CleanupCategory) {
+        UserDefaults.standard.set(level.rawValue, forKey: key(category))
+    }
 }
 
 enum LaunchArguments {

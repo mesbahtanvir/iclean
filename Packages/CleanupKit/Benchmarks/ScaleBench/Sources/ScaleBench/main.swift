@@ -175,6 +175,11 @@ if args.contains("--vision-probe") {
     exit(0)
 }
 
+if let i = args.firstIndex(of: "--levels-profile") {
+    try await runLevelsProfile(folder: URL(fileURLWithPath: args[i + 1]))
+    exit(0)
+}
+
 if let i = args.firstIndex(of: "--bucket-stats") {
     try await runBucketStats(folder: URL(fileURLWithPath: args[i + 1]))
     exit(0)
@@ -182,7 +187,8 @@ if let i = args.firstIndex(of: "--bucket-stats") {
 
 if let i = args.firstIndex(of: "--results-profile") {
     try await runResultsProfile(
-        folder: URL(fileURLWithPath: args[i + 1]), repeats: intArg("--repeats") ?? 3)
+        folder: URL(fileURLWithPath: args[i + 1]), repeats: intArg("--repeats") ?? 3,
+        serial: args.contains("--serial"))
     exit(0)
 }
 

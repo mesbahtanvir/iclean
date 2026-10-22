@@ -20,6 +20,9 @@ struct CategoryView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
+                    if category.hasLevels, let result, !result.levels.isEmpty {
+                        levelPicker(result)
+                    }
                     if model.pendingNewCount > 0 {
                         // The list never changes under the person; new finds wait behind this (004 FR-010).
                         Button {
@@ -34,7 +37,13 @@ struct CategoryView: View {
                         .accessibilityIdentifier("category.showNew")
                     }
                     if let result {
-                        if category == .largeVideos {
+                        if result.groups.isEmpty {
+                            // Another level would list something: the picker above stays so the person can go back.
+                            Text("Nothing at this level.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 24)
+                        } else if category == .largeVideos {
                             listLayout(result)
                         } else if result.groups.first?.type == .single {
                             LazyVGrid(columns: columns, spacing: 4) {
@@ -84,6 +93,31 @@ struct CategoryView: View {
     }
 
     // MARK: Layouts
+
+    /// How far this category looks (spec 011). The counts are what each level lists.
+    private func levelPicker(_ result: CategoryResult) -> some View {
+        let shown = result.level ?? category.defaultLevel
+        return VStack(alignment: .leading, spacing: 6) {
+            Picker(
+                "Level",
+                selection: Binding(
+                    get: { shown }, set: { model.setLevel($0, for: category) })
+            ) {
+                ForEach(ResultLevel.allCases, id: \.self) { level in
+                    let count = result.levels.first { $0.level == level }?.photos ?? 0
+                    Text("\(level.title(for: category)) \(count)").tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("category.levels")
+            if category == .similar && shown == .wide {
+                Text("Looser matches. Nothing is selected for you here.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal)
+    }
 
     private func groupSection(_ group: ResultGroup) -> some View {
         VStack(alignment: .leading, spacing: 6) {

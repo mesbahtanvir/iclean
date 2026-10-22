@@ -41,14 +41,14 @@ public enum ScanKind: String, Sendable, Codable {
 /// Cleanup categories, in assignment order: an item is listed only in the first
 /// category that matches it.
 public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable {
-    case duplicates, similar, blurry, screenshots, duplicateVideos, largeVideos
+    case duplicates, similar, blurry, unimportant, screenshots, duplicateVideos, largeVideos
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
     }
 
     /// Large Videos only informs; nothing in it starts selected (FR-010a).
-    public var preselects: Bool { self != .largeVideos }
+    public var preselects: Bool { self != .largeVideos && self != .unimportant }
 }
 
 /// Metadata read from the photo library. No pixels.

@@ -3,11 +3,20 @@ import Foundation
 public struct CategoryResult: Sendable, Hashable, Identifiable {
     public var category: CleanupCategory
     public var groups: [ResultGroup]
+    /// The level `groups` are at, for a category with levels (spec 011).
+    public var level: ResultLevel?
+    /// What every level would list, among the candidates the detector saw. Empty without levels.
+    public var levels: [LevelSummary]
     public var id: CleanupCategory { category }
 
-    public init(category: CleanupCategory, groups: [ResultGroup]) {
+    public init(
+        category: CleanupCategory, groups: [ResultGroup], level: ResultLevel? = nil,
+        levels: [LevelSummary] = []
+    ) {
         self.category = category
         self.groups = groups
+        self.level = level
+        self.levels = levels
     }
 
     /// Every item shown in the category, keepers included.
@@ -133,7 +142,8 @@ public struct DefaultResultsBuilder: ResultsBuilder {
                     && (!detector.needsAnalysis || item.analysisSource.hasAnalysis)
             }
             var groups: [ResultGroup] = []
-            for var group in detector.detect(items: candidates) {
+            let detection = detector.detectLevelled(items: candidates, all: items)
+            for var group in detection.groups {
                 let members = group.members.filter { byID[$0] != nil && !assigned.contains($0) }
                 guard members.count == group.members.count else { continue }
                 if group.type == .single {
@@ -146,13 +156,21 @@ public struct DefaultResultsBuilder: ResultsBuilder {
                 }
                 groups.append(group)
             }
-            guard !groups.isEmpty else { continue }
+            // A category with levels stays when the chosen level lists nothing but another level would,
+            // so the person can step back; at the default level nothing listed means no category, as before.
+            let keepsEmpty =
+                detection.level != nil && detection.level != detector.category.defaultLevel
+                && detection.levels.contains { $0.photos > 0 }
+            guard !groups.isEmpty || keepsEmpty else { continue }
             groups.forEach { assigned.formUnion($0.members) }
-            categories.append(CategoryResult(category: detector.category, groups: groups))
+            categories.append(
+                CategoryResult(
+                    category: detector.category, groups: groups, level: detection.level,
+                    levels: detection.levels))
         }
 
         var selection: Set<String> = []
-        for c in categories where c.category.preselects {
+        for c in categories where c.category.preselects(at: c.level) {
             selection.formUnion(c.removable)
         }
         selection.subtract(protected)
