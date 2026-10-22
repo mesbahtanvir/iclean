@@ -147,13 +147,20 @@ public struct StoredItemSummary: Sendable, Hashable {
     public var analysisSource: AnalysisSource
     /// How many scans have ended with this item not analyzed (003 FR-008).
     public var scanAttempts: Int
+    /// The Vision work left out of this item's analysis on purpose (spec 010). A plan reads it to
+    /// find items whose neighbours have arrived since.
+    public var skippedVision: VisionWork
 
     public var assetID: String { metadata.assetID }
 
-    public init(metadata: AssetMetadata, analysisSource: AnalysisSource, scanAttempts: Int = 0) {
+    public init(
+        metadata: AssetMetadata, analysisSource: AnalysisSource, scanAttempts: Int = 0,
+        skippedVision: VisionWork = []
+    ) {
         self.metadata = metadata
         self.analysisSource = analysisSource
         self.scanAttempts = scanAttempts
+        self.skippedVision = skippedVision
     }
 }
 

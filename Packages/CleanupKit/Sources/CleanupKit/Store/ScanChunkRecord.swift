@@ -20,6 +20,9 @@ final class ScanChunkRecord {
     var notBefore: Date?
     var owner: UUID?
     var lastError: String?
+    // Spec 010: optional and additive. Nil, as in a chunk stored before, skips nothing.
+    var skipPrintBits: Int64?
+    var skipFaceBits: Int64?
 
     init(_ chunk: ScanChunk) {
         key = chunk.id
@@ -46,6 +49,8 @@ final class ScanChunkRecord {
         notBefore = c.notBefore
         owner = c.owner
         lastError = c.lastError
+        skipPrintBits = c.skipPrintMask == 0 ? nil : Int64(bitPattern: c.skipPrintMask)
+        skipFaceBits = c.skipFaceMask == 0 ? nil : Int64(bitPattern: c.skipFaceMask)
     }
 
     var chunk: ScanChunk {
@@ -55,6 +60,7 @@ final class ScanChunkRecord {
             doneMask: UInt64(bitPattern: doneMaskBits), attempts: attempts, crashes: crashes,
             isolate: isolate, suspectIndex: suspectIndex, inFlightIndex: inFlightIndex,
             notBefore: notBefore, owner: owner,
-            lastError: lastError)
+            lastError: lastError, skipPrintMask: skipPrintBits.map(UInt64.init(bitPattern:)) ?? 0,
+            skipFaceMask: skipFaceBits.map(UInt64.init(bitPattern:)) ?? 0)
     }
 }

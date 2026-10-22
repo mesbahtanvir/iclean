@@ -28,6 +28,8 @@ public actor ScanPipeline: Scanner {
     private let progressEvery: Int
     private let policy: ScanRetryPolicy
     private let features: ProFeatures
+    /// Whether plans leave out the Vision work no detector can read (spec 010).
+    private let deferVision: Bool
     private let pauseWaitLimit: Duration
     private let minProgressInterval: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
@@ -102,6 +104,9 @@ public actor ScanPipeline: Scanner {
     ///   - progressEvery: analyzed items between two progress events (002 R4).
     ///   - policy: retry, timeout and crash limits (003).
     ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
+    ///   - deferVision: leave out the feature print and face quality of photos that no detector can
+    ///     read them for, and analyze them later if that changes (spec 010). False is the scan of
+    ///     spec 009, for comparison; the results are the same either way.
     ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
     ///     acknowledge; tests raise it so a slow machine cannot hit it.
     ///   - minProgressInterval: at most one progress event per interval while items finish.
@@ -110,8 +115,8 @@ public actor ScanPipeline: Scanner {
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         profile: ScanProfile, progressEvery: Int = 10, policy: ScanRetryPolicy = .default,
-        features: ProFeatures = .free, pauseWaitLimit: Duration = .seconds(2),
-        minProgressInterval: Duration = .zero,
+        features: ProFeatures = .free, deferVision: Bool = true,
+        pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         },
@@ -128,6 +133,7 @@ public actor ScanPipeline: Scanner {
         policy.chunkSize = min(max(1, profile.chunkSize), ScanChunk.maxSize)
         self.policy = policy
         self.features = features
+        self.deferVision = deferVision
         self.pauseWaitLimit = pauseWaitLimit
         self.minProgressInterval = minProgressInterval
         self.thermalState = thermalState
@@ -141,7 +147,8 @@ public actor ScanPipeline: Scanner {
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
         policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
-        pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
+        deferVision: Bool = true, pauseWaitLimit: Duration = .seconds(2),
+        minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
         }
@@ -150,7 +157,8 @@ public actor ScanPipeline: Scanner {
             library: library, store: store, analyzer: analyzer,
             profile: ScanProfile(name: "custom", concurrency: concurrency, chunkSize: chunkSize),
             progressEvery: progressEvery, policy: policy, features: features,
-            pauseWaitLimit: pauseWaitLimit, minProgressInterval: minProgressInterval,
+            deferVision: deferVision, pauseWaitLimit: pauseWaitLimit,
+            minProgressInterval: minProgressInterval,
             thermalState: thermalState)
     }
 
@@ -499,7 +507,8 @@ public actor ScanPipeline: Scanner {
         let library = await self.library.fetchAllItems()
         let stored = (try? await store.itemSummaries()) ?? []
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: kind, policy: policy, features: features)
+            library: library, stored: stored, kind: kind, policy: policy, features: features,
+            deferVision: deferVision)
         await apply(plan)
         var s: ScanSession
         if var previous {
@@ -512,7 +521,8 @@ public actor ScanPipeline: Scanner {
             s = ScanSession(kind: kind, state: .running, totalItems: plan.toAnalyze.count)
         }
         let new = ScanPlanner.chunks(
-            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize)
+            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize,
+            skipVision: plan.skipVision)
         if (try? await store.createJob(s, chunks: new)) != nil { storedSession = s }
         session = s
         jobStart = s
@@ -553,7 +563,7 @@ public actor ScanPipeline: Scanner {
         // already gave up on.
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: .quickCheck, policy: policy,
-            features: features)
+            features: features, deferVision: deferVision)
         await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
@@ -569,7 +579,7 @@ public actor ScanPipeline: Scanner {
         guard !ids.isEmpty else { return }
         let new = ScanPlanner.chunks(
             jobID: jobID, assetIDs: ids, size: policy.chunkSize,
-            firstSequence: (chunks.map(\.sequence).max() ?? -1) + 1)
+            firstSequence: (chunks.map(\.sequence).max() ?? -1) + 1, skipVision: plan.skipVision)
         session?.totalItems += ids.count
         chunks += new
         jobStart = session
@@ -704,6 +714,9 @@ public actor ScanPipeline: Scanner {
         // the chunk that the code below mutates.
         let metadata: [Int: AssetMetadata] = Dictionary(
             uniqueKeysWithValues: work.map { ($0, byID[chunk.assetIDs[$0]]!) })
+        // The Vision work the plan left out, by work index (spec 010), captured the same way.
+        let skips: [Int: VisionWork] = Dictionary(
+            uniqueKeysWithValues: work.map { ($0, chunk.skippedVision(at: $0)) })
 
         if chunk.isolate {
             // After a crash: one item at a time. The item is saved as in flight before it
@@ -721,7 +734,7 @@ public actor ScanPipeline: Scanner {
                 }
                 let outcome = await Self.analyze(
                     metadata[i]!, library: library, analyzer: analyzer, limit: limit,
-                    analyzeVideos: features.videoAnalysis)
+                    analyzeVideos: features.videoAnalysis, skipping: skips[i] ?? [])
                 chunk.inFlightIndex = nil
                 record(
                     i, outcome, chunk: &chunk, results: &results, failures: &failures,
@@ -762,12 +775,13 @@ public actor ScanPipeline: Scanner {
                     inFlight += 1
                     let m = metadata[i]!
                     let analyzeVideos = features.videoAnalysis
+                    let skipped = skips[i] ?? []
                     group.addTask(priority: .userInitiated) { [library, analyzer] in
                         (
                             i,
                             await Self.analyze(
                                 m, library: library, analyzer: analyzer, limit: limit,
-                                analyzeVideos: analyzeVideos)
+                                analyzeVideos: analyzeVideos, skipping: skipped)
                         )
                     }
                     return true
@@ -1058,7 +1072,7 @@ public actor ScanPipeline: Scanner {
     /// their analysis), so opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
-        analyzeVideos: Bool
+        analyzeVideos: Bool, skipping skipped: VisionWork = []
     ) async -> ItemOutcome {
         if m.kind == .screenshot || (m.kind.isVideo && !analyzeVideos) {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
@@ -1070,7 +1084,8 @@ public actor ScanPipeline: Scanner {
                 return .item(LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil))
             }
             do {
-                let analysis = try await analyzer.analyze(image, metadata: m)
+                let analysis = try await analyzer.analyze(
+                    image, metadata: m, vision: VisionWork.all.subtracting(skipped))
                 return .item(
                     LibraryItem(metadata: m, analysisSource: preview.source, analysis: analysis))
             } catch {
