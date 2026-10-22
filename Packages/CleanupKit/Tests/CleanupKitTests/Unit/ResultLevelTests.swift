@@ -351,6 +351,40 @@ import Testing
         #expect(score(shot) == nil)
     }
 
+    @Test func aSkippedFacePassIsNeverTakenForNoFace() {
+        var item = shaky("skipped", sharpness: 0.50, at: 0)
+        #expect(UnimportantDetector.score(item, hasNeighbour: false) != nil)
+        item.analysis?.skippedVision = .faceQuality
+        #expect(UnimportantDetector.score(item, hasNeighbour: false) == nil)
+        // Skipping only the feature print says nothing about faces.
+        item.analysis?.skippedVision = .featurePrint
+        #expect(UnimportantDetector.score(item, hasNeighbour: false) != nil)
+    }
+
+    @Test func theAnalyzerRunsTheFacePassForSoftPhotosEvenWhenToldToSkipIt() async throws {
+        let sharp = TestImages.scene(seed: 4, width: 160, height: 120)
+        let soft = TestImages.blurred(sharp, factor: 12)
+        try #require(Sharpness.score(sharp) >= UnimportantThresholds.softSharpness)
+        try #require(Sharpness.score(soft) < UnimportantThresholds.softSharpness)
+        let meta = Make.meta("a")
+        let analyzer = DefaultAnalyzer()
+        // A lonely sharp photo: nothing reads either request, both are skipped.
+        let a = try await analyzer.analyze(sharp, metadata: meta, vision: [])
+        #expect(a.skippedVision == .all)
+        // A lonely soft photo that nothing protects: the Unimportant list reads its face pass.
+        let b = try await analyzer.analyze(soft, metadata: meta, vision: [])
+        #expect(b.skippedVision == .featurePrint)
+        // One that something protects is not a candidate, so nothing is run for it.
+        let inAlbum = Make.meta("b", albums: ["Trip"])
+        #expect(
+            try await analyzer.analyze(soft, metadata: inAlbum, vision: []).skippedVision == .all)
+        #expect(
+            try await analyzer.analyze(soft, metadata: Make.meta("c", favorite: true), vision: [])
+                .skippedVision == .all)
+        // Asked for everything, it does everything, as before.
+        #expect(try await analyzer.analyze(soft, metadata: meta, vision: .all).skippedVision == [])
+    }
+
     @Test func neighboursAreCountedAmongEverythingExaminedNotJustWhatIsLeft() {
         let lonely = shaky("lonely", sharpness: 0.50, at: 0)
         let taken = shaky("taken", sharpness: 0.9, at: 30)  // an earlier category took this one

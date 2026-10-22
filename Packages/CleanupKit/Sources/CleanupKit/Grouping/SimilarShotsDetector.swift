@@ -133,6 +133,16 @@ public struct SimilarShotsDetector: CategoryDetector {
         prints: FeaturePrintCache?
     ) -> ResultLevel? {
         let sameBurst = a.metadata.burstID != nil && a.metadata.burstID == b.metadata.burstID
+        // A print left out on purpose (spec 010) belongs to a photo that had no neighbour when it was
+        // analyzed. Reaching one here means a neighbour arrived since and the photo has not been analyzed
+        // again yet; comparing miniatures alone would group photos that merely share a layout, so such a
+        // pair waits for the repair. Frames of one burst group without any print, as always.
+        if !sameBurst,
+            a.analysis?.skippedVision.contains(.featurePrint) == true
+                || b.analysis?.skippedVision.contains(.featurePrint) == true
+        {
+            return nil
+        }
         let fp = known ?? prints?.distance(a, b) ?? .infinity
         // The miniatures' correlation costs more than the feature print's distance and most pairs do
         // not need it, so it is worked out only when a rule asks for it.

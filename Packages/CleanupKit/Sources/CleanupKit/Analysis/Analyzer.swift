@@ -54,10 +54,14 @@ public struct DefaultAnalyzer: Analyzer {
             isPhoto && !metadata.isPortrait && !metadata.isLongExposure
             && sharpness < BlurThresholds.sharpness + Self.aestheticsMargin
         let aesthetics = mayBeBlurry ? await Aesthetics.score(image) : nil
-        let faces = isPhoto && vision.contains(.faceQuality) ? await FaceQuality.score(image) : nil
+        // The Unimportant list (spec 011) reads the face pass of soft photos that nothing else asks it
+        // for, and softness is only known now, so the pass is decided here. The flag records the outcome.
+        var done = vision
+        if UnimportantDetector.isCandidate(metadata, sharpness: sharpness) { done.insert(.faceQuality) }
+        let faces = isPhoto && done.contains(.faceQuality) ? await FaceQuality.score(image) : nil
         return Analysis(
             dHash: hash, thumbprint: Thumbprint.compute(image), featurePrint: print,
             sharpness: sharpness, aestheticsScore: aesthetics, faceQuality: faces,
-            skippedVision: VisionWork.all.subtracting(vision))
+            skippedVision: VisionWork.all.subtracting(done))
     }
 }

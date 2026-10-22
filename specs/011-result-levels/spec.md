@@ -14,7 +14,7 @@ can pick. A new cleanup, unimportant pictures: a little shaky, not about a perso
 **Builds on**: [008-staged-cleanup-at-scale](../008-staged-cleanup-at-scale/spec.md) (results, staged builds),
 [007-persistent-session](../007-persistent-session/spec.md) (decisions are per photo),
 [009-parallel-scan](../009-parallel-scan/spec.md) (the Neural Engine is the scan's ceiling, so a new Vision pass costs
-scan time). Conflicts with, and must be reconciled with, spec 010 (deferred Vision work): see Interplay.
+scan time). Reconciled with spec 010 (deferred Vision work): see Interplay.
 
 ## Defaults chosen (the brainstorm's recommendations)
 
@@ -68,17 +68,26 @@ scan time). Conflicts with, and must be reconciled with, spec 010 (deferred Visi
   let the person pick one (`AppModel.setLevel`, which saves the choice and rebuilds at once even with a list open);
   Home lists Unimportant when it is not empty. The choice is kept across launches.
 
-## Interplay with spec 010 (deferred Vision work) — must be reconciled before both ship
+## Interplay with spec 010 (deferred Vision work), reconciled
 
-- 010 skips the feature print and face quality for photos with no neighbour within 60 s. Unimportant's **candidates are
-  exactly those lonely, soft photos**, and its "no person" veto needs the face pass to have run. Today `faceQuality == nil`
-  means "no face"; after 010 it would also mean "skipped". `UnimportantDetector` therefore requires a non-empty feature
-  print, and 010 must keep it empty-or-flagged for skipped photos so they are never listed as faces-free. For Unimportant to
-  see lonely photos at all, 010's rule must become "has a neighbour, **or** is an Unimportant candidate" (soft, no album,
-  not edited), which is decided from stored sharpness after a first cheap pass or from metadata.
-- A per-photo bitmask of passes done (feature print, face, aesthetics, later classification) would serve both specs.
-- `wide` keeps the 60 s window on purpose: widening it to minutes would make the loader and 010 load and compute prints
-  for more photos.
+Spec 010 (merged first) skips the feature print and face quality for photos that no detector can use them for, and
+records what it skipped per photo (`Analysis.skippedVision`, a bitmask). Unimportant's candidates are exactly the lonely
+photos that rule skips, and its "no person" veto needs the face pass to have run. What 011 does about it:
+
+- **The face pass is decided inside `DefaultAnalyzer`, once sharpness is known** (010 Decision 8 left the choice to 011):
+  a still that is soft (sharpness < 0.70) and that nothing protects (no album, no edit, not a favourite, not portrait mode
+  or a long exposure: `UnimportantDetector.isCandidate`) gets the face pass even where the neighbour rule skipped it. The
+  flag records the outcome. Sharp lonely photos, most of them, still skip both requests.
+- **`UnimportantDetector` reads the per-photo flag**: a photo whose `skippedVision` contains `.faceQuality` is never listed.
+  The library-wide check that Vision works at all (any print or face quality anywhere) remains, because a face pass that ran
+  and failed leaves no mark.
+- The repair rule needs nothing new: a lonely soft photo stores `skippedVision == .featurePrint`, which is disjoint from what
+  a library without neighbours demands, and when a neighbour arrives the demand is `.all` and the photo is analyzed again.
+- Known limit: the decision uses the metadata at scan time. A photo that was in an album when scanned (face pass skipped) and
+  is later removed from it is not listed until it is analyzed again.
+- `wide` keeps the 60 s window on purpose, so Same scene adds no demand to the neighbour rule.
+- `SimilarShotsDetector.pairLevel` keeps 010's rule that a pair with a skipped print waits for the repair, except frames of
+  one burst, which group without a print.
 
 ## Not done / decisions left for real data
 

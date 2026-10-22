@@ -48,9 +48,12 @@ public struct UnimportantDetector: CategoryDetector {
 
     public func detectLevelled(items: [LibraryItem], all: [LibraryItem]) -> LevelledDetection {
         let chosen = levels?[.unimportant] ?? CleanupCategory.unimportant.defaultLevel
-        // The loader reads feature prints only for photos with a neighbour, so a photo's own print cannot say
-        // whether Vision worked. If Vision worked for any photo here, it worked for the library.
-        let visionRan = all.contains { !($0.analysis?.featurePrint.isEmpty ?? true) }
+        // Whether Vision works on this device at all: a face pass that ran and found nothing, and one that
+        // failed, both leave no face quality, and only the library can tell them apart. If Vision produced
+        // anything for any photo here, it works. (Whether one photo's face pass ran is its `skippedVision`.)
+        let visionRan = all.contains {
+            !($0.analysis?.featurePrint.isEmpty ?? true) || $0.analysis?.faceQuality != nil
+        }
         let withNeighbour = Self.photosWithNeighbour(all)
         var scored: [(item: LibraryItem, score: Int)] = []
         if visionRan {
@@ -80,16 +83,25 @@ public struct UnimportantDetector: CategoryDetector {
         return LevelledDetection(groups: groups, level: chosen, levels: summaries)
     }
 
+    /// Whether a photo can be listed at all, before its face pass: a still that is soft and that nothing
+    /// protects. The scan runs the face pass for these even where the neighbour rule would skip it
+    /// (`DefaultAnalyzer`), because "no face" is only known if the pass ran.
+    static func isCandidate(_ m: AssetMetadata, sharpness: Double) -> Bool {
+        (m.kind == .photo || m.kind == .livePhoto) && !m.isPortrait && !m.isLongExposure
+            && !m.isFavorite && !m.hasAdjustments && m.albumNames.isEmpty
+            && sharpness < UnimportantThresholds.softSharpness
+    }
+
     /// The score of a photo, or nil if it may not be listed at all.
     static func score(_ item: LibraryItem, hasNeighbour: Bool) -> Int? {
         let m = item.metadata
-        guard m.kind == .photo || m.kind == .livePhoto, let analysis = item.analysis else {
+        guard let analysis = item.analysis, isCandidate(m, sharpness: analysis.sharpness) else {
             return nil
         }
-        guard !m.isPortrait, !m.isLongExposure, !m.isFavorite, !m.hasAdjustments,
-            m.albumNames.isEmpty,
-            analysis.faceQuality == nil, analysis.sharpness < UnimportantThresholds.softSharpness
-        else { return nil }
+        // No face found, and the face pass ran: a skipped pass (spec 010) says nothing about faces.
+        guard analysis.faceQuality == nil, !analysis.skippedVision.contains(.faceQuality) else {
+            return nil
+        }
         var points: Int
         switch analysis.sharpness {
         case ..<UnimportantThresholds.veryShaky: points = 3

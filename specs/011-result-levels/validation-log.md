@@ -48,5 +48,7 @@ by `theSelectionAfterReplayingDecisionsFollowsTheLevelToo` and `LevelsFlowTests`
 - Real libraries: no threshold has been checked against photos a person labelled. Unimportant lists nothing preselected for
   that reason. The simulator has no Vision, so Unimportant (which needs it to trust "no face") lists nothing there.
 - The screen was not looked at in a window (the Mac screen was not available): the control was exercised by the UI test only.
-- The interplay with spec 010 (deferred Vision work) is a message to that session and the "Interplay" section of the spec,
-  not code; the two must be reconciled before both ship.
+- The interplay with spec 010 (deferred Vision work) is reconciled in code after 010 merged: the face pass is decided in
+  `DefaultAnalyzer` for soft, unprotected photos and the detector reads `skippedVision` (tests
+  `theAnalyzerRunsTheFacePassForSoftPhotosEvenWhenToldToSkipIt`, `aSkippedFacePassIsNeverTakenForNoFace`). The cost of the extra
+  face passes (soft lonely photos only) was not measured.

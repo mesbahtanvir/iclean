@@ -35,4 +35,4 @@
 
 - [ ] T050 Photos whose only neighbours are frames of their own burst could skip the print too (Decision 7)
 - [ ] T051 Skipping the repair re-analysis of a photo's hash, miniature and sharpness (they come out equal); worth it only if repairs are many
-- [ ] T052 Spec 011's Unimportant list reads the face pass of lonely soft photos: widen `VisionDemand` or decide the face pass inside `DefaultAnalyzer` once sharpness is known (spec Decision 8); replace 011's "any print exists" check by `skippedVision`
+- [X] T052 (done in spec 011: the face pass is decided inside `DefaultAnalyzer` for soft, unprotected photos, and `UnimportantDetector` reads `skippedVision`) Spec 011's Unimportant list reads the face pass of lonely soft photos: widen `VisionDemand` or decide the face pass inside `DefaultAnalyzer` once sharpness is known (spec Decision 8); replace 011's "any print exists" check by `skippedVision`
