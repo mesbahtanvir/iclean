@@ -33,6 +33,8 @@ struct PhotoViewer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(macOS)
         @Environment(\.displayScale) private var displayScale
+        /// The photo at (up to) its own size, once the zoom needs more than the 3072 picture holds.
+        @State private var detail: CGImage?
     #endif
 
     /// How far the photo is zoomed and where it is moved to. The base values are kept between
@@ -52,34 +54,67 @@ struct PhotoViewer: View {
 
     var body: some View {
         let item = model.results.items[assetID]
-        NavigationStack {
-            stageView(item)
-                .safeAreaInset(edge: .bottom, spacing: 0) { controls(item) }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                            .keyboardShortcut(.cancelAction)
+        chrome(item)
+            .preferredColorScheme(.dark)
+            #if os(macOS)
+                // A sheet on the Mac has no size of its own.
+                .frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+                .background { zoomShortcuts(item) }
+                .tracksSheet()
+            #endif
+            .task { await prepareVideo(item) }
+            .onChange(of: assetID) { resetZoom() }
+            .onDisappear { player?.pause() }
+    }
+
+    /// The stage with its bars. On a phone it is a navigation stack, whose bar carries Done and the
+    /// title. A sheet on a Mac has no title bar or toolbar to carry them (as the Confirm sheet
+    /// knows), so there they are drawn in the content, above the stage.
+    @ViewBuilder private func chrome(_ item: CleanupKit.LibraryItem?) -> some View {
+        #if os(macOS)
+            VStack(spacing: 0) {
+                macHeader(item)
+                stageView(item)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { controls(item) }
+            }
+            .background(.black)
+        #else
+            NavigationStack {
+                stageView(item)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { controls(item) }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { dismiss() }
+                                .keyboardShortcut(.cancelAction)
+                        }
+                        ToolbarItem(placement: .principal) { title(item) }
                     }
-                    ToolbarItem(placement: .principal) { title(item) }
-                }
-                #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(.black, for: .navigationBar)
                     .toolbarBackground(.visible, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
-                #endif
-        }
-        .preferredColorScheme(.dark)
-        #if os(macOS)
-            // A sheet on the Mac has no size of its own.
-            .frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
-            .background { zoomShortcuts(item) }
-            .tracksSheet()
+            }
         #endif
-        .task { await prepareVideo(item) }
-        .onChange(of: assetID) { resetZoom() }
-        .onDisappear { player?.pause() }
     }
+
+    #if os(macOS)
+        /// The two-line title (the date over the size) in the middle, Done on the right. Escape
+        /// closes the sheet too.
+        private func macHeader(_ item: CleanupKit.LibraryItem?) -> some View {
+            ZStack {
+                title(item)
+                HStack {
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.s)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(.black)
+        }
+    #endif
 
     private var isVideo: Bool { model.results.items[assetID]?.metadata.kind.isVideo == true }
 
@@ -202,9 +237,18 @@ struct PhotoViewer: View {
         /// from the keyboard.
         private func macZoomable(_ item: CleanupKit.LibraryItem?) -> some View {
             let fitted = fittedSize(item)
+            let wantsDetail = needsDetail(item, fitted: fitted)
             return ScrollViewReader { reader in
                 ScrollView([.horizontal, .vertical]) {
                     still
+                        // Zoomed past what the picture holds, the photo's own pixels take over.
+                        .overlay {
+                            if let detail {
+                                Image(decorative: detail, scale: 1)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                            }
+                        }
                         .frame(width: fitted.width * scale, height: fitted.height * scale)
                         // Smaller than the stage (at 1x), the photo sits in the middle of it.
                         .frame(minWidth: stage.width, minHeight: stage.height)
@@ -237,6 +281,40 @@ struct PhotoViewer: View {
                     @unknown default: break
                     }
                 }
+                // Fetched when the zoom needs it, let go of when it does not.
+                .task(id: wantsDetail) {
+                    if wantsDetail { await loadDetail(item) } else { detail = nil }
+                }
+            }
+        }
+
+        /// The largest picture asked for when zoomed in, per side. About 110 MB decoded at 4:3.
+        private static let detailCap = 6144
+
+        /// Whether the zoom has gone past the pixels the 3072 picture holds, for a photo that has
+        /// more than that. At 100% a photo should show its own pixels, and a stretched bitmap is
+        /// soft: it would make a sharp photo look blurry, in the app whose job is to tell.
+        private func needsDetail(_ item: CleanupKit.LibraryItem?, fitted: CGSize) -> Bool {
+            guard !isVideo, let metadata = item?.metadata, fitted.width > 0 else { return false }
+            let longest = max(metadata.pixelWidth, metadata.pixelHeight)
+            guard longest > pixelRequest else { return false }
+            let deliveredWidth =
+                Double(metadata.pixelWidth) * Double(pixelRequest) / Double(longest)
+            let shownWidth = Double(fitted.width * scale * displayScale)
+            return shownWidth > deliveredWidth * 0.9
+        }
+
+        /// The photo at up to its own size, from this device only (the library's requests never use
+        /// the network). The quick low-resolution picture that comes first is not used: the 3072
+        /// one is better.
+        private func loadDetail(_ item: CleanupKit.LibraryItem?) async {
+            guard let metadata = item?.metadata else { return }
+            let side = min(max(metadata.pixelWidth, metadata.pixelHeight), Self.detailCap)
+            for await picture in model.environment.library.thumbnails(
+                for: assetID, pixelSize: side, fit: .fit)
+            {
+                if Task.isCancelled { return }
+                if picture.isFinal { detail = picture.image }
             }
         }
 
