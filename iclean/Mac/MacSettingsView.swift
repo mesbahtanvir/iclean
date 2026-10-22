@@ -11,6 +11,7 @@
             case data
         }
 
+        @Environment(AppModel.self) private var model
         @State private var tab: Tab
 
         init(tab: Tab = .general) { _tab = State(initialValue: tab) }
@@ -23,6 +24,19 @@
                 YourDataPane()
                     .tabItem { Label("Your Data", systemImage: "internaldrive") }
                     .tag(Tab.data)
+            }
+            // A Delete All that failed says so here, in the window where the button was pressed:
+            // the main window may be closed, or have a sheet up that no alert can be shown over.
+            // Nothing else sets this message on a Mac, so the main window shows none.
+            .alert(
+                "Something went wrong",
+                isPresented: Binding(
+                    get: { model.errorMessage != nil },
+                    set: { if !$0 { model.errorMessage = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(model.errorMessage ?? "")
             }
         }
     }
@@ -57,6 +71,7 @@
     /// thing that cannot be undone.
     private struct YourDataPane: View {
         @Environment(AppModel.self) private var model
+        @Environment(\.controlActiveState) private var activeState
         @State private var inventory: AppModel.SavedDataInventory?
         @State private var history: ScanHistory?
 
@@ -64,12 +79,25 @@
             Form {
                 SavedDataSections(inventory: $inventory)
                 if let history { RecentScansSection(history: history) }
-                DeleteAllSection()
+                // The pane shows what is saved and this deletes it, so whatever the outcome the
+                // pane is read again: it never keeps showing data that is gone (the Always Keep
+                // section goes with the last mark), or claims a delete that did not happen.
+                DeleteAllSection { _ in Task { await reload() } }
             }
             .formStyle(.grouped)
             .frame(width: Layout.macSettings, height: 560)
-            .task { inventory = await model.savedDataInventory() }
-            .task { history = ScanHistory(await model.recentSessions()) }
+            .task { await reload() }
+            // This window outlives the scans and removals of the main window: it is read again
+            // when it comes to the front and when a scan starts or ends.
+            .onChange(of: activeState) { _, state in
+                if state == .key { Task { await reload() } }
+            }
+            .onChange(of: model.isScanning) { Task { await reload() } }
+        }
+
+        private func reload() async {
+            inventory = await model.savedDataInventory()
+            history = ScanHistory(await model.recentSessions())
         }
     }
 #endif

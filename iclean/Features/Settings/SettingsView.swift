@@ -63,6 +63,10 @@ struct PrivacyNote: View {
 struct DeleteAllSection: View {
     @Environment(AppModel.self) private var model
     @State private var confirmDelete = false
+    /// Called when the delete has finished, with whether it all went. The Mac Settings window shows
+    /// the saved data next to this button and reads it again from here; the phone's Settings has
+    /// no such screen and passes nothing.
+    var onFinished: (@MainActor (Bool) -> Void)?
 
     var body: some View {
         Section {
@@ -80,7 +84,10 @@ struct DeleteAllSection: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete All iclean Data", role: .destructive) {
-                    Task { await model.deleteAllData() }
+                    Task {
+                        let finished = await model.deleteAllData()
+                        onFinished?(finished)
+                    }
                 }
                 .accessibilityIdentifier("settings.confirmDelete")
                 Button("Cancel", role: .cancel) {}
