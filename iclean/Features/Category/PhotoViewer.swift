@@ -166,8 +166,8 @@ struct PhotoViewer: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(ItemKind.photo.spokenName))
+            // The adjustable trait below tells how to change it, in the platform's own words.
             .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
-            .accessibilityHint(Text("Swipe up or down to zoom"))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: setZoom(baseScale * 1.5, item: item)

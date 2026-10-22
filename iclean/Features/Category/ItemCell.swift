@@ -67,7 +67,12 @@ struct ItemCell: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description(item: item, favorite: favorite, inAlbums: inAlbums))
             .accessibilityValue(ReviewState.text(selected: selected))
-            .accessibilityHint(Text("Double tap to change"))
+            // What it does, not which gesture does it: the gesture is the platform's to announce.
+            .accessibilityHint(
+                item?.metadata.kind.isVideo == true
+                    ? Text("Changes whether this video is removed")
+                    : Text("Changes whether this photo is removed")
+            )
             .accessibilityAddTraits(.isButton)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("category.item.\(assetID)")
