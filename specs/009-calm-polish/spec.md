@@ -48,6 +48,17 @@ Foundation, built in order by one author: thumbnail pipeline (done first) → WP
 - **Group compare is built lazily**: the copies are laid out in rows of up to four, each row a Grid (so Taken, Dimensions and Size line up across its copies), and the rows are in a lazy stack; a group of many copies builds, and asks for pictures of, the rows near the screen only. The rows wrap; there is still no horizontal scroller.
 - **"Continue reviewing" and "Show N new items"** are on the Overview as well as in the sidebar footer (each shown once in a window), so they are reachable with the sidebar hidden.
 
+### 0.5 Mac review decisions after the second review (these override 6.15 and 005 FR-015 where they differ)
+- **The photo grid is one keyboard target**, not one per photo: the scroll view is focusable and carries the keys once. The photo the keyboard is on is a plain property of the grid's navigator, so it exists after its cell scrolled away; only the cell's ring and its two controls read it. Arrows move, Shift-arrow extends a range from the anchor (never a suggested keeper; it does not unmark when moving back, like Shift-click), Space toggles, Return opens, Delete only opens Confirm. Space on a photo that scrolled out of view scrolls it back and does not toggle; the next press does. Edit > Compare This Group (Command-Down) opens the compare screen of the group the keyboard's photo is in.
+- **Hidden on-photo controls are inert**: the check mark and the expand control are not just faded; until the pointer, the keyboard or the selection shows them they take no clicks, show no tooltip and are not Tab stops. The expand control's hit area is 36 pt on a Mac.
+- **The grid's width is the scroll content's**, not the scroll view's, so a legacy scroll bar cannot make the column count one too many.
+- **The photo-size slider steps by 10, keeps its value local while it is dragged and writes the setting when let go.** The grid follows the thumb; the pictures it asks for keep the size that was set until then.
+- **Group compare fits the window**: a photo is no taller than the viewport minus the rows under it (never under 240 pt), so the Remove checkbox and Keep This Copy stay on screen with it; a row is as many copies as fit the width of the scroll content (four at most, each at least 140 pt, or 240 pt for more than four), and the rest wrap. Up and Down move by a row, Escape goes back, Delete only opens Confirm.
+- **The viewer on a Mac draws its date, size and Done in its content** (a sheet has no toolbar). Zoomed past the pixels of the 3072 px picture it asks the library for the photo at up to its own size (6144 px at most), from this device only, and lets it go when zoomed out.
+- **The Overview's Form keeps the whole pane**; the readable column comes from content margins, not from a maximum width on the scroll view.
+- **The scan count is in the toolbar only while the sidebar is hidden**, and the photo-size slider is 80 pt, so the toolbar fits at the 820 pt minimum.
+- **Delete All's result belongs to the Settings window**: the Your Data pane is read again from it, and a failure is shown there; the main window has no alert. Automatic window tabbing is off.
+
 ---
 
 ## 1. Diagnosis: why it looks ugly

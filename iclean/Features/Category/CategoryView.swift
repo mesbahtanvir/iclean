@@ -444,10 +444,6 @@ private struct CategoryScroller: View {
         }
     }
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: columnMinimum), spacing: Gutter.grid)]
-    }
-
     // MARK: Content
 
     @ViewBuilder private func content(_ result: CategoryResult) -> some View {
@@ -460,36 +456,40 @@ private struct CategoryScroller: View {
                 }
             }
         case .flatGrid:
-            LazyVGrid(columns: columns, spacing: Gutter.grid) {
-                ForEach(members, id: \.self) { cell($0, group: nil, pixels: pixels) }
-            }
-            .padding(.horizontal, GridSizing.gridInset)
+            equatable(photos(members, group: nil, pixels: pixels))
         case .groups:
+            // Each group is its own element of the lazy stack, as before.
             ForEach(result.groups) { group in
-                VStack(alignment: .leading, spacing: Space.s) {
-                    GroupHeader(category: category, group: group)
-                    LazyVGrid(columns: columns, spacing: Gutter.grid) {
-                        ForEach(group.members, id: \.self) {
-                            cell($0, group: group, pixels: pixels)
-                        }
-                    }
-                    .padding(.horizontal, GridSizing.gridInset)
-                }
+                equatable(
+                    GroupSection(
+                        category: category, group: group,
+                        photos: photos(group.members, group: group, pixels: pixels)))
             }
         }
     }
 
-    @ViewBuilder private func cell(_ id: String, group: ResultGroup?, pixels: Int) -> some View {
+    private func photos(_ ids: [String], group: ResultGroup?, pixels: Int) -> PhotoGrid {
         #if os(macOS)
-            MacItemCell(
-                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-                confidence: group?.confidence ?? .normal, pixelSize: pixels, group: group,
-                navigator: navigator, onView: { onView(id) })
+            PhotoGrid(
+                members: ids, group: group, columnMinimum: columnMinimum, pixels: pixels,
+                navigator: navigator, onView: onView)
         #else
-            ItemCell(
-                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-                confidence: group?.confidence ?? .normal, pixelSize: pixels,
-                onView: { onView(id) })
+            PhotoGrid(
+                members: ids, group: group, columnMinimum: columnMinimum, pixels: pixels,
+                onView: onView)
+        #endif
+    }
+
+    /// On a Mac, the photos are laid out again only when what they are made from changes. The width
+    /// changes with every frame of a window's resize and the slider with every step, and most of
+    /// those leave the ids, the columns and the pictures' size as they were: the lazy grid fits
+    /// itself to the width, and nothing here needs to run. (On a phone the width only changes when
+    /// the phone is turned.)
+    @ViewBuilder private func equatable<Content: View & Equatable>(_ view: Content) -> some View {
+        #if os(macOS)
+            view.equatable()
+        #else
+            view
         #endif
     }
 
@@ -508,6 +508,67 @@ private struct CategoryScroller: View {
             }
         } else {
             proxy.scrollTo(id, anchor: .center)
+        }
+    }
+}
+
+/// A lazy grid of photos: a flat category, or the photos of one group.
+private struct PhotoGrid: View, Equatable {
+    let members: [String]
+    /// The group these photos are in, nil in a flat grid.
+    let group: ResultGroup?
+    let columnMinimum: CGFloat
+    let pixels: Int
+    #if os(macOS)
+        let navigator: GridNavigator
+    #endif
+    let onView: (String) -> Void
+
+    /// What the grid is made from. The closures stand for state that does not change.
+    nonisolated static func == (lhs: PhotoGrid, rhs: PhotoGrid) -> Bool {
+        lhs.members == rhs.members && lhs.group == rhs.group
+            && lhs.columnMinimum == rhs.columnMinimum && lhs.pixels == rhs.pixels
+    }
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: columnMinimum), spacing: Gutter.grid)],
+            spacing: Gutter.grid
+        ) {
+            ForEach(members, id: \.self) { cell($0) }
+        }
+        .padding(.horizontal, GridSizing.gridInset)
+    }
+
+    @ViewBuilder private func cell(_ id: String) -> some View {
+        #if os(macOS)
+            MacItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels, group: group,
+                navigator: navigator, onView: { onView(id) })
+        #else
+            ItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels,
+                onView: { onView(id) })
+        #endif
+    }
+}
+
+/// One group of copies or similar shots: its header, which links to Compare, and its photos.
+private struct GroupSection: View, Equatable {
+    let category: CleanupCategory
+    let group: ResultGroup
+    let photos: PhotoGrid
+
+    nonisolated static func == (lhs: GroupSection, rhs: GroupSection) -> Bool {
+        lhs.category == rhs.category && lhs.group == rhs.group && lhs.photos == rhs.photos
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            GroupHeader(category: category, group: group)
+            photos
         }
     }
 }
