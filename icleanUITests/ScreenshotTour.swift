@@ -147,7 +147,13 @@ final class ScreenshotTour: XCTestCase {
         for category in ["duplicates", "similar", "blurry", "screenshots", "largeVideos"] {
             let row = reveal(app, "results.category.\(category)")
             guard row.exists else { continue }
-            row.tap()
+            // At the largest sizes the middle of a tall row is under the pinned Review bar.
+            if row.frame.height > 150 {
+                row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+                    .withOffset(CGVector(dx: 0, dy: 32)).tap()
+            } else {
+                row.tap()
+            }
             settle(1.0)
             shot(app, "04-category-\(category)")
             if category == "duplicates" {
@@ -209,7 +215,13 @@ final class ScreenshotTour: XCTestCase {
         }
 
         // The summary after removing, last because it changes the library.
-        reveal(app, "results.category.duplicates").tap()
+        let again = reveal(app, "results.category.duplicates")
+        if again.frame.height > 150 {
+            again.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+                .withOffset(CGVector(dx: 0, dy: 32)).tap()
+        } else {
+            again.tap()
+        }
         let remove = element(app, "category.removeSelected")
         if remove.waitForExistence(timeout: 5) {
             remove.tap()
