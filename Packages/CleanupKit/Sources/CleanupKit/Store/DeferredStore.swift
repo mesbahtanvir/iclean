@@ -104,6 +104,7 @@ public actor DeferredStore: Store {
     public func deleteChunks(job: UUID) async throws { try await store().deleteChunks(job: job) }
     public func resultInputs() async throws -> ResultInputs { try await store().resultInputs() }
     public func revision() async throws -> Int64 { try await store().revision() }
+    public func itemCount() async throws -> Int { try await store().itemCount() }
     public func loadLaunchState() async throws -> LaunchState {
         try await store().loadLaunchState()
     }

@@ -81,18 +81,19 @@ public struct DefaultRemover: Remover {
     private func totals(_ ids: Set<String>, in results: CleanupResults)
         -> ([CleanupCategory: CategoryTotal], Int64, Bool)
     {
+        // One lookup table for the whole call: searching the categories for every id was
+        // selection x members, which is billions of steps at 30,000 photos.
+        let index = ResultsIndex(results)
         var byCategory: [CleanupCategory: CategoryTotal] = [:]
         var bytes: Int64 = 0
         var estimate = false
         for id in ids {
-            guard let item = results.items[id] else { continue }
-            let size = item.effectiveByteSize
-            bytes += size
-            estimate = estimate || item.sizeIsEstimate
-            if let c = results.category(of: id) {
-                byCategory[c, default: CategoryTotal(count: 0, bytes: 0)].count += 1
-                byCategory[c, default: CategoryTotal(count: 0, bytes: 0)].bytes += size
-            }
+            guard let entry = index.entries[id] else { continue }
+            bytes += entry.bytes
+            estimate = estimate || entry.isEstimate
+            byCategory[entry.category, default: CategoryTotal(count: 0, bytes: 0)].count += 1
+            byCategory[entry.category, default: CategoryTotal(count: 0, bytes: 0)].bytes +=
+                entry.bytes
         }
         return (byCategory, bytes, estimate)
     }

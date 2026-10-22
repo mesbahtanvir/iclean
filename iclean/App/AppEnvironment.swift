@@ -16,6 +16,8 @@ struct AppEnvironment: Sendable {
     /// How far Similar Shots and Unimportant look (spec 011). Shared with the detectors, which read it
     /// whenever results are built.
     let levels: ResultLevels
+    /// Pictures already fetched for the screen, so scrolling back never starts from empty cells.
+    let thumbnails = ThumbnailCache()
 
     static func live() -> AppEnvironment {
         #if DEBUG

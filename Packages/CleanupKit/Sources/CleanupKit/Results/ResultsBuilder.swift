@@ -77,10 +77,19 @@ public struct CleanupResults: Sendable, Hashable {
         copy.categories = categories.compactMap { result in
             var r = result
             r.groups = result.groups.compactMap { g in
+                // A removal touches a few groups out of thousands: leave the others as they are
+                // (nothing is copied or rebuilt), so removing 15,000 photos stays a quick pass.
+                let touched = g.members.contains { assetIDs.contains($0) }
+                if !touched, g.type == .single || !g.keepers.isEmpty {
+                    if g.type == .single { return g.members.isEmpty ? nil : g }
+                    return g.members.count < 2 || g.removable.isEmpty ? nil : g
+                }
                 var g = g
-                g.members.removeAll { assetIDs.contains($0) }
-                g.keepers.subtract(assetIDs)
-                g.dateNotes = g.dateNotes.filter { g.members.contains($0.key) }
+                if touched {
+                    g.members.removeAll { assetIDs.contains($0) }
+                    g.keepers = g.keepers.filter { !assetIDs.contains($0) }
+                    g.dateNotes = g.dateNotes.filter { g.members.contains($0.key) }
+                }
                 if g.type == .single { return g.members.isEmpty ? nil : g }
                 if g.members.count < 2 || g.removable.isEmpty { return nil }
                 if g.keepers.isEmpty {

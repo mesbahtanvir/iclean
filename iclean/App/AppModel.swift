@@ -1,6 +1,7 @@
 import CleanupKit
 import Foundation
 import Observation
+import SwiftUI
 
 #if canImport(UIKit)
     import UIKit
@@ -38,9 +39,26 @@ final class AppModel {
     var progress: ScanProgress?
     var isScanning = false
     var hasInterruptedScan = false
+    /// When the newest full scan that ran to the end finished. Not the last quick check, and not a
+    /// scan that was stopped: Home must never say "nothing to clean up" for a library that was not
+    /// fully checked.
     var lastScanDate: Date?
-    var results: CleanupResults = .empty
-    var selection: Set<String> = []
+    /// Whether a full scan has ever run to the end.
+    var hasFinishedFullScan: Bool { lastScanDate != nil }
+    /// How many photos the store holds (a count, not read from the items). Nil until known.
+    private(set) var libraryItemCount: Int?
+    var results: CleanupResults = .empty {
+        didSet {
+            resultsVersion += 1
+            scheduleSummary()
+        }
+    }
+    var selection: Set<String> = [] {
+        didSet { scheduleSummary() }
+    }
+    /// The selection in numbers: what the hero figure, the Review button and the Confirm sheet all
+    /// read, so they always agree. Recomputed off the main thread, one pass over the selection.
+    private(set) var summary: SelectionSummary = .empty
     var lastSummary: CleanupSummary?
     /// Something went wrong that the person must be told about (shown by Home as an alert).
     var errorMessage: String?
@@ -65,6 +83,13 @@ final class AppModel {
 
     /// Tells a finished build whether it is still the newest one.
     private var resultsGeneration = 0
+    @ObservationIgnored private var summaryTask: Task<Void, Never>?
+    @ObservationIgnored private var summaryRequest = 0
+    /// Changes whenever `results` does: lets a screen keep what it worked out from the results until
+    /// they change, without comparing them. (Not observed: the screen reads `results` for that.)
+    @ObservationIgnored private(set) var resultsVersion = 0
+    @ObservationIgnored private var indexVersion = -1
+    @ObservationIgnored private var cachedIndex: ResultsIndex?
     /// How many items the results held in `pendingBuild` would add to the screen.
     private(set) var pendingNewCount = 0
     /// Photos removed in this run. A scan still in flight can bring one back into the store,
@@ -73,8 +98,13 @@ final class AppModel {
     private var publishedRevision = -1
     /// Items checked when the results were last rebuilt, so a pause shows what was saved since.
     private var lastRebuiltAt = 0
-    /// The scan has ended and its last results are being built.
-    private var isFinishing = false
+    /// The scan has ended and its last results are being built: Home shows progress, never a
+    /// "clean" or "empty" claim, until they are.
+    private(set) var isFinishing = false
+    /// The person has removed something in this run (for "All cleaned up").
+    var hasRemovedThisSession: Bool { !removedInSession.isEmpty }
+    /// How many photos are marked "Always Keep".
+    var keepMarkCount: Int { keepMarks.count }
 
     private var changesTask: Task<Void, Never>?
 
@@ -120,6 +150,18 @@ final class AppModel {
         if case .volatile(let why) = await environment.store.openStatus() {
             storeProblem = .volatile(why)
         }
+        #if DEBUG
+            // `-DemoStoreProblem volatile` or `failed`: shows Home's notices for a store that cannot
+            // keep anything, or cannot be read, without breaking a real store (spec 012 section 6.2).
+            if let demo = Self.demoStoreProblem {
+                if demo == "volatile" { storeProblem = .volatile("demo") }
+                if demo == "failed" {
+                    storeProblem = .unreadable("demo")
+                    launchPhase = .failed
+                    return
+                }
+            }
+        #endif
         writerGeneration = await writer.currentGeneration()
         let state: LaunchState
         do {
@@ -132,7 +174,8 @@ final class AppModel {
         }
         stateLoaded = true
         hasInterruptedScan = state.session?.isActive ?? false
-        lastScanDate = state.session?.finishedAt
+        lastScanDate = state.lastFullScanCompletedAt
+        libraryItemCount = state.itemCount
         keepMarks = state.keepMarks
         intent =
             Self.decode(ReviewIntent.self, state.states[.decisions], ReviewIntent.formatVersion)
@@ -171,6 +214,16 @@ final class AppModel {
         await reconcile()
     }
 
+    #if DEBUG
+        private static var demoStoreProblem: String? {
+            let args = ProcessInfo.processInfo.arguments
+            guard let i = args.firstIndex(of: "-DemoStoreProblem"), i + 1 < args.count else {
+                return nil
+            }
+            return args[i + 1]
+        }
+    #endif
+
     /// Quick check for new or changed photos each time the app opens (FR-005a).
     func onForeground() async {
         continuation.appWillEnterForeground()
@@ -192,6 +245,9 @@ final class AppModel {
         defer { reconciling = false }
         _ = await environment.scanner.quickCheck()
         guard !isDeleting else { return }
+        // The check may have added photos: Home's "No photos to check" and "We checked N photos"
+        // read this count.
+        await refreshLibraryItemCount()
         let current = try? await environment.store.revision()
         if let current, current != basisRevision { await rebuild() }
     }
@@ -229,9 +285,25 @@ final class AppModel {
             // to a process that may be suspended at once.
             await rebuildTask?.value
             await reloadResults()
+            await refreshLibraryItemCount()
             continuation.scanEnded()
             isFinishing = false
+            if progress?.state == .completed { await announceScanFinished() }
         }
+    }
+
+    /// Said once, when a scan has run to the end and its results are final: never per progress tick,
+    /// and not from the scan card, which is gone by then.
+    private func announceScanFinished() async {
+        // The summary follows the results by a moment; this is the number the screen now shows.
+        await recomputeSummary()
+        let text =
+            summary.bytes > 0
+            ? String(
+                localized:
+                    "Scan finished. You can free about \(SpokenBytes.string(summary.bytes)).")
+            : String(localized: "Scan finished.")
+        AccessibilityNotification.Announcement(text).post()
     }
 
     func pauseScan() {
@@ -412,7 +484,13 @@ final class AppModel {
     private func photosChangedElsewhere(_ ids: Set<String>) async {
         guard !ids.isEmpty, !isDeleting else { return }
         try? await environment.store.deleteItems(ids)
-        patch(removing: ids)
+        // Photos that are in no list change nothing on screen (a new photo, a favorite switched, an
+        // iCloud sync): no pictures dropped and no rebuild for them.
+        let shown = ids.filter { results.items[$0] != nil }
+        guard !shown.isEmpty else { return }
+        // A photo changed or removed elsewhere must be drawn again, not from memory.
+        environment.thumbnails.remove(shown)
+        patch(removing: shown)
     }
 
     /// Checks what is shown against the library as it is now. Changes made while iclean was closed
@@ -540,28 +618,65 @@ final class AppModel {
     func toggle(_ id: String) {
         let on = !selection.contains(id)
         if on { selection.insert(id) } else { selection.remove(id) }
-        intent.setSelected([id], on, keepers: suggestedKeepers)
+        intent.setSelected([id], on, keepers: on ? suggestedKeepers(among: [id]) : [])
         noteFocus(id)
         saveDecisions()
     }
 
     func setSelected(_ ids: [String], _ selected: Bool) {
         if selected { selection.formUnion(ids) } else { selection.subtract(ids) }
-        intent.setSelected(ids, selected, keepers: suggestedKeepers)
+        intent.setSelected(ids, selected, keepers: selected ? suggestedKeepers(among: ids) : [])
         saveDecisions()
     }
 
-    /// The photos the results suggest keeping right now, to tell a tick on a keeper from a tick
-    /// on an ordinary copy.
-    private var suggestedKeepers: Set<String> {
-        Set(
-            results.categories.flatMap {
-                $0.groups.filter { $0.type != .single }.flatMap(\.keepers)
-            })
+    /// Which of `ids` the results suggest keeping right now, to tell a tick on a keeper from a tick
+    /// on an ordinary copy. A tap asks about one photo: that is a look through the groups, not a
+    /// set built from all of them.
+    private func suggestedKeepers(among ids: [String]) -> Set<String> {
+        let groups = results.categories.lazy.flatMap(\.groups).filter { $0.type != .single }
+        if ids.count <= 8 {
+            return Set(ids.filter { id in groups.contains { $0.keepers.contains(id) } })
+        }
+        return Set(groups.flatMap(\.keepers))
     }
 
     func selectedCount(in category: CleanupCategory) -> Int {
-        results.category(category)?.allMembers.filter(selection.contains).count ?? 0
+        summary.perCategory[category]?.selected ?? 0
+    }
+
+    /// Recomputes the summary once for any number of changes that arrive together (a batch toggle,
+    /// a burst of size updates), and never on the main thread: building the index of a 30,000-photo
+    /// result takes a moment, and a screen launch must not wait for it.
+    private func scheduleSummary() {
+        guard summaryTask == nil else { return }
+        summaryTask = Task { [weak self] in
+            await Task.yield()
+            await self?.recomputeSummary()
+        }
+    }
+
+    private func recomputeSummary() async {
+        summaryTask = nil
+        summaryRequest += 1
+        let request = summaryRequest
+        let results = results
+        let selection = selection
+        let version = resultsVersion
+        let reusable = indexVersion == version ? cachedIndex : nil
+        let (index, fresh) = await Task.detached(priority: .userInitiated) {
+            let index = reusable ?? ResultsIndex(results)
+            return (index, SelectionSummary.make(selection: selection, index: index))
+        }.value
+        // A newer request started meanwhile: it will set the right numbers.
+        guard request == summaryRequest else { return }
+        cachedIndex = index
+        indexVersion = version
+        summary = fresh
+    }
+
+    /// Re-reads the store's count of photos (after a scan, or a removal).
+    func refreshLibraryItemCount() async {
+        libraryItemCount = try? await environment.store.itemCount()
     }
 
     /// Makes `id` the keeper of its group; the previous keeper becomes removable
@@ -590,8 +705,8 @@ final class AppModel {
         // Before the results are shown the suggestions are not known, so nothing can be compared
         // with them, and what is saved must not be overwritten by what is merely not loaded yet.
         guard launchPhase == .ready else { return }
-        let defaults = ReviewIntent.defaults(for: results, keepMarks: keepMarks)
-        let saved = intent.normalized(against: defaults)
+        // The suggestions the results were last applied with: what a tap compares its choice to.
+        let saved = intent.normalized(against: results.defaultSelection)
         let generation = writerGeneration
         Task { await writer.update(decisions: saved, generation: generation) }
     }
@@ -749,12 +864,16 @@ final class AppModel {
                 intent.forget(removed)
                 patch(removing: removed)
                 saveDecisions()
+                await refreshLibraryItemCount()
                 Log.removal.info("Removed \(summary.removedCount) items")
             }
             lastSummary = summary
             return summary
         } catch {
-            removalError = String(localized: "Nothing was removed.")
+            removalError = String(
+                localized:
+                    "Something went wrong, so nothing was removed. Your photos are untouched. You can try again."
+            )
             return nil
         }
     }
@@ -780,6 +899,8 @@ final class AppModel {
         var decisionCount: Int
         var keeperChoices: Int
         var hasPosition: Bool
+        /// Photos marked "Always Keep".
+        var keepMarkCount: Int
     }
 
     /// What is saved besides the scan itself, for the "Saved on this iPhone" screen.
@@ -788,7 +909,8 @@ final class AppModel {
         return SavedDataInventory(
             resultsBytes: info[.results]?.bytes, resultsBuiltAt: info[.results]?.updatedAt,
             decisionCount: intent.forcedOn.count + intent.forcedOff.count,
-            keeperChoices: intent.keeperChoices.count, hasPosition: !position.path.isEmpty)
+            keeperChoices: intent.keeperChoices.count, hasPosition: !position.path.isEmpty,
+            keepMarkCount: keepMarks.count)
     }
 
     /// Deletes the saved results. They are rebuilt from the scan next time; nothing is lost.
@@ -837,6 +959,7 @@ final class AppModel {
         basisRevision = nil
         storeProblem = nil
         lastScanDate = nil
+        libraryItemCount = nil
         hasInterruptedScan = false
         progress = nil
         stateLoaded = false
@@ -892,6 +1015,7 @@ final class AppModel {
         removedInSession = []
         basisRevision = try? await environment.store.revision()
         lastScanDate = nil
+        libraryItemCount = nil
         hasInterruptedScan = false
         progress = nil
         results = .empty

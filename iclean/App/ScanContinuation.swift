@@ -162,7 +162,7 @@
                 allowance = .pausesOnLeave
                 return
             }
-            let (title, subtitle) = Self.text(for: lastProgress)
+            let (title, subtitle) = Self.text(for: lastProgress, device: Device.noun)
             // Submission can block briefly; keep it off the main thread.
             let failure: String? = await Task.detached {
                 let request = BGContinuedProcessingTaskRequest(
@@ -202,7 +202,7 @@
                 task.setTaskCompleted(success: true)
                 return
             }
-            let box = ContinuedTaskBox(task)
+            let box = ContinuedTaskBox(task, device: Device.noun)
             running = box
             endGracePeriod()
             task.expirationHandler = { [weak self] in
@@ -283,7 +283,9 @@
 
         // MARK: Text shown by the system (research R7)
 
-        nonisolated static func text(for progress: ScanProgress?) -> (
+        /// The words are the scan card's (`ScanningView`), so the Lock Screen and the app say one thing.
+        /// `device` is `Device.noun`, read on the main actor by the caller: this runs off it.
+        nonisolated static func text(for progress: ScanProgress?, device: String) -> (
             title: String, subtitle: String
         ) {
             let title = String(localized: "Scanning your library")
@@ -291,9 +293,13 @@
                 return (title, String(localized: "Starting…"))
             }
             if p.isThermalPaused {
-                return (title, String(localized: "Paused to let your iPhone cool down"))
+                return (title, String(localized: "Paused to let your \(device) cool down"))
             }
-            return (title, String(localized: "\(p.processed) of \(p.total) checked"))
+            return (
+                title,
+                String(
+                    localized: "\(p.processed.formatted()) of \(p.total.formatted()) checked")
+            )
         }
     }
 
@@ -302,16 +308,19 @@
     @available(iOS 26.0, *)
     private final class ContinuedTaskBox: @unchecked Sendable {
         let task: BGContinuedProcessingTask
+        /// `Device.noun`, for the text the system shows.
+        let device: String
 
-        init(_ task: BGContinuedProcessingTask) {
+        init(_ task: BGContinuedProcessingTask, device: String) {
             self.task = task
+            self.device = device
         }
 
         func apply(_ p: ScanProgress) {
             let total = Int64(max(p.total, 1))
             task.progress.totalUnitCount = total
             task.progress.completedUnitCount = min(Int64(p.processed), total)
-            let (title, subtitle) = ScanContinuation.text(for: p)
+            let (title, subtitle) = ScanContinuation.text(for: p, device: device)
             task.updateTitle(title, subtitle: subtitle)
         }
 
