@@ -51,6 +51,8 @@ public protocol Store: Sendable {
     /// The revision of what results are built from. It only goes up (see `StoreMetaRecord`).
     func revision() async throws -> Int64
     /// What the launch needs, in one read and without reading a single item row.
+    /// How many items the store holds, from a count and not from reading them.
+    func itemCount() async throws -> Int
     func loadLaunchState() async throws -> LaunchState
     /// Saves a state row (decisions, position). Never changes the results revision.
     func saveState(_ key: StateKey, version: Int, payload: Data) async throws
@@ -116,16 +118,21 @@ public struct LaunchState: Sendable {
     public var keepMarks: Set<String>
     public var session: ScanSession?
     public var itemCount: Int
+    /// When the newest full scan that ran to the end finished. Not `session`: that is the newest
+    /// session of any kind (a quick check at every foreground, a stopped scan), which says nothing
+    /// about whether the library was ever fully checked.
+    public var lastFullScanCompletedAt: Date?
 
     public init(
         revision: Int64 = 0, states: [StateKey: StateEnvelope] = [:], keepMarks: Set<String> = [],
-        session: ScanSession? = nil, itemCount: Int = 0
+        session: ScanSession? = nil, itemCount: Int = 0, lastFullScanCompletedAt: Date? = nil
     ) {
         self.revision = revision
         self.states = states
         self.keepMarks = keepMarks
         self.session = session
         self.itemCount = itemCount
+        self.lastFullScanCompletedAt = lastFullScanCompletedAt
     }
 }
 

@@ -27,7 +27,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>iclean looks at your photos on this iPhone to find duplicates and blurry shots. Nothing ever leaves your phone.</string>
+	<string>iclean looks through your photos to find duplicates, similar shots, blurry photos, screenshots and large videos. You choose what to remove, and nothing leaves your iPhone.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>

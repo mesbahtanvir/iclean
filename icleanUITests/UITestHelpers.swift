@@ -22,7 +22,15 @@ extension XCTestCase {
     func openCategory(_ app: XCUIApplication, _ name: String) {
         let row = app.descendants(matching: .any)["results.category.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.tap()
+        // At large text sizes the row is tall and its middle can be under the pinned Review bar,
+        // which may not be laid out yet; the top of the row is clear of it at any size.
+        if row.frame.height > 150 {
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(
+                CGVector(dx: 0, dy: 32)
+            ).tap()
+        } else {
+            row.tap()
+        }
     }
 
     func item(_ app: XCUIApplication, _ id: String) -> XCUIElement {

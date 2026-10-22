@@ -1,66 +1,134 @@
 import CleanupKit
 import SwiftUI
 
+/// Settings, ordered by consequence (spec 012 section 6.11): three places to look, then the one
+/// thing that cannot be undone, alone at the end.
 struct SettingsView: View {
-    @Environment(AppModel.self) private var model
-    @State private var confirmDelete = false
-
     var body: some View {
-        List {
+        Form {
             Section {
-                Label {
-                    #if os(macOS)
-                        Text(
-                            "Everything stays on this Mac. iclean never connects to the internet, has no account, and collects nothing."
-                        )
-                    #else
-                        Text(
-                            "Everything stays on this iPhone. iclean never connects to the internet, has no account, and collects nothing."
-                        )
-                    #endif
-                } icon: {
-                    Image(systemName: "lock.shield")
+                NavigationLink {
+                    RecentScansView()
+                } label: {
+                    QuietRowLabel("Recent Scans", systemImage: "clock.arrow.circlepath")
                 }
-            } header: {
-                Text("Privacy")
-            }
-            Section {
-                Button("Clear \"Always Keep\" Marks") {
-                    Task { await model.clearKeepMarks() }
+                .accessibilityIdentifier("settings.recentScans")
+                NavigationLink {
+                    SavedDataView()
+                } label: {
+                    QuietRowLabel("What iclean Remembers", systemImage: "internaldrive")
                 }
-                .accessibilityIdentifier("settings.clearKeepMarks")
-                Button("Delete All iclean Data", role: .destructive) {
-                    confirmDelete = true
+                .accessibilityIdentifier("settings.savedData")
+                NavigationLink {
+                    RestoreHelpView()
+                } label: {
+                    QuietRowLabel("Restore Removed Photos", systemImage: "arrow.uturn.backward")
                 }
-                .accessibilityIdentifier("settings.deleteAllData")
+                .accessibilityIdentifier("settings.restoreHelp")
             } footer: {
-                Text(
-                    "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched."
-                )
+                PrivacyNote()
             }
-            Section {
-                NavigationLink("Recent Scans") { RecentScansView() }
-                    .accessibilityIdentifier("settings.recentScans")
-                NavigationLink("Saved on this iPhone") { SavedDataView() }
-                    .accessibilityIdentifier("settings.savedData")
-            }
+            DeleteAllSection()
             #if DEBUG
                 Section {
                     NavigationLink("Baseline Library (Debug)") {
                         BaselineView(autoRun: false, standalone: false)
                     }
                     .accessibilityIdentifier("settings.baseline")
+                } header: {
+                    Text(verbatim: "Developer")
                 }
             #endif
         }
+        .formStyle(.grouped)
         .navigationTitle("Settings")
-        .confirmationDialog(
-            "Delete all iclean data?", isPresented: $confirmDelete, titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Task { await model.deleteAllData() }
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.large)
+        #endif
+    }
+}
+
+/// "Everything stays on this iPhone. No account, no internet connection, nothing collected." One
+/// sentence, written once: Settings shows it under its rows and the Mac Settings window shows it too.
+struct PrivacyNote: View {
+    var body: some View {
+        Text(
+            "Everything stays on this \(Device.noun). No account, no internet connection, nothing collected."
+        )
+    }
+}
+
+/// The one thing that cannot be undone, alone in its own section: the only red text on the screen,
+/// and it asks first. Settings and the Mac Settings window both show it.
+struct DeleteAllSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirmDelete = false
+    /// Called when the delete has finished, with whether it all went. The Mac Settings window shows
+    /// the saved data next to this button and reads it again from here; the phone's Settings has
+    /// no such screen and passes nothing.
+    var onFinished: (@MainActor (Bool) -> Void)?
+
+    var body: some View {
+        Section {
+            // The system's destructive role: the only red text on this screen.
+            Button("Delete All iclean Data", role: .destructive) {
+                confirmDelete = true
             }
-            .accessibilityIdentifier("settings.confirmDelete")
+            #if os(macOS)
+                .buttonStyle(.borderless)
+            #endif
+            .accessibilityIdentifier("settings.deleteAllData")
+            // On the button itself, so the system dialog points at what it is about.
+            .confirmationDialog(
+                "Delete All iclean Data?", isPresented: $confirmDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete All iclean Data", role: .destructive) {
+                    Task {
+                        let finished = await model.deleteAllData()
+                        onFinished?(finished)
+                    }
+                }
+                .accessibilityIdentifier("settings.confirmDelete")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "This removes scan results, your selections and Always Keep photos. Your photos are not touched."
+                )
+            }
+        } footer: {
+            Text(deleteFooter)
+        }
+    }
+
+    /// What deleting does, and when the saved data is unreadable, that deleting starts fresh.
+    private var deleteFooter: String {
+        let base = String(
+            localized:
+                "Removes scan results, your selections and Always Keep photos. Your photos are not touched."
+        )
+        guard model.storeProblem != nil else { return base }
+        return String(localized: "iclean couldn’t read its saved data. Deleting it starts fresh.")
+            + " " + base
+    }
+}
+
+/// A row's title with a quiet icon: the icon is a hint, the words are the content. The system's own
+/// label style is kept so icons of different widths still line the titles up.
+private struct QuietRowLabel: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+
+    init(_ title: LocalizedStringKey, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(.secondary)
         }
     }
 }

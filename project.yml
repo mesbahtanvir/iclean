@@ -37,7 +37,7 @@ targets:
         CFBundleDisplayName: iclean
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSPhotoLibraryUsageDescription: "iclean looks at your photos on this iPhone to find duplicates and blurry shots. Nothing ever leaves your phone."
+        NSPhotoLibraryUsageDescription: "iclean looks through your photos to find duplicates, similar shots, blurry photos, screenshots and large videos. You choose what to remove, and nothing leaves your iPhone."
         ITSAppUsesNonExemptEncryption: false
         # 002: a user-started scan may continue after the user leaves the app
         # (continued processing task, iOS 26+). Not a network entitlement.
@@ -47,6 +47,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.iclean
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # The accent colour of the app: only used through Color.accentColor and .tint (spec 012).
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         # iPhone only for now (iPad is spec 005 stage S1); `supportedDestinations` would
         # otherwise widen this to "1,2".
@@ -59,6 +61,19 @@ targets:
         "ENABLE_HARDENED_RUNTIME[sdk=macosx*]": YES
         "INFOPLIST_FILE[sdk=macosx*]": iclean/Info-macOS.plist
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": iclean/iclean-macOS.entitlements
+  # Unit tests of the app's own logic (formatting and the like), hosted in the app. The model and
+  # the detectors are tested in the CleanupKit package; this is for what lives in the app target.
+  icleanTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: icleanTests
+    dependencies:
+      - target: iclean
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mesbahtanvir.icleanTests
+        GENERATE_INFOPLIST_FILE: YES
   icleanUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -77,6 +92,7 @@ schemes:
     build:
       targets:
         iclean: all
+        icleanTests: [test]
         icleanUITests: [test]
     test:
       testPlans:

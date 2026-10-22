@@ -163,14 +163,15 @@
 
         // MARK: Dock
 
+        /// A thin accent bar over the icon, dimmed while paused: no red number.
         private func showInDock(_ progress: ScanProgress) {
             guard progress.state == .running || progress.state == .paused, progress.total > 0
             else { return clearDock() }
-            NSApplication.shared.dockTile.badgeLabel = "\(Int(progress.fraction * 100))%"
+            DockProgress.shared.show(fraction: progress.fraction, paused: progress.state == .paused)
         }
 
         private func clearDock() {
-            NSApplication.shared.dockTile.badgeLabel = nil
+            DockProgress.shared.clear()
         }
 
         // MARK: Logging

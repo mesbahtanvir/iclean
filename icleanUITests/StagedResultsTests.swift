@@ -33,8 +33,8 @@ final class StagedResultsTests: XCTestCase {
         confirmRemoval(app)
         let done = app.buttons["done.close"]
         if done.waitForExistence(timeout: 10) { done.tap() }
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        // Back on Home the scan goes on and the removed screenshots do not come back.
+        // Closing the receipt after the last screenshot went takes the person back to Home by itself;
+        // the scan goes on and the removed screenshots do not come back.
         XCTAssertTrue(app.buttons["scan.pause"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["results.category.screenshots"].exists)
     }

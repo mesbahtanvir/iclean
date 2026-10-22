@@ -13,6 +13,8 @@ struct AppEnvironment: Sendable {
     let sizeMeasurer: SizeMeasurer
     /// What Pro unlocks for this run. Free for everyone until the purchase exists.
     let features: ProFeatures
+    /// Pictures already fetched for the screen, so scrolling back never starts from empty cells.
+    let thumbnails = ThumbnailCache()
 
     static func live() -> AppEnvironment {
         #if DEBUG
