@@ -184,6 +184,28 @@ it, on both profiles) and the digests in the validation log.
    photo keeps its print. The repair re-analyzes a photo whole although its hash, miniature and sharpness come
    out equal; repairs are few (the photos within a minute of new ones), so only the Vision requests are saved.
 
+8. **Constraints from spec 011 (Similar Shots levels, "Unimportant"), passed on by its author.** 011 is not built
+   here and reads some of what this entry skips, so these hold for any later detector:
+   - **The record is a bitmask of skipped passes, not a boolean.** `Analysis.skippedVision` is a `VisionWork` option
+     set stored as an integer; a pass is added as a new bit (an aesthetics pass would be `1 << 2`), and `nil` in the
+     column still means "nothing skipped". A detector MUST NOT read `faceQuality == nil` as "no face" when
+     `skippedVision` contains `.faceQuality`, and MUST NOT read an empty feature print as "Vision failed" when it contains
+     `.featurePrint`. The record reaches detectors: `itemWithoutFeaturePrint` carries it, so the builder's input has it
+     (`CleanupResults.items` does not; `withoutFingerprints` clears it).
+   - **The per-photo flag replaces any "does Vision work in this library" heuristic.** The loader reads prints only for
+     photos with a neighbour (008), so a lonely photo's print is empty in builder input whether or not it was computed;
+     print presence says nothing about it. Whether a photo's face pass ran is `!skippedVision.contains(.faceQuality)`. A
+     face pass that ran and failed still leaves `faceQuality == nil` with no flag, exactly as before this entry; that
+     case cannot be told from "no face" per photo.
+   - **The demand rule is the one place to widen.** If a detector needs the face pass for photos the neighbour/burst
+     rule skips (011's Unimportant list: soft, no neighbour, no album, no edit), `VisionDemand.work(for:)` gains that
+     clause and the repair rule needs nothing else: it compares the stored flag with the demand of the current library
+     and re-plans on any change of date, burst, album or edit. One thing the plan cannot know is *softness*: sharpness
+     is an analysis result, not metadata, so a rule that depends on it has to be decided inside `DefaultAnalyzer`
+     (sharpness is computed before the face request), with the flag recording the outcome, or the face pass has to be
+     asked for every photo that is not in an album and not edited. 011 chooses; this entry ships the neighbour/burst rule.
+   - 011's "Same scene" level keeps the 60 s window, so it adds no demand to the neighbour rule.
+
 ## Success Criteria
 
 | | Before (complete Vision work) | After (deferred) | How measured |
