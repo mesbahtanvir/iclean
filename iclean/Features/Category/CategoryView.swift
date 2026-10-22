@@ -5,7 +5,9 @@ import SwiftUI
 ///
 /// The body reads the results and never the selection: the bottom bar, the toolbar button and the
 /// summary line are their own views reading `model.summary`, and every photo reads its own state, so
-/// a toggle does not run this body again.
+/// a toggle does not run this body again. It does not read the width or (on a Mac) the photo size
+/// either: the scrolling grid is a view of its own (`CategoryScroller`) that does, so dragging the
+/// slider or the window's edge lays out the grid and nothing more.
 struct CategoryView: View {
     let category: CleanupCategory
 
@@ -15,36 +17,25 @@ struct CategoryView: View {
     @Environment(\.displayScale) private var displayScale
     #if os(macOS)
         @Environment(\.openConfirm) private var openConfirm
-        /// The photo size the person chose with the toolbar slider.
-        @AppStorage(PhotoSize.key) private var photoSize = PhotoSize.standard
-        /// The photo that has the keyboard focus.
-        @FocusState private var focusedID: String?
-        /// What the cells share: where the arrow keys lead and where a range starts.
+        /// What the cells share: where the keyboard is and where the arrow keys lead.
         @State private var navigator = GridNavigator()
     #endif
     @State private var showConfirm = false
     @State private var viewing: String?
     /// Warms the pictures just ahead of the scroll.
     @State private var prefetcher = ThumbnailPrefetcher()
-    /// The width of the scroll view: the columns, and so the pixels each picture needs, come from it.
-    @State private var width: CGFloat = 0
-
-    /// How the entries are laid out.
-    private enum Layout { case videoList, flatGrid, groups }
+    /// The flat list of the ids, worked out when the results change and not each time this runs.
+    @State private var memo = MemberMemo()
 
     var body: some View {
         let result = model.results.category(category)
-        // Hoisted once per body: the flat list of ids is a flatMap over every group.
-        let members = result?.allMembers ?? []
-        let layout: Layout =
+        // A flatMap over every group: 30,000 of them in a flat category.
+        let members = memo.members(of: result, version: model.resultsVersion)
+        let layout: CategoryLayout =
             category == .largeVideos
             ? .videoList : (result?.groups.first?.type == .single ? .flatGrid : .groups)
         mainContent(result, members: members, layout: layout)
             .environment(prefetcher)
-            .task(id: PrefetchKey(count: members.count, pixels: pixelSize(layout))) {
-                prefetcher.use(
-                    library: model.environment.library, ids: members, pixelSize: pixelSize(layout))
-            }
             .onDisappear { prefetcher.stopAll() }
             .navigationTitle(category.title)
             #if os(iOS)
@@ -87,21 +78,40 @@ struct CategoryView: View {
             .photoViewer($viewing)
     }
 
+    // MARK: When nothing is left
+
+    /// Every item here was removed (by this screen's own receipt, or from outside): the results are
+    /// ready and this category is not in them.
+    private var isEmptyNow: Bool {
+        model.launchPhase == .ready && !model.isBuildingResults
+            && model.results.category(category) == nil
+    }
+
+    /// The receipt closed and it emptied this category: there is nothing to look at, so go back to
+    /// Home, which says what is left. Only after the sheet is gone, because the sheet belongs to
+    /// this screen. Where the screen is not pushed (the Mac's detail pane) this does nothing and the
+    /// empty state below stays.
+    private func leaveIfEmpty() {
+        if isEmptyNow { dismiss() }
+    }
+
     /// What fills the screen: the scrolling list of photos, groups or videos, or, for Large Videos on
     /// a Mac, a native table.
     @ViewBuilder private func mainContent(
-        _ result: CategoryResult?, members: [String], layout: Layout
+        _ result: CategoryResult?, members: [String], layout: CategoryLayout
     ) -> some View {
         #if os(macOS)
             if layout == .videoList, result != nil {
+                let pixels = GridSizing.videoPixels(scale: displayScale)
                 VStack(alignment: .leading, spacing: Space.m) {
-                    intro(result, layout: layout)
+                    CategoryIntro(category: category, result: result, layout: layout)
                     MacVideoTable(
-                        ids: members, pixelSize: pixelSize(layout), onView: { viewing = $0 },
+                        ids: members, pixelSize: pixels, onView: { viewing = $0 },
                         onRemove: removeIfSelected
                     )
                 }
                 .padding(.top, Space.l)
+                .modifier(Prefetching(prefetcher: prefetcher, members: members, pixels: pixels))
             } else {
                 scroller(result, members: members, layout: layout)
             }
@@ -110,65 +120,19 @@ struct CategoryView: View {
         #endif
     }
 
-    private func scroller(_ result: CategoryResult?, members: [String], layout: Layout)
-        -> some View
-    {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // Lazy: a library with thousands of groups must not build them all when it opens.
-                LazyVStack(alignment: .leading, spacing: Space.xl) {
-                    intro(result, layout: layout)
-                    if let result {
-                        if width > 0 {
-                            content(result, members: members, layout: layout)
-                        }
-                    } else if model.launchPhase != .ready || model.isBuildingResults {
-                        // Results are still being restored or built: never say "nothing" before they are.
-                        DelayedProgress()
-                            .accessibilityIdentifier("category.loading")
-                    } else {
-                        ContentUnavailableView {
-                            Label("All Clear", systemImage: "checkmark.circle")
-                        } description: {
-                            Text("Nothing left to review here.")
-                        }
-                    }
-                    if typeSize.isAccessibilitySize, result != nil {
-                        CategoryBarDetail(category: category)
-                    }
-                }
-                .padding(.vertical, Space.l)
-            }
-            .onGeometryChange(for: CGFloat.self) {
-                $0.size.width
-            } action: {
-                width = $0
-                syncNavigator()
-            }
-            // A restored screen opens on the photo the person last touched.
-            .onAppear {
-                scrollToRestoredPhoto(proxy, in: result, layout: layout)
-                #if os(macOS)
-                    connectNavigator(proxy)
-                #endif
-            }
-            // Not `allMembers.count`: that builds the whole list of ids each time the body runs.
-            .onChange(of: result?.groups.count) {
-                scrollToRestoredPhoto(proxy, in: result, layout: layout)
-            }
-            // The groups and cells are built once the width is known, which is after the screen
-            // appeared: the first attempt above had nothing to scroll to.
-            .onChange(of: width > 0) { _, known in
-                guard known else { return }
-                Task {
-                    try? await Task.sleep(for: .milliseconds(80))
-                    scrollToRestoredPhoto(proxy, in: result, layout: layout)
-                }
-            }
-            #if os(macOS)
-                .onChange(of: photoSize) { syncNavigator() }
-            #endif
-        }
+    @ViewBuilder private func scroller(
+        _ result: CategoryResult?, members: [String], layout: CategoryLayout
+    ) -> some View {
+        #if os(macOS)
+            CategoryScroller(
+                category: category, result: result, members: members, layout: layout,
+                prefetcher: prefetcher, onView: { viewing = $0 }, navigator: navigator,
+                onRemove: removeIfSelected)
+        #else
+            CategoryScroller(
+                category: category, result: result, members: members, layout: layout,
+                prefetcher: prefetcher, onView: { viewing = $0 })
+        #endif
     }
 
     /// Opens the Confirm sheet. In the Mac window the shell owns it, so it outlives this screen.
@@ -189,84 +153,15 @@ struct CategoryView: View {
             guard (model.summary.perCategory[category]?.selected ?? 0) > 0 else { return }
             requestConfirm()
         }
-
-        /// Tells the cells how to find the results and how to scroll to a photo.
-        private func connectNavigator(_ proxy: ScrollViewProxy) {
-            navigator.results = { [model, category] in model.results.category(category) }
-            navigator.scrollTo = { id, groupID in
-                if let groupID {
-                    // The group's own section first: its photos are in a lazy grid that does not
-                    // exist until the section is on screen.
-                    proxy.scrollTo(groupID, anchor: nil)
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(80))
-                        proxy.scrollTo(id, anchor: nil)
-                    }
-                } else {
-                    proxy.scrollTo(id, anchor: nil)
-                }
-            }
-            syncNavigator()
-        }
     #endif
+}
 
-    /// The number of columns the grid has now, which the up and down keys step by.
-    private func syncNavigator() {
-        #if os(macOS)
-            navigator.columns = GridMetrics.columns(
-                width: Double(gridWidth), minimum: Double(columnMinimum),
-                spacing: Double(Gutter.grid))
-        #endif
-    }
+/// How the entries are laid out.
+private enum CategoryLayout { case videoList, flatGrid, groups }
 
-    // MARK: When nothing is left
-
-    /// Every item here was removed (by this screen's own receipt, or from outside): the results are
-    /// ready and this category is not in them.
-    private var isEmptyNow: Bool {
-        model.launchPhase == .ready && !model.isBuildingResults
-            && model.results.category(category) == nil
-    }
-
-    /// The receipt closed and it emptied this category: there is nothing to look at, so go back to
-    /// Home, which says what is left. Only after the sheet is gone, because the sheet belongs to
-    /// this screen. Where the screen is not pushed (the Mac's detail pane) this does nothing and the
-    /// empty state below stays.
-    private func leaveIfEmpty() {
-        if isEmptyNow { dismiss() }
-    }
-
-    // MARK: Sizes
-
-    private struct PrefetchKey: Equatable {
-        let count: Int
-        let pixels: Int
-    }
-
-    /// The smallest a photo may be: wider on a Mac and at accessibility sizes, so a cell stays
-    /// large enough for its glyphs. On a Mac the person sets it with the slider.
-    private var columnMinimum: CGFloat {
-        #if os(macOS)
-            CGFloat(PhotoSize.clamped(photoSize))
-        #else
-            typeSize.isAccessibilitySize ? 150 : 104
-        #endif
-    }
-
-    /// Space left and right of the grid: none on a phone, where the photos run edge to edge, and the
-    /// text's gutter on a Mac, where the photos are rounded tiles and need air at the window's edge.
-    private var gridInset: CGFloat {
-        #if os(macOS)
-            Space.l
-        #else
-            0
-        #endif
-    }
-
-    /// The width the columns are made from.
-    private var gridWidth: CGFloat { max(width - 2 * gridInset, 0) }
-
-    private var pixelCap: Int {
+/// The sizes the screen and its grid share.
+private enum GridSizing {
+    static var pixelCap: Int {
         #if os(macOS)
             768
         #else
@@ -274,40 +169,86 @@ struct CategoryView: View {
         #endif
     }
 
-    /// The pixels each picture needs, from the real width of a cell (`GridMetrics`).
-    private func pixelSize(_ layout: Layout) -> Int {
-        switch layout {
-        case .videoList:
-            #if os(macOS)
-                // A 56 pt preview in the table.
-                return GridMetrics.pixels(
-                    width: MacVideoTable.preview, minimum: MacVideoTable.preview, spacing: 0,
-                    scale: displayScale, cap: pixelCap)
-            #else
-                // A 72 pt preview.
-                return GridMetrics.pixels(
-                    width: VideoRow.previewSide, minimum: VideoRow.previewSide, spacing: 0,
-                    scale: displayScale, cap: pixelCap)
-            #endif
-        case .flatGrid, .groups:
-            guard width > 0 else { return 256 }
-            return GridMetrics.pixels(
-                width: gridWidth, minimum: columnMinimum, spacing: Gutter.grid,
-                scale: displayScale, cap: pixelCap)
+    /// Space left and right of the grid: none on a phone, where the photos run edge to edge, and the
+    /// text's gutter on a Mac, where the photos are rounded tiles and need air at the window's edge.
+    static var gridInset: CGFloat {
+        #if os(macOS)
+            Space.l
+        #else
+            0
+        #endif
+    }
+
+    /// The pixels the preview of a video in a list needs.
+    static func videoPixels(scale: CGFloat) -> Int {
+        #if os(macOS)
+            // A 56 pt preview in the table.
+            GridMetrics.pixels(
+                width: MacVideoTable.preview, minimum: MacVideoTable.preview, spacing: 0,
+                scale: scale, cap: pixelCap)
+        #else
+            // A 72 pt preview.
+            GridMetrics.pixels(
+                width: VideoRow.previewSide, minimum: VideoRow.previewSide, spacing: 0,
+                scale: scale, cap: pixelCap)
+        #endif
+    }
+}
+
+/// The flat list of a category's ids, kept until the results change. Held by the screen, not
+/// observed: `CategoryView` reads the results, which is what re-runs it.
+@MainActor
+private final class MemberMemo {
+    private var version = -1
+    private var groupCount = -1
+    private var members: [String] = []
+
+    func members(of result: CategoryResult?, version: Int) -> [String] {
+        let groupCount = result?.groups.count ?? -1
+        if version != self.version || groupCount != self.groupCount {
+            members = result?.allMembers ?? []
+            self.version = version
+            self.groupCount = groupCount
+        }
+        return members
+    }
+}
+
+/// Tells the prefetcher what is in the list and how big its pictures are. One task, restarted when
+/// the list's length or the picture size changes.
+private struct Prefetching: ViewModifier {
+    let prefetcher: ThumbnailPrefetcher
+    let members: [String]
+    let pixels: Int
+
+    @Environment(AppModel.self) private var model
+
+    private struct Key: Equatable {
+        let count: Int
+        let pixels: Int
+    }
+
+    func body(content: Content) -> some View {
+        content.task(id: Key(count: members.count, pixels: pixels)) {
+            prefetcher.use(library: model.environment.library, ids: members, pixelSize: pixels)
         }
     }
+}
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: columnMinimum), spacing: Gutter.grid)]
-    }
+/// Two lines above the photos, at the 16 pt gutter: what the default is, and how much there is.
+private struct CategoryIntro: View {
+    let category: CleanupCategory
+    let result: CategoryResult?
+    let layout: CategoryLayout
 
-    // MARK: Content
+    @Environment(AppModel.self) private var model
 
-    /// Two lines above the photos, at the 16 pt gutter: what the default is, and how much there is.
-    private func intro(_ result: CategoryResult?, layout: Layout) -> some View {
+    var body: some View {
+        // Not when nothing is left: "All are selected for removal" would be about photos that are gone.
+        let nothingLeft =
+            result == nil && model.launchPhase == .ready && !model.isBuildingResults
         VStack(alignment: .leading, spacing: Space.s) {
-            // Not when nothing is left: "All are selected for removal" would be about photos that are gone.
-            if !isEmptyNow {
+            if !nothingLeft {
                 Text(category.explanation)
                     .font(.subheadline)
                     .padding(.horizontal, Space.l)
@@ -334,50 +275,247 @@ struct CategoryView: View {
             }
         }
     }
+}
 
-    @ViewBuilder private func content(
-        _ result: CategoryResult, members: [String], layout: Layout
-    ) -> some View {
-        let pixels = pixelSize(layout)
+/// The scrolling list of photos, groups or videos. It owns what changes while the person drags the
+/// photo-size slider or the window's edge (the width, the photo size), so only it is laid out again.
+/// The ids come in as one value that is the same array until the results change.
+private struct CategoryScroller: View {
+    let category: CleanupCategory
+    let result: CategoryResult?
+    let members: [String]
+    let layout: CategoryLayout
+    let prefetcher: ThumbnailPrefetcher
+    let onView: (String) -> Void
+    #if os(macOS)
+        let navigator: GridNavigator
+        let onRemove: () -> Void
+    #endif
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.displayScale) private var displayScale
+    #if os(macOS)
+        /// The photo size the person chose with the toolbar slider.
+        @AppStorage(PhotoSize.key) private var photoSize = PhotoSize.standard
+        /// The size under the slider's thumb while it is being dragged.
+        private let drag = PhotoSizeDrag.shared
+    #endif
+    /// The width the columns are made from: the scroll view's content, which on a Mac is narrower
+    /// than the scroll view when it shows a legacy scroll bar.
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                // Lazy: a library with thousands of groups must not build them all when it opens.
+                LazyVStack(alignment: .leading, spacing: Space.xl) {
+                    CategoryIntro(category: category, result: result, layout: layout)
+                    if let result {
+                        if width > 0 {
+                            content(result)
+                        }
+                    } else if model.launchPhase != .ready || model.isBuildingResults {
+                        // Results are still being restored or built: never say "nothing" before they are.
+                        DelayedProgress()
+                            .accessibilityIdentifier("category.loading")
+                    } else {
+                        ContentUnavailableView {
+                            Label("All Clear", systemImage: "checkmark.circle")
+                        } description: {
+                            Text("Nothing left to review here.")
+                        }
+                    }
+                    if typeSize.isAccessibilitySize, result != nil {
+                        CategoryBarDetail(category: category)
+                    }
+                }
+                .padding(.vertical, Space.l)
+                #if os(macOS)
+                    // Measured here, in the scroll content, and not on the scroll view: a legacy
+                    // scroll bar (a mouse is connected, or Show scroll bars is Always) takes some of
+                    // the scroll view's width, and the columns must be counted from what is left.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.width
+                    } action: {
+                        measured($0)
+                    }
+                #endif
+            }
+            #if os(iOS)
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.width
+                } action: {
+                    measured($0)
+                }
+            #endif
+            #if os(macOS)
+                .gridKeys(navigator, toggle: { model.toggle($0) }, open: onView, remove: onRemove)
+                .focusedSceneValue(
+                    \.gridActions, GridActions(navigator: navigator, compare: compareFocused))
+            #endif
+            // A restored screen opens on the photo the person last touched.
+            .onAppear {
+                scrollToRestoredPhoto(proxy)
+                #if os(macOS)
+                    connectNavigator(proxy)
+                #endif
+            }
+            // Not `allMembers.count`: that builds the whole list of ids each time the body runs.
+            .onChange(of: result?.groups.count) {
+                scrollToRestoredPhoto(proxy)
+            }
+            // The groups and cells are built once the width is known, which is after the screen
+            // appeared: the first attempt above had nothing to scroll to.
+            .onChange(of: width > 0) { _, known in
+                guard known else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(80))
+                    scrollToRestoredPhoto(proxy)
+                }
+            }
+            #if os(macOS)
+                .onChange(of: columnMinimum) { syncNavigator() }
+                .onChange(of: layout) { navigator.isGrouped = layout == .groups }
+            #endif
+            .modifier(Prefetching(prefetcher: prefetcher, members: members, pixels: pixelSize))
+        }
+    }
+
+    private func measured(_ newWidth: CGFloat) {
+        width = newWidth
+        syncNavigator()
+    }
+
+    #if os(macOS)
+        /// Tells the keys how to find the results and how to scroll to a photo.
+        private func connectNavigator(_ proxy: ScrollViewProxy) {
+            navigator.results = { [model, category] in model.results.category(category) }
+            navigator.version = { [model] in model.resultsVersion }
+            navigator.restoredPhoto = { [model] in model.restoredFocus }
+            navigator.select = { [model] ids in model.setSelected(ids, true) }
+            navigator.isGrouped = layout == .groups
+            navigator.scrollTo = { id, groupID in
+                if let groupID {
+                    // The group's own section first: its photos are in a lazy grid that does not
+                    // exist until the section is on screen.
+                    proxy.scrollTo(groupID, anchor: nil)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(80))
+                        proxy.scrollTo(id, anchor: nil)
+                    }
+                } else {
+                    proxy.scrollTo(id, anchor: nil)
+                }
+            }
+            syncNavigator()
+        }
+
+        /// Edit > Compare This Group: the compare screen of the group the keyboard is in.
+        private func compareFocused() {
+            guard MacNavigation.shared.groupPath.isEmpty, let groupID = navigator.focusedGroupID,
+                let group = result?.groups.first(where: { $0.id == groupID })
+            else { return }
+            MacNavigation.shared.groupPath.append(.group(category, containing: group))
+        }
+    #endif
+
+    /// The number of columns the grid has now, which the up and down keys step by.
+    private func syncNavigator() {
+        #if os(macOS)
+            navigator.columns = GridMetrics.columns(
+                width: Double(gridWidth), minimum: Double(columnMinimum),
+                spacing: Double(Gutter.grid))
+        #endif
+    }
+
+    // MARK: Sizes
+
+    /// The smallest a photo may be: wider on a Mac and at accessibility sizes, so a cell stays
+    /// large enough for its glyphs. On a Mac the person sets it with the slider, and the grid
+    /// follows the thumb as it moves.
+    private var columnMinimum: CGFloat {
+        #if os(macOS)
+            CGFloat(PhotoSize.clamped(drag.size ?? photoSize))
+        #else
+            typeSize.isAccessibilitySize ? 150 : 104
+        #endif
+    }
+
+    /// The smallest a photo may be, for the pictures asked for. While the thumb is down this is
+    /// still the size that was set before, so the sweep does not start a new round of requests at
+    /// each step; the pictures are asked for again at the size that was settled on.
+    private var requestMinimum: CGFloat {
+        #if os(macOS)
+            CGFloat(PhotoSize.clamped(photoSize))
+        #else
+            columnMinimum
+        #endif
+    }
+
+    /// The width the columns are made from.
+    private var gridWidth: CGFloat { max(width - 2 * GridSizing.gridInset, 0) }
+
+    /// The pixels each picture needs, from the real width of a cell (`GridMetrics`).
+    private var pixelSize: Int {
+        switch layout {
+        case .videoList:
+            return GridSizing.videoPixels(scale: displayScale)
+        case .flatGrid, .groups:
+            guard width > 0 else { return 256 }
+            return GridMetrics.pixels(
+                width: gridWidth, minimum: requestMinimum, spacing: Gutter.grid,
+                scale: displayScale, cap: GridSizing.pixelCap)
+        }
+    }
+
+    // MARK: Content
+
+    @ViewBuilder private func content(_ result: CategoryResult) -> some View {
+        let pixels = pixelSize
         switch layout {
         case .videoList:
             LazyVStack(spacing: 0) {
                 ForEach(members, id: \.self) { id in
-                    VideoRow(assetID: id, pixelSize: pixels) { viewing = id }
+                    VideoRow(assetID: id, pixelSize: pixels) { onView(id) }
                 }
             }
         case .flatGrid:
-            LazyVGrid(columns: columns, spacing: Gutter.grid) {
-                ForEach(members, id: \.self) { cell($0, group: nil, pixels: pixels) }
-            }
-            .padding(.horizontal, gridInset)
+            equatable(photos(members, group: nil, pixels: pixels))
         case .groups:
+            // Each group is its own element of the lazy stack, as before.
             ForEach(result.groups) { group in
-                VStack(alignment: .leading, spacing: Space.s) {
-                    GroupHeader(category: category, group: group)
-                    LazyVGrid(columns: columns, spacing: Gutter.grid) {
-                        ForEach(group.members, id: \.self) {
-                            cell($0, group: group, pixels: pixels)
-                        }
-                    }
-                    .padding(.horizontal, gridInset)
-                }
+                equatable(
+                    GroupSection(
+                        category: category, group: group,
+                        photos: photos(group.members, group: group, pixels: pixels)))
             }
         }
     }
 
-    @ViewBuilder private func cell(_ id: String, group: ResultGroup?, pixels: Int) -> some View {
+    private func photos(_ ids: [String], group: ResultGroup?, pixels: Int) -> PhotoGrid {
         #if os(macOS)
-            MacItemCell(
-                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-                confidence: group?.confidence ?? .normal, pixelSize: pixels, group: group,
-                navigator: navigator, focus: $focusedID, onView: { viewing = id },
-                onRemove: removeIfSelected)
+            PhotoGrid(
+                members: ids, group: group, columnMinimum: columnMinimum, pixels: pixels,
+                navigator: navigator, onView: onView)
         #else
-            ItemCell(
-                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
-                confidence: group?.confidence ?? .normal, pixelSize: pixels,
-                onView: { viewing = id })
+            PhotoGrid(
+                members: ids, group: group, columnMinimum: columnMinimum, pixels: pixels,
+                onView: onView)
+        #endif
+    }
+
+    /// On a Mac, the photos are laid out again only when what they are made from changes. The width
+    /// changes with every frame of a window's resize and the slider with every step, and most of
+    /// those leave the ids, the columns and the pictures' size as they were: the lazy grid fits
+    /// itself to the width, and nothing here needs to run. (On a phone the width only changes when
+    /// the phone is turned.)
+    @ViewBuilder private func equatable<Content: View & Equatable>(_ view: Content) -> some View {
+        #if os(macOS)
+            view.equatable()
+        #else
+            view
         #endif
     }
 
@@ -385,9 +523,7 @@ struct CategoryView: View {
 
     /// In two steps: a photo in a group lives in a nested lazy grid that does not exist until its
     /// section is on screen, so the section is scrolled to first and then the photo.
-    private func scrollToRestoredPhoto(
-        _ proxy: ScrollViewProxy, in result: CategoryResult?, layout: Layout
-    ) {
+    private func scrollToRestoredPhoto(_ proxy: ScrollViewProxy) {
         guard let id = model.restoredFocus, let result else { return }
         guard let group = result.groups.first(where: { $0.members.contains(id) }) else { return }
         if layout == .groups {
@@ -398,6 +534,67 @@ struct CategoryView: View {
             }
         } else {
             proxy.scrollTo(id, anchor: .center)
+        }
+    }
+}
+
+/// A lazy grid of photos: a flat category, or the photos of one group.
+private struct PhotoGrid: View, Equatable {
+    let members: [String]
+    /// The group these photos are in, nil in a flat grid.
+    let group: ResultGroup?
+    let columnMinimum: CGFloat
+    let pixels: Int
+    #if os(macOS)
+        let navigator: GridNavigator
+    #endif
+    let onView: (String) -> Void
+
+    /// What the grid is made from. The closures stand for state that does not change.
+    nonisolated static func == (lhs: PhotoGrid, rhs: PhotoGrid) -> Bool {
+        lhs.members == rhs.members && lhs.group == rhs.group
+            && lhs.columnMinimum == rhs.columnMinimum && lhs.pixels == rhs.pixels
+    }
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: columnMinimum), spacing: Gutter.grid)],
+            spacing: Gutter.grid
+        ) {
+            ForEach(members, id: \.self) { cell($0) }
+        }
+        .padding(.horizontal, GridSizing.gridInset)
+    }
+
+    @ViewBuilder private func cell(_ id: String) -> some View {
+        #if os(macOS)
+            MacItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels, group: group,
+                navigator: navigator, onView: { onView(id) })
+        #else
+            ItemCell(
+                assetID: id, isKeeper: group?.keepers.contains(id) ?? false,
+                confidence: group?.confidence ?? .normal, pixelSize: pixels,
+                onView: { onView(id) })
+        #endif
+    }
+}
+
+/// One group of copies or similar shots: its header, which links to Compare, and its photos.
+private struct GroupSection: View, Equatable {
+    let category: CleanupCategory
+    let group: ResultGroup
+    let photos: PhotoGrid
+
+    nonisolated static func == (lhs: GroupSection, rhs: GroupSection) -> Bool {
+        lhs.category == rhs.category && lhs.group == rhs.group && lhs.photos == rhs.photos
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            GroupHeader(category: category, group: group)
+            photos
         }
     }
 }

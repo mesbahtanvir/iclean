@@ -85,7 +85,9 @@ final class AppModel {
     private var resultsGeneration = 0
     @ObservationIgnored private var summaryTask: Task<Void, Never>?
     @ObservationIgnored private var summaryRequest = 0
-    @ObservationIgnored private var resultsVersion = 0
+    /// Changes whenever `results` does: lets a screen keep what it worked out from the results until
+    /// they change, without comparing them. (Not observed: the screen reads `results` for that.)
+    @ObservationIgnored private(set) var resultsVersion = 0
     @ObservationIgnored private var indexVersion = -1
     @ObservationIgnored private var cachedIndex: ResultsIndex?
     /// How many items the results held in `pendingBuild` would add to the screen.

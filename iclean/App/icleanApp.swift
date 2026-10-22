@@ -1,11 +1,20 @@
 import SwiftUI
 
+#if os(macOS)
+    import AppKit
+#endif
+
 @main
 struct icleanApp: App {
     @State private var model = AppModel(environment: .live())
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        #if os(macOS)
+            // One window only: with no New Window item, the tab bar's plus button (View > Show Tab
+            // Bar, Window > Merge All Windows) would still make a second one, with its own sheets.
+            NSWindow.allowsAutomaticWindowTabbing = false
+        #endif
         #if DEBUG
             #if os(macOS)
                 // AppKit opens every launch argument that is not a flag as a file, and a SwiftUI

@@ -14,6 +14,9 @@ struct GroupDetailView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.displayScale) private var displayScale
+    #if os(macOS)
+        @Environment(\.openConfirm) private var openConfirm
+    #endif
     @State private var viewing: String?
     @State private var width: CGFloat = 0
     @ScaledMetric(relativeTo: .body) private var slot: CGFloat = 36
@@ -82,7 +85,14 @@ struct GroupDetailView: View {
                 summary(group, inset: true)
                 MacCompareGrid(
                     group: group, width: width, ratio: ratio, slotHeight: slotHeight,
-                    displayScale: displayScale, onView: { viewing = $0 }
+                    displayScale: displayScale, onView: { viewing = $0 },
+                    onRemove: {
+                        // Delete: only opens the Confirm sheet, and only when something is selected.
+                        guard (model.summary.perCategory[category]?.selected ?? 0) > 0 else {
+                            return
+                        }
+                        openConfirm?(category)
+                    }
                 )
                 .accessibilityIdentifier("group.compare")
             }
@@ -254,6 +264,9 @@ struct CompareCard: View {
     var fixedWidth: CGFloat?
     /// The keyboard is on this copy (Mac): its photo gets the focus ring.
     var ringed = false
+    /// A click on the Remove checkbox or Keep This Copy (Mac), so the screen can move the keyboard
+    /// to this copy: those controls do not take it themselves.
+    var onTouch: (() -> Void)?
 
     @Environment(AppModel.self) private var model
     @State private var taps = 0
@@ -387,6 +400,7 @@ struct CompareCard: View {
             } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {
                 Button {
                     taps += 1
+                    onTouch?()
                     model.makeKeeper(assetID)
                 } label: {
                     // The label, not the tint: a tint would colour the button's fill too.
@@ -408,6 +422,7 @@ struct CompareCard: View {
                 get: { selected },
                 set: { _ in
                     taps += 1
+                    onTouch?()
                     model.toggle(assetID)
                 })
         ) {

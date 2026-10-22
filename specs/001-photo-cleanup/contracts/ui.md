@@ -52,7 +52,9 @@ these are Mac only:
   with nothing found yet the scan card is the detail pane; its controls are in the toolbar.
 - Toolbar: `toolbar.scan` (Scan Library, Scan Again), `toolbar.resume` (Resume Scan after an interrupted
   scan), and while a scan runs `scan.pause`, `scan.resume`, `scan.stop`; on a category
-  `category.photoSize` (the photo-size slider) and `category.selectAll`. The toolbar ids differ from
+  `category.photoSize` (the photo-size slider: steps of 10, accessibility value "150 points") and
+  `category.selectAll`. The scan count in the middle of the toolbar is shown only while the sidebar is
+  hidden: the sidebar's scan card and the pane have it otherwise. The toolbar ids differ from
   `home.scan` / `home.resume` on purpose: those stay on the buttons in the detail pane and the sidebar,
   which are on screen at the same time as the toolbar, and one window must not hold two views with one
   id. The toolbar offers a scan exactly when the phone's Home would (the order above): never while the
@@ -64,6 +66,16 @@ these are Mac only:
   Videos" on Large Videos), Keep All (Option-Command-K) and Remove Selected… (Command-Delete, opens
   the Confirm sheet only). Command-A stays the system's Select All. Select Suggested and Keep All
   act on the screen in front: the category, or the group while its compare screen is on top.
+  Compare This Group (Command-Down) opens the compare screen of the group the keyboard's photo is
+  in; it is off elsewhere.
+- Photo grid keys: the grid is one keyboard target; the ids of the cells (`category.item.<assetID>`)
+  are unchanged. Arrows move, Shift-arrow extends a range from the last photo touched (never a
+  suggested keeper), Space toggles the photo the keyboard is on (one that scrolled out of view is
+  brought back first and not toggled), Return opens it, Delete and Command-Delete only open Confirm.
+- Photo viewer: on a Mac the capture date, the size and Done are drawn in the sheet's content, above
+  the photo (a sheet has no toolbar); the label of the button is still "Done".
+- Settings window (Command-comma): a Delete All that fails shows its alert there, and the Your Data
+  pane reads the saved data again whatever the outcome; the main window shows no alert for it.
 - There is no `home.settings` on the Mac: Settings is the window opened with Command-comma, and the
   Help menu has "How Removal Works".
 

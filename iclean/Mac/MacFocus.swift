@@ -19,10 +19,23 @@
         var review: @MainActor () -> Void
     }
 
+    /// What the menu bar can do with the photo the keyboard is on in a category's grid.
+    struct GridActions {
+        let navigator: GridNavigator
+        /// Opens the compare screen of the group that photo is in.
+        let compare: @MainActor () -> Void
+
+        /// Whether the keyboard is on a photo that is in a group of copies or similar shots.
+        @MainActor var canCompare: Bool { navigator.focusedGroupID != nil }
+    }
+
     extension FocusedValues {
         /// Published by the Mac shell while the Overview or a category is in the window. Nil when
         /// there is nothing to review (first run, scanning without results), so the commands are off.
         @Entry var reviewActions: ReviewActions?
+        /// Published by a category's grid while it is in the window, for the commands that act on
+        /// the photo the keyboard is on.
+        @Entry var gridActions: GridActions?
     }
 
     extension EnvironmentValues {

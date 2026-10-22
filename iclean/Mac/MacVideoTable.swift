@@ -1,4 +1,5 @@
 #if os(macOS)
+    import AppKit
     import CleanupKit
     import SwiftUI
 
@@ -54,6 +55,7 @@
                     Text(Format.bytes(row.bytes, estimate: row.isEstimate))
                         .font(.body.weight(.semibold))
                         .monospacedDigit()
+                        // What the video is. Whether it goes is the checkbox's, in the cell before.
                         .accessibilityLabel(spoken(row))
                         .accessibilityIdentifier("category.item.\(row.id)")
                 }
@@ -73,18 +75,20 @@
                 }
             }
             .environment(\.defaultMinListRowHeight, Self.preview + 8)
+            .accessibilityLabel("Large videos")
             .contextMenu(forSelectionType: String.self) { ids in
                 menu(ids)
             } primaryAction: { ids in
+                // A double click, and Return on the picked rows.
                 open(ids)
             }
+            // Space has two routes, because a table is a native view that may keep the key: the
+            // SwiftUI one here, and the table's own (`TableSpaceKey`). Whichever gets the key uses
+            // it up, so the rows are toggled once.
             .onKeyPress(.space, phases: [.down, .repeat]) { press in
                 guard !picked.isEmpty else { return .ignored }
                 // A held key repeats: only the first press toggles the picked rows.
-                if !press.isRepeat {
-                    let all = picked.allSatisfy { model.isSelected($0) }
-                    model.setSelected(Array(picked), !all)
-                }
+                if !press.isRepeat { _ = togglePicked() }
                 return .handled
             }
             .onKeyPress(.return, phases: [.down, .repeat]) { press in
@@ -93,6 +97,16 @@
                 return .handled
             }
             .onDeleteCommand(perform: onRemove)
+            .background { TableSpaceKey { togglePicked() } }
+        }
+
+        /// Space: marks the picked rows for removal, or, when they all are, keeps them. Nothing
+        /// happens without a picked row.
+        private func togglePicked() -> Bool {
+            guard !picked.isEmpty else { return false }
+            let all = picked.allSatisfy { model.isSelected($0) }
+            model.setSelected(Array(picked), !all)
+            return true
         }
 
         // MARK: Cells
@@ -108,6 +122,9 @@
             .labelsHidden()
             .toggleStyle(.checkbox)
             .help("Select for Removal")
+            // It names the video, so a row read from its checkbox says which one it is; the state is
+            // the checkbox's own value.
+            .accessibilityLabel("Remove, \(spoken(row))")
         }
 
         private func previewImage(_ row: Row) -> some View {
@@ -153,14 +170,62 @@
                 hasDate: item.metadata.captureDate != nil)
         }
 
-        /// "Video, 5 minutes, 900 MB, Mar 3, 2024, selected for removal".
+        /// "Video, 5 minutes, 900 MB, Mar 3, 2024": what it is, not whether it goes.
         private func spoken(_ row: Row) -> String {
             var parts = [ItemKind.video.spokenName]
             if row.hasLength { parts.append(Format.durationSpoken(row.length)) }
             parts.append(Format.bytes(row.bytes, estimate: row.isEstimate))
             if row.hasDate { parts.append(row.taken.formatted(date: .abbreviated, time: .omitted)) }
-            parts.append(ReviewState.text(selected: model.isSelected(row.id)))
             return parts.joined(separator: ", ")
+        }
+    }
+
+    /// Space on the table's own keyboard, for when the table keeps the key from SwiftUI.
+    ///
+    /// A local key monitor sees a key before the window dispatches it. It takes Space only when the
+    /// first responder is a table over this view (this is put behind the table), so a text field, a
+    /// checkbox cell that has the keyboard, or any other window is never affected. Held keys are
+    /// used up and do nothing, as everywhere: only the first press toggles.
+    private struct TableSpaceKey: NSViewRepresentable {
+        /// Acts on the picked rows; false when there were none, and the key is then left alone.
+        let action: @MainActor () -> Bool
+
+        func makeNSView(context: Context) -> Probe { Probe() }
+
+        func updateNSView(_ view: Probe, context: Context) { view.action = action }
+
+        static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+
+        final class Probe: NSView {
+            var action: (@MainActor () -> Bool)?
+            private var monitor: Any?
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                stop()
+                guard window != nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                    [weak self] event in
+                    // Monitors run on the main thread, in the middle of the event loop.
+                    let taken = MainActor.assumeIsolated { self?.takes(event) ?? false }
+                    return taken ? nil : event
+                }
+            }
+
+            func stop() {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+
+            @MainActor private func takes(_ event: NSEvent) -> Bool {
+                let plain = event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty
+                guard event.keyCode == 49, plain, let window, event.window === window,
+                    let table = window.firstResponder as? NSTableView,
+                    convert(bounds, to: nil).intersects(table.convert(table.visibleRect, to: nil))
+                else { return false }
+                if event.isARepeat { return true }
+                return action?() ?? false
+            }
         }
     }
 #endif

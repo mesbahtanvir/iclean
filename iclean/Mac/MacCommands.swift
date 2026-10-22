@@ -15,6 +15,7 @@
 
         @Environment(\.openWindow) private var openWindow
         @FocusedValue(\.reviewActions) private var review: ReviewActions?
+        @FocusedValue(\.gridActions) private var grid: GridActions?
 
         var body: some Commands {
             // One window only: one scan and one confirmation can be in progress, by construction.
@@ -22,7 +23,7 @@
             CommandGroup(replacing: .appInfo) { AboutMenuItem() }
             CommandMenu("Scan") { ScanMenuItems(model: model) }
             CommandGroup(after: .pasteboard) {
-                SelectionMenuItems(model: model, actions: review)
+                SelectionMenuItems(model: model, actions: review, grid: grid)
             }
             CommandGroup(replacing: .help) {
                 Button("How Removal Works") { openWindow(id: HowRemovalWorks.windowID) }
@@ -93,6 +94,7 @@
     private struct SelectionMenuItems: View {
         let model: AppModel
         let actions: ReviewActions?
+        let grid: GridActions?
 
         var body: some View {
             Divider()
@@ -121,6 +123,11 @@
             }
             .keyboardShortcut(.delete, modifiers: .command)
             .disabled(actions == nil || sheetUp || selected == 0)
+            // The keyboard's way to what the group header's link does with the pointer: Command-Down
+            // opens, as in the Finder. It only looks at a group; it changes nothing.
+            Button("Compare This Group") { grid?.compare() }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(!(grid?.canCompare ?? false) || sheetUp || actions?.group != nil)
         }
 
         /// Whether there is something to select, and something selected to keep, on the screen in

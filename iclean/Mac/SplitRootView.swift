@@ -18,9 +18,10 @@
     /// The window shows the detail alone until the first results arrive, so the first thing on a Mac
     /// is one sentence and one big button, and the sidebar appears once, when it has something in it.
     ///
-    /// The navigation scaffolding does not depend on the state shown: the Confirm sheet, the alert and
-    /// the toolbar live here, so they are there in every state, and a Confirm sheet that is open
+    /// The navigation scaffolding does not depend on the state shown: the Confirm sheet and the
+    /// toolbar live here, so they are there in every state, and a Confirm sheet that is open
     /// survives the screen under it going away (a category that was emptied by the removal itself).
+    /// The app's one alert (a Delete All that failed) is the Settings window's, where the button is.
     struct SplitRootView: View {
         @Environment(AppModel.self) private var model
 
@@ -49,7 +50,11 @@
             }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) { ScanToolbarButtons() }
-                if model.isScanning {
+                // The count is in the toolbar only while nothing else shows it: the sidebar's footer
+                // has the scan card while results exist, and the pane has it before they do. At the
+                // narrowest window the toolbar is already full (title, Scan, the photo size, Select
+                // Suggested), and macOS would push the less important of them into the overflow.
+                if model.isScanning, hasResults, visibility == .detailOnly {
                     ToolbarItem(placement: .status) { ScanToolbarStatus() }
                 }
             }
@@ -58,16 +63,6 @@
             )
             .focusedSceneValue(\.reviewActions, reviewActions)
             .sheet(item: $confirm) { ConfirmSheet(category: $0.category) }
-            .alert(
-                "Something went wrong",
-                isPresented: Binding(
-                    get: { model.errorMessage != nil },
-                    set: { if !$0 { model.errorMessage = nil } })
-            ) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.errorMessage ?? "")
-            }
             .onChange(of: route) { _, new in model.pathChanged(new) }
             // The saved review is put back once, when the launch has results to check it against.
             .onChange(of: model.restoredRoute) { _, new in restore(new) }

@@ -45,8 +45,11 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
   category is open and results arrive.
 - Overview: hero at 40 pt, one prominent "Review N Items…" under it, category rows (a click selects the
   sidebar row).
-- Toolbar: Scan Library, then Pause or Resume and Stop while scanning, with the count in the middle.
-  The photo-size slider on a grid category, not on Large Videos. No Scan / Resume Scan button (and
+- Toolbar: Scan Library, then Pause or Resume and Stop while scanning. The count ("12,408 of 30,112
+  checked") is in the middle of the toolbar only while the sidebar is hidden (the sidebar footer and
+  the pane already show it). The photo-size slider (80 pt) on a grid category, not on Large Videos.
+  At 820 x 540 with a category open and a scan running, with the sidebar shown and hidden: Scan
+  controls, the slider and Select Suggested are all in the bar, none in the >> overflow menu. No Scan / Resume Scan button (and
   the Scan menu item is dimmed) while the window says "Getting ready…" or "Getting your results
   ready…", or while a scan is finishing.
 - Continue reviewing (relaunch after more than a day with a category open, or a failed restore): the
@@ -83,7 +86,8 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
   the accent on hover and, with Full Keyboard Access, on keyboard focus (`isFocused` in a link's label
   has not been seen to work).
 - Viewer: Command-plus, Command-minus, Command-0, double-click between fit and 100%, two-finger
-  scroll pans a zoomed photo, Escape closes.
+  scroll pans a zoomed photo, Escape closes. The header above the photo (date over size, Done on the
+  right) is drawn in the sheet's content, because a sheet has no toolbar: see "Second review" below.
 - Confirm and Done: the sheet is as tall as its content, 440 pt wide; Cancel left of the filled
   button; Return closes the receipt.
 - Menus: Scan menu items enable and disable with the scan; every command is off while a sheet is up.
@@ -93,3 +97,83 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
 - Closing the window keeps a scan running; clicking the Dock icon brings a window back.
 - Kill the app inside a category (`kill -9`) and relaunch with `-PersistStore`: the category, group
   and photo come back (spec 007).
+
+## Second review (calm-mac-fixes2): what a human still has to confirm
+
+The second independent review's findings were fixed by reading, Apple's documented behaviour and
+builds only; none of this has been seen in a window. Each line says what to try and what must be true.
+If a line fails, the part named in brackets is the one to look at.
+
+Settings window
+- Your Data, then Delete All iclean Data, confirm: the pane at once shows no scan results, 0 selections,
+  "None" for Always Keep, no Always Keep section and no recent scans, while the pane is still open.
+  Switch to the main window, scan, come back to Settings: the numbers are current (the pane is read
+  again when the window comes to the front and when a scan starts or ends). A failed delete (damage
+  the store files) shows "Something went wrong" over the Settings window, with the main window closed
+  and open, and never over the main window. [MacSettingsView]
+
+Window
+- View has no Show Tab Bar, Window has no Merge All Windows, and no tab bar plus button can make a
+  second window. [`NSWindow.allowsAutomaticWindowTabbing` in icleanApp.init]
+- Overview at 1040 x 700 and at 820 x 540: the scroll bar is at the right edge of the window (with
+  System Settings > Appearance > Show scroll bars: Always, too), the wheel scrolls with the pointer
+  over the empty margins, the content is a centred column of about 560 pt. If the grouped Form ignores
+  `contentMargins` the content is simply full width: tell me, and the fallback is a ScrollView around
+  the sections. [Overview, ReadableFormColumn]
+
+Viewer (a sheet)
+- Date over "4,032 × 3,024 · 3.2 MB" in the middle of a black header, Done on the right (Escape also
+  closes), no second Done, the header and the stage are one black. [PhotoViewer.macHeader]
+- A photo of 12 MP or more: zoom in (Command-plus, pinch, or double-click for 100%). A moment after
+  the zoom passes the picture's pixels the photo gets sharper (its real pixels), and zooming out to fit
+  lets that picture go (watch the app's memory in Activity Monitor with a 48 MP photo: about 115 MB
+  while zoomed in, gone at fit). A photo of 3072 px or less never asks for a second picture. Nothing
+  is downloaded: run once with `-NetworkTripwire`. [PhotoViewer.needsDetail]
+
+Grid keyboard (the grid is one focus target now)
+- Click a photo: 3 pt ring, nothing else changes. Arrow keys move the ring and scroll to it; hold an
+  arrow key in a long grid and the ring keeps up and never jumps back. Space toggles it (held Space once),
+  Return opens the viewer, Delete opens the Confirm sheet only when something is selected. In a
+  grouped category the arrows cross from one group to the next.
+- Shift-arrow: with a photo clicked, Shift-Right marks it and the next photo, Shift-Down marks a whole
+  row and a bit; never a photo suggested to keep; Shift-click afterwards still extends from the same
+  photo. Moving back with Shift does not unmark (like Shift-click); that is expected. If Shift-arrow does
+  nothing at all, SwiftUI is not passing the shifted key to `onKeyPress`. [MacGridKeys]
+- Click a photo, scroll far away with the wheel, press Space: the grid scrolls back to the photo and
+  nothing is toggled; press Space again: it toggles. The arrows after scrolling away carry on from that
+  photo. Click a photo then press an arrow and Space at once: it toggles (no scroll-back). [GridNavigator.photoToAct]
+- Hold the pointer still in the top-left or top-right corner of a photo, scroll so a different photo
+  arrives under it, click without moving: the click only focuses that photo (no viewer opens, nothing
+  toggles); its check mark and expand button are then there. With Full Keyboard Access (System
+  Settings > Keyboard > Keyboard navigation) Tab visits the grid as one stop, not three per photo, and
+  never stops on an invisible control. [MarkControl, ExpandControl]
+- Edit > Compare This Group (Command-Down) is on when the keyboard is on a photo of a group and opens that
+  group's compare screen; it is off in a flat category, on Large Videos, and on a compare screen.
+- With a mouse (or Show scroll bars: Always): resize the window across a column boundary and press Down
+  from a photo in the first row: it goes straight down every time (the column count is measured on
+  the scroll content, not the scroll view). Also with the trackpad only.
+- Without Full Keyboard Access there is still no Tab route from the sidebar into the grid: click a photo
+  first. (A Focus Photos command was left out; say if it is wanted.)
+
+Photo size slider
+- Drag it across its whole range on `-DemoScenario large30k` in Duplicates and in Screenshots: the grid
+  follows the thumb in steps of 10 without stutter, the pictures stay as they were while the thumb is down
+  and sharpen when it is let go, and the size is remembered on relaunch. The arrow keys move it by 10,
+  VoiceOver says "150 points". If the step ticks on the track look cluttered, drop `step:` from the
+  slider and round in code instead. [PhotoSizeSlider]
+
+Group compare
+- Two portrait duplicates in a maximised window: the photos stop short of the window's height and the
+  Remove checkboxes and Keep This Copy are on screen without scrolling; the rows stay lined up across the
+  copies and sit in the middle of the pane. [MacCompareGrid.maxPhotoHeight]
+- At 820 x 540 with the sidebar at its widest: four copies wrap two by two, nine similar shots go one per
+  row, nothing is cut off at the right edge, with and without Show scroll bars: Always.
+- Open Compare and press Right (and Space) with no click: the ring moves. Up and Down move by a row in a
+  group that wraps. Escape goes back to the category. Delete opens the Confirm sheet only when something is
+  selected. A click on a copy's checkbox or Keep This Copy moves the ring to that copy.
+
+Large Videos
+- Click a row (the table has the keyboard) and press Space: the picked rows toggle once, held Space once.
+  Return and double-click open the viewer. VoiceOver on the checkbox says "Remove, Video, <length>, <size>,
+  <date>"; the Size cell does not repeat whether it is selected. If Space does nothing, both routes failed:
+  the SwiftUI `onKeyPress` and the key monitor in `TableSpaceKey`. [MacVideoTable]
