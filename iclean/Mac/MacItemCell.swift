@@ -96,6 +96,9 @@
         var columns = 1
         /// Where a Shift-click starts: the photo last clicked or moved to.
         var anchor: String?
+        /// Counts the keys and clicks that move the focus. A focus that is put back a moment after
+        /// a key (see `MacItemCell.move`) is only put back if nothing newer has moved it since.
+        var focusGeneration = 0
         /// Brings a photo into view; the second argument is the group section to bring first. Set by
         /// the screen that owns the scroll view.
         var scrollTo: ((String, String?) -> Void)?
@@ -159,22 +162,36 @@
                 }
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+                .contentShape(Rectangle())
+                // The clicks on the picture. They are on the picture alone, below the two buttons
+                // that sit on it: a click on a button is the button's, so exactly one handler acts
+                // (gestures on the whole cell also fire for a click on a button, and a Command-click
+                // on the check mark would toggle twice). The double click is declared before the
+                // single one, so it is the one that wins.
+                .onTapGesture(count: 2) { onView() }
+                .simultaneousGesture(TapGesture().onEnded { clicked() })
                 .overlay(alignment: .topTrailing) {
                     markButton(selected: selected, isVideo: isVideo)
                         .opacity(showsControls ? 1 : 0)
                 }
                 .overlay(alignment: .topLeading) {
-                    ExpandButton(action: onView)
-                        .opacity(showsControls ? 1 : 0)
+                    ExpandButton {
+                        focus.wrappedValue = assetID
+                        anchor()
+                        onView()
+                    }
+                    .opacity(showsControls ? 1 : 0)
                 }
                 .overlay(alignment: .bottomLeading) {
                     // At most three parts in the one capsule; the album glyph is the one given up.
+                    // Only a label: a click on it is a click on the picture below.
                     PhotoChip(
                         keeper: showsKept, favorite: favorite,
                         inAlbums: inAlbums && !(showsKept && favorite && previewOnly),
                         previewOnly: previewOnly
                     )
                     .padding(Space.xs)
+                    .allowsHitTesting(false)
                 }
                 .overlay {
                     // The keyboard focus: a 3 pt ring in the accent, drawn by hand because the
@@ -185,21 +202,19 @@
                         .allowsHitTesting(false)
                 }
                 .calmAnimation(value: selected)
-                .contentShape(Rectangle())
                 .onHover { hovering = $0 }
                 // Focus, then the keys that act on the focused photo.
                 .focusable()
                 .focused(focus, equals: assetID)
                 .focusEffectDisabled()
-                // The double click is declared before the single one, so it is the one that wins.
-                .onTapGesture(count: 2) { onView() }
-                .simultaneousGesture(TapGesture().onEnded { clicked() })
-                .onKeyPress(.space) {
-                    model.toggle(assetID)
+                .onKeyPress(.space, phases: [.down, .repeat]) { press in
+                    // A held key repeats: only the first press toggles, and the repeats are used up
+                    // here so the scroll view does not take them for a page down.
+                    if !press.isRepeat { model.toggle(assetID) }
                     return .handled
                 }
-                .onKeyPress(.return) {
-                    onView()
+                .onKeyPress(.return, phases: [.down, .repeat]) { press in
+                    if !press.isRepeat { onView() }
                     return .handled
                 }
                 .onMoveCommand { move($0) }
@@ -235,8 +250,7 @@
                 selected
                 ? (isVideo ? "Keep This Video" : "Keep This Photo") : "Select for Removal"
             return Button {
-                anchor()
-                model.toggle(assetID)
+                clicked(onMark: true)
             } label: {
                 SelectionMark(selected: selected)
                     .padding(Space.xs)
@@ -250,13 +264,16 @@
         }
 
         /// A click: it focuses the photo and nothing else. With Command it toggles, with Shift it
-        /// selects the range from the last photo touched (never a suggested keeper).
-        private func clicked() {
+        /// selects the range from the last photo touched (never a suggested keeper). A click on the
+        /// check mark (`onMark`) toggles, and with Shift it is still the range.
+        private func clicked(onMark: Bool = false) {
+            // A click ends any focus that a key is about to put back.
+            navigator.focusGeneration &+= 1
             focus.wrappedValue = assetID
             let flags = NSEvent.modifierFlags
             if flags.contains(.shift) {
                 model.setSelected(navigator.plan.range(from: navigator.anchor, to: assetID), true)
-            } else if flags.contains(.command) {
+            } else if onMark || flags.contains(.command) {
                 anchor()
                 model.toggle(assetID)
             } else {
@@ -276,8 +293,14 @@
             navigator.anchor = next
             navigator.scrollTo?(next, step.groupID)
             focus.wrappedValue = next
+            // The photo may not exist yet (a lazy grid), so the focus is put on it again a moment
+            // later if it did not take. Only if nothing has moved the focus since: with the arrow
+            // key held, an older photo must not pull the focus back from a newer one.
+            navigator.focusGeneration &+= 1
+            let generation = navigator.focusGeneration
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(120))
+                guard navigator.focusGeneration == generation else { return }
                 if focus.wrappedValue != next { focus.wrappedValue = next }
             }
         }

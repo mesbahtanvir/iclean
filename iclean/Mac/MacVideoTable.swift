@@ -78,15 +78,18 @@
             } primaryAction: { ids in
                 open(ids)
             }
-            .onKeyPress(.space) {
+            .onKeyPress(.space, phases: [.down, .repeat]) { press in
                 guard !picked.isEmpty else { return .ignored }
-                let all = picked.allSatisfy { model.isSelected($0) }
-                model.setSelected(Array(picked), !all)
+                // A held key repeats: only the first press toggles the picked rows.
+                if !press.isRepeat {
+                    let all = picked.allSatisfy { model.isSelected($0) }
+                    model.setSelected(Array(picked), !all)
+                }
                 return .handled
             }
-            .onKeyPress(.return) {
+            .onKeyPress(.return, phases: [.down, .repeat]) { press in
                 guard !picked.isEmpty else { return .ignored }
-                open(picked)
+                if !press.isRepeat { open(picked) }
                 return .handled
             }
             .onDeleteCommand(perform: onRemove)
