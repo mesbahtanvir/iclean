@@ -12,18 +12,39 @@ enum Format {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
+    /// Whole seconds, so the pattern, the text and the carry all see the same number: 3599.6 is "1:00:00",
+    /// not "60:00". Not a number (or negative): zero.
+    private static func wholeSeconds(_ seconds: Double) -> Int {
+        seconds.isFinite ? max(0, Int(seconds.rounded())) : 0
+    }
+
     /// "5:00", "0:12", "1:02:03".
     static func duration(_ seconds: Double) -> String {
-        let duration = Duration.seconds(Int(seconds.rounded()))
-        return seconds >= 3600
+        let whole = wholeSeconds(seconds)
+        let duration = Duration.seconds(whole)
+        return whole >= 3600
             ? duration.formatted(.time(pattern: .hourMinuteSecond(padHourToLength: 1)))
             : duration.formatted(.time(pattern: .minuteSecond(padMinuteToLength: 1)))
     }
 
     /// For VoiceOver: "5 minutes".
     static func durationSpoken(_ seconds: Double) -> String {
-        Duration.seconds(Int(seconds.rounded()))
+        Duration.seconds(wholeSeconds(seconds))
             .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide))
+    }
+
+    /// A length for a line of text, to the minute: "12 secs.", "5 mins", "1 hr, 2 mins". Rounded once
+    /// to a whole number of minutes and then split into hours and minutes, so it can never say
+    /// "60 mins" or "1 hr, 60 mins"; the words and their order are the system's, per language.
+    static func durationShort(_ seconds: Double) -> String {
+        let whole = wholeSeconds(seconds)
+        guard whole >= 60 else {
+            return Duration.seconds(whole).formatted(
+                .units(allowed: [.seconds], width: .abbreviated))
+        }
+        let minutes = Int((Double(whole) / 60).rounded())
+        return Duration.seconds(minutes * 60).formatted(
+            .units(allowed: [.hours, .minutes], width: .abbreviated))
     }
 
     /// "Scanned just now", "Scanned 3 minutes ago", "Scanned today at 2:14 PM", and so on. Meant to be

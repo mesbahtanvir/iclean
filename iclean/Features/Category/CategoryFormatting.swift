@@ -4,25 +4,6 @@ import Foundation
 /// Small helpers the category, compare and viewer screens share (spec 009 6.5 to 6.8).
 
 extension Format {
-    /// A length for a line of text, to the minute: "12 sec", "5 min", "1 hr 2 min".
-    static func durationShort(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        if total < 60 {
-            return String(localized: "\(total) sec", comment: "A video's length in seconds")
-        }
-        if total < 3600 {
-            let minutes = Int((Double(total) / 60).rounded())
-            return String(localized: "\(minutes) min", comment: "A video's length in minutes")
-        }
-        let hours = total / 3600
-        let minutes = Int((Double(total % 3600) / 60).rounded())
-        let hoursText = String(localized: "\(hours) hr", comment: "A video's length in hours")
-        guard minutes > 0 else { return hoursText }
-        let minutesText = String(
-            localized: "\(minutes) min", comment: "A video's length in minutes")
-        return hoursText + " " + minutesText
-    }
-
     /// "4,032 × 3,024 · 3.2 MB", with the length of a video at the end ("· 0:12").
     static func facts(of item: LibraryItem) -> String {
         let m = item.metadata
