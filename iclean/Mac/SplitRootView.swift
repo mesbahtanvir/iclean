@@ -24,10 +24,11 @@
     struct SplitRootView: View {
         @Environment(AppModel.self) private var model
 
-        /// The sidebar's choice. The detail pane follows it.
-        @State private var selection: SidebarItem = .overview
-        /// The screens pushed inside the detail pane: group compare only, each a `.group` route.
-        @State private var groupPath: [Route] = []
+        /// The sidebar's choice and the screens pushed inside the detail pane (group compare only,
+        /// each a `.group` route). Held outside this view: a window that is closed and opened again
+        /// from the Dock must come back to the place `AppModel` still believes the person is at,
+        /// not to an Overview that disagrees with the held results and the saved place.
+        @Bindable private var navigation = MacNavigation.shared
         @State private var visibility: NavigationSplitViewVisibility = .detailOnly
         @State private var revealedSidebar = false
         @State private var confirm: ConfirmRequest?
@@ -40,7 +41,7 @@
                 Sidebar(selection: sidebarSelection)
                     .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
             } detail: {
-                NavigationStack(path: $groupPath) {
+                NavigationStack(path: $navigation.groupPath) {
                     detailRoot
                         .navigationDestination(for: Route.self) { RouteDestinationView(route: $0) }
                 }
@@ -55,6 +56,7 @@
             .environment(
                 \.openConfirm, { category in confirm = ConfirmRequest(category: category) }
             )
+            .environment(\.continueReviewing, { continueReviewing() })
             .focusedSceneValue(\.reviewActions, reviewActions)
             .sheet(item: $confirm) { ConfirmSheet(category: $0.category) }
             .alert(
@@ -71,6 +73,12 @@
             // The saved review is put back once, when the launch has results to check it against.
             .onChange(of: model.restoredRoute) { _, new in restore(new) }
             .onChange(of: hasResults, initial: true) { _, has in showSidebar(has) }
+            // A category that is no longer in the results (emptied by a removal, or the saved data
+            // was deleted) is left for the Overview, so the pane never shows a selection that the
+            // sidebar no longer has.
+            .onChange(of: selectionIsStale, initial: true) { _, stale in
+                if stale { choose(.overview) }
+            }
             .task { restore(model.restoredRoute) }
             #if DEBUG
                 .photoViewer($debugViewer)
@@ -125,7 +133,7 @@
                         .navigationTitle("iclean")
                 }
             } else {
-                switch selection {
+                switch navigation.selection {
                 case .overview:
                     Overview(
                         onReview: { confirm = ConfirmRequest(category: nil) },
@@ -144,7 +152,15 @@
         private var hasResults: Bool { !model.results.categories.isEmpty }
 
         private var selectedCategory: CleanupCategory? {
-            if case .category(let category) = selection { category } else { nil }
+            if case .category(let category) = navigation.selection { category } else { nil }
+        }
+
+        /// The selected category has left the results: its last photos were removed, or the saved
+        /// data was deleted. Not while the results are still being opened or built.
+        private var selectionIsStale: Bool {
+            guard model.launchPhase == .ready, case .category(let category) = navigation.selection
+            else { return false }
+            return model.results.category(category) == nil
         }
 
         // MARK: Selection and route
@@ -152,14 +168,14 @@
         /// What the sidebar sees and changes. Choosing another item leaves any group that was pushed.
         private var sidebarSelection: Binding<SidebarItem?> {
             Binding(
-                get: { selection },
+                get: { navigation.selection },
                 set: { new in if let new { choose(new) } })
         }
 
         private func choose(_ item: SidebarItem) {
-            guard item != selection || !groupPath.isEmpty else { return }
-            selection = item
-            groupPath = []
+            guard item != navigation.selection || !navigation.groupPath.isEmpty else { return }
+            navigation.selection = item
+            navigation.groupPath = []
         }
 
         private func select(_ category: CleanupCategory) { choose(.category(category)) }
@@ -168,8 +184,8 @@
         /// it. Nothing on the Overview. The same list the phone's stack holds, so saving a position
         /// and putting it back (spec 007) and the route validator need no change.
         private var route: [Route] {
-            if case .category(let category) = selection {
-                return [.category(category)] + groupPath
+            if case .category(let category) = navigation.selection {
+                return [.category(category)] + navigation.groupPath
             }
             return []
         }
@@ -180,21 +196,34 @@
                 get: { route },
                 set: { new in
                     if case .category(let category)? = new.first {
-                        selection = .category(category)
-                        groupPath = Array(new.dropFirst())
+                        navigation.selection = .category(category)
+                        navigation.groupPath = Array(new.dropFirst())
                     } else {
-                        selection = .overview
-                        groupPath = []
+                        navigation.selection = .overview
+                        navigation.groupPath = []
                     }
                 })
         }
 
-        private func restore(_ restored: RestoredRoute?) {
-            guard let restored, route.isEmpty else { return }
+        /// Puts the saved review back. The route is always used up, here or not at all: one left
+        /// behind would be applied by a later window, long after the person went somewhere else.
+        ///
+        /// The restore at launch never moves a person who has already chosen a place; "Continue
+        /// reviewing" (`force`) is that person asking to be taken there, wherever they are.
+        private func restore(_ restored: RestoredRoute?, force: Bool = false) {
+            guard let restored else { return }
+            model.restoredRoute = nil
+            guard force || route.isEmpty else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) { routeBinding.wrappedValue = restored.path }
-            model.restoredRoute = nil
+        }
+
+        /// "Continue reviewing" in the sidebar or on the Overview: the model works out the place and
+        /// checks it against the results as they are now; this goes there, in any state.
+        private func continueReviewing() {
+            model.continueReviewing()
+            restore(model.restoredRoute, force: true)
         }
 
         /// The sidebar appears once, when the first results do. Until then the window is one

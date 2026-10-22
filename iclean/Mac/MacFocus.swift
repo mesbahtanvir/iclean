@@ -25,6 +25,10 @@
         /// Opens the Confirm sheet for a category (nil: for everything). The shell owns the sheet, so
         /// it lives as long as the window does and a screen can disappear while its receipt is up.
         @Entry var openConfirm: (@MainActor (CleanupCategory?) -> Void)?
+
+        /// "Continue reviewing": takes the person to the saved place. The shell owns the navigation,
+        /// so it is the one that applies the route, whatever is open now.
+        @Entry var continueReviewing: (@MainActor () -> Void)?
     }
 
     /// Counts the sheets that are up (the Confirm sheet, the viewer). The menu commands read it and
@@ -38,6 +42,26 @@
 
         func opened() { open += 1 }
         func closed() { open = max(0, open - 1) }
+    }
+
+    /// Where the window is pointing: the sidebar's choice and the group screens pushed on it. It lives
+    /// outside the window's views, so a window that was closed and is opened again from the Dock
+    /// comes back to the same place, which is also where `AppModel` thinks the person is (the held
+    /// results, the saved place). Nothing here is persisted: a new launch starts at the Overview.
+    @MainActor @Observable
+    final class MacNavigation {
+        static let shared = MacNavigation()
+
+        var selection: SidebarItem = .overview
+        /// The screens pushed inside the detail pane: group compare only, each a `.group` route.
+        var groupPath: [Route] = []
+    }
+
+    extension KeyPress {
+        /// A key that is held down sends its press again and again. A command that flips something
+        /// (Space on a photo) must act on the first press only, or holding the key blinks the photo
+        /// on and off.
+        var isRepeat: Bool { phase.contains(.repeat) }
     }
 
     extension View {

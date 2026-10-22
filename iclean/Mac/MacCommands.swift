@@ -51,21 +51,18 @@
     }
 
     /// Scan Library (or Scan Again, or Resume), Pause or Resume, and Stop. Enabled from the model's
-    /// state, the way the toolbar buttons are.
+    /// state, the way the toolbar buttons are: the same `MacScanAction` decides both.
     private struct ScanMenuItems: View {
         let model: AppModel
 
         var body: some View {
             let sheetUp = MacSheetTracker.shared.isPresenting
-            let hasAccess = model.access == .full || model.access == .limited
-            let canStart =
-                model.launchPhase == .ready && hasAccess && !model.isScanning
-                && !model.isFinishing
+            let start = MacScanAction.current(model)
             let paused = model.progress?.state == .paused
             let pauseTitle: LocalizedStringKey = paused ? "Resume Scan" : "Pause Scan"
-            Button(startTitle) { model.startScan() }
+            Button(startTitle(start)) { model.startScan() }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(!canStart || sheetUp)
+                .disabled(start == nil || sheetUp)
             Button(pauseTitle) {
                 if paused { model.resumeScan() } else { model.pauseScan() }
             }
@@ -77,10 +74,11 @@
         }
 
         /// The first scan is "Scan Library", the next ones "Scan Again", and a scan that was cut off
-        /// is picked up again.
-        private var startTitle: LocalizedStringKey {
-            if model.hasInterruptedScan { return "Resume Scan" }
-            return model.hasFinishedFullScan ? "Scan Again" : "Scan Library"
+        /// is picked up again. Dimmed (nothing to start), it keeps the title it would have.
+        private func startTitle(_ action: MacScanAction?) -> LocalizedStringKey {
+            if let action { return action.title }
+            if model.hasInterruptedScan { return MacScanAction.resume.title }
+            return model.hasFinishedFullScan ? MacScanAction.again.title : MacScanAction.scan.title
         }
     }
 

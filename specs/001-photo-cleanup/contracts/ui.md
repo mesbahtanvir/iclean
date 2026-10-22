@@ -46,11 +46,17 @@ these are Mac only:
 
 - Sidebar: `sidebar.overview`, `sidebar.category.<name>` (the Overview keeps `results.category.<name>`).
   The sidebar footer holds `home.lastScan` and `home.scan` (Scan Again), `home.resume`, `home.continue`,
-  `results.showNew` and, while scanning with results, the scan status. While scanning with nothing
-  found yet the scan card is the detail pane; its controls are in the toolbar.
+  `results.showNew` and, while scanning with results, the scan status. While the Overview is in the
+  detail pane it shows `home.continue` and `results.showNew` itself and the footer leaves them out, so
+  each id is on screen once; with the sidebar hidden they are still on the Overview. While scanning
+  with nothing found yet the scan card is the detail pane; its controls are in the toolbar.
 - Toolbar: `toolbar.scan` (Scan Library, Scan Again), `toolbar.resume` (Resume Scan after an interrupted
   scan), and while a scan runs `scan.pause`, `scan.resume`, `scan.stop`; on a category
-  `category.photoSize` (the photo-size slider) and `category.selectAll`.
+  `category.photoSize` (the photo-size slider) and `category.selectAll`. The toolbar ids differ from
+  `home.scan` / `home.resume` on purpose: those stay on the buttons in the detail pane and the sidebar,
+  which are on screen at the same time as the toolbar, and one window must not hold two views with one
+  id. The toolbar offers a scan exactly when the phone's Home would (the order above): never while the
+  saved data is opening or being built, after it could not be read, or while a scan runs or finishes.
 - Category: `category.removeSelected` is the button in a 40 pt status bar. Large Videos is a table with
   `category.item.<assetID>` on the Size cell of each row. Group compare uses checkboxes for
   `group.toggle.<assetID>` (query `checkBoxes`, not `switches`).

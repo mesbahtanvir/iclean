@@ -37,7 +37,12 @@
                 }
             }
             .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom, spacing: 0) { SidebarFooter() }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // The Overview shows "Continue reviewing" and "Show N new items" itself, so they
+                // are not drawn twice in one window.
+                SidebarFooter(
+                    overviewShowing: selection == .overview && !model.results.categories.isEmpty)
+            }
         }
     }
 
@@ -71,29 +76,36 @@
     /// Under the list: newer results waiting, the review to continue, and the scan. While scanning it
     /// is the thin bar with the count and one line of note; otherwise "Scanned 3 minutes ago" with a
     /// quiet Scan Again, or Resume Scan after a scan was cut off.
+    ///
+    /// What can be started comes from `MacScanAction`, the phone's Home states, so the footer never
+    /// offers a scan while the saved data is opening or being built.
     struct SidebarFooter: View {
+        /// The Overview is in the detail pane, and it shows the review to continue and the newer
+        /// results waiting; they are left out here so they are not there twice.
+        let overviewShowing: Bool
+
         @Environment(AppModel.self) private var model
 
         var body: some View {
             let hasResults = !model.results.categories.isEmpty
-            let idle = !model.isScanning && !model.isFinishing && !model.hasInterruptedScan
+            let action = MacScanAction.current(model)
             // While there is nothing to show in the detail pane yet, the scan card is there, so it
             // is not drawn twice.
             let showsScan = model.isScanning && hasResults
-            let isEmpty =
-                model.pendingNewCount == 0 && model.continueRoute.isEmpty && !showsScan
-                && !model.hasInterruptedScan && !idle
+            let showsNew = model.pendingNewCount > 0 && !overviewShowing
+            let showsContinue = !model.continueRoute.isEmpty && !overviewShowing
+            let isEmpty = !showsNew && !showsContinue && !showsScan && action == nil
             if !isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     Divider()
                     VStack(alignment: .leading, spacing: Space.s) {
-                        if model.pendingNewCount > 0 { ShowNewItemsRow() }
-                        if !model.continueRoute.isEmpty { ContinueReviewingRow() }
+                        if showsNew { ShowNewItemsRow() }
+                        if showsContinue { MacContinueRow() }
                         if showsScan {
                             ScanningView(showsControls: false)
-                        } else if model.hasInterruptedScan {
+                        } else if action == .resume {
                             ResumeScanRow()
-                        } else if idle {
+                        } else if action != nil {
                             ScanAgainLine(stacked: true)
                         }
                     }

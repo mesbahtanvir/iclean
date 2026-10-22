@@ -23,6 +23,7 @@
             let summaryReady = !model.summary.perCategory.isEmpty
             Form {
                 if summaryReady { heroSection(hasSelection: hasSelection) }
+                waitingSection
                 categorySection
                 footerSection
             }
@@ -32,6 +33,19 @@
         }
 
         // MARK: Sections
+
+        /// The review to carry on and the newer results that were held back. They are here, and not
+        /// only in the sidebar, so they can be reached while the sidebar is hidden.
+        @ViewBuilder private var waitingSection: some View {
+            let hasContinue = !model.continueRoute.isEmpty
+            let hasNew = model.pendingNewCount > 0
+            if hasContinue || hasNew {
+                Section {
+                    if hasContinue { MacContinueRow() }
+                    if hasNew { ShowNewItemsRow() }
+                }
+            }
+        }
 
         /// How much can be freed, said once and large, and the one next step directly under it. The
         /// button says "Review", not "Remove": it opens a summary, and nothing is removed until the
