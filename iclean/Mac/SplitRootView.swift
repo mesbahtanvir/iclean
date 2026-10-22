@@ -50,7 +50,11 @@
             }
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) { ScanToolbarButtons() }
-                if model.isScanning {
+                // The count is in the toolbar only while nothing else shows it: the sidebar's footer
+                // has the scan card while results exist, and the pane has it before they do. At the
+                // narrowest window the toolbar is already full (title, Scan, the photo size, Select
+                // Suggested), and macOS would push the less important of them into the overflow.
+                if model.isScanning, hasResults, visibility == .detailOnly {
                     ToolbarItem(placement: .status) { ScanToolbarStatus() }
                 }
             }
