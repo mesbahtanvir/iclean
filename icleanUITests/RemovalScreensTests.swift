@@ -115,13 +115,24 @@ final class RemovalScreensTests: XCTestCase {
         XCTAssertTrue(freed.label.contains("once Recently Deleted is emptied"), freed.label)
         XCTAssertFalse(app.staticTexts["done.failures"].exists)
 
-        // How to undo, in the same words as Settings, and the iCloud caveat.
+        // One plain sentence about time, the steps one tap away (the same ones as Settings), and
+        // the iCloud caveat as a quiet note of its own.
         let restore = element(app, "done.restore")
         XCTAssertTrue(restore.exists)
         XCTAssertTrue(restore.label.contains("at least 30 days"), restore.label)
-        XCTAssertTrue(restore.label.contains("iCloud"), restore.label)
-
+        XCTAssertTrue(restore.label.contains("erases them for good"), restore.label)
+        XCTAssertTrue(element(app, "done.icloud").label.contains("iCloud"))
+        XCTAssertFalse(element(app, "restoreHelp.steps").exists, "The steps start folded away")
         shot(app, "done")
+        let howTo = element(app, "done.howTo")
+        XCTAssertTrue(howTo.exists)
+        XCTAssertTrue(howTo.label.contains("How to put them back"), howTo.label)
+        howTo.tap()
+        let steps = element(app, "restoreHelp.steps")
+        XCTAssertTrue(steps.waitForExistence(timeout: 5))
+        XCTAssertTrue(steps.label.contains("Recently Deleted"), steps.label)
+        XCTAssertTrue(steps.label.contains("Recover"), steps.label)
+        shot(app, "done-steps")
         // The only control is Done; the old Close and the Cancel are gone.
         XCTAssertTrue(app.buttons["done.close"].exists)
         XCTAssertFalse(app.buttons["confirm.cancel"].exists)
@@ -140,6 +151,27 @@ final class RemovalScreensTests: XCTestCase {
         XCTAssertTrue(failures.label.contains("still in your library"), failures.label)
         XCTAssertEqual(app.staticTexts["done.removed"].label, "2 items removed")
         shot(app, "done-failure")
+    }
+
+    /// PhotoKit refuses the whole request: nothing was removed, so the receipt says only that. No
+    /// "0 items removed", no honest figure, and no instructions for getting back photos that never left.
+    func testWhenNothingWasRemovedTheReceiptSaysOnlyThat() {
+        let app = start("removalFailsAll")
+        openConfirm(app)
+        app.buttons["confirm.remove"].tap()
+        let removed = app.staticTexts["done.removed"]
+        XCTAssertTrue(removed.waitForExistence(timeout: 10))
+        XCTAssertEqual(removed.label, "Nothing was removed")
+        let failures = app.staticTexts["done.failures"]
+        XCTAssertTrue(failures.exists)
+        XCTAssertTrue(failures.label.contains("3 items could not be removed"), failures.label)
+        XCTAssertTrue(failures.label.contains("still in your library"), failures.label)
+        XCTAssertFalse(app.staticTexts["done.freed"].exists)
+        XCTAssertFalse(element(app, "done.restore").exists)
+        XCTAssertFalse(element(app, "done.howTo").exists)
+        XCTAssertFalse(element(app, "done.icloud").exists)
+        shot(app, "done-nothing-removed")
+        XCTAssertTrue(app.buttons["done.close"].exists)
     }
 
     func testRemovingEveryCopyNeedsAnExplicitYes() {

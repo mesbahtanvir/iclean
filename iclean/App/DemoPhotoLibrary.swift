@@ -275,7 +275,14 @@
             if scenario == "cancelRemoval" {
                 return RemovalResult(removed: [], failed: [], cancelled: true)
             }
-            let failing: Set<String> = scenario == "removalFails" ? [assetIDs.sorted().first ?? ""] : []
+            // "removalFails" refuses one photo of the request; "removalFailsAll" refuses every one, as
+            // PhotoKit does when it rejects the whole request.
+            let failing: Set<String>
+            switch scenario {
+            case "removalFails": failing = [assetIDs.sorted().first ?? ""]
+            case "removalFailsAll": failing = Set(assetIDs)
+            default: failing = []
+            }
             let result: RemovalResult = lock.withLock {
                 var removed: [String] = []
                 var failed: [String] = []

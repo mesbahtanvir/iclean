@@ -116,11 +116,17 @@ final class SettingsScreensTests: XCTestCase {
         let app = start()
         openSettings(app)
         open(app, "settings.restoreHelp")
+        // How long they stay, then the steps as a short numbered list.
+        let retention = element(app, "restoreHelp.retention")
+        XCTAssertTrue(retention.waitForExistence(timeout: 5))
+        XCTAssertTrue(retention.label.contains("at least 30 days"), retention.label)
+        XCTAssertTrue(retention.label.contains("erases them for good"), retention.label)
         let steps = element(app, "restoreHelp.steps")
         XCTAssertTrue(steps.waitForExistence(timeout: 5))
         XCTAssertTrue(steps.label.contains("Recently Deleted"), steps.label)
-        XCTAssertTrue(steps.label.contains("at least 30 days"), steps.label)
         XCTAssertTrue(steps.label.contains("Recover"), steps.label)
+        XCTAssertTrue(steps.label.contains("1."), steps.label)
+        XCTAssertTrue(steps.label.contains("3."), steps.label)
         shot(app, "restore-help")
     }
 

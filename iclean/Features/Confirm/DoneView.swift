@@ -3,6 +3,7 @@ import SwiftUI
 
 /// The receipt after a removal (FR-015): what was removed, the honest figure, and how to undo it.
 /// Quiet on purpose: nothing was erased yet, so there is nothing to celebrate and nothing to fear.
+/// When nothing was removed at all, it says only that, and says nothing about getting photos back.
 struct DoneView: View {
     let summary: CleanupSummary
     var onClose: () -> Void
@@ -12,6 +13,7 @@ struct DoneView: View {
     @State private var succeeded = false
 
     private var failed: Int { summary.failedAssetIDs.count }
+    private var removedAnything: Bool { summary.removedCount > 0 }
 
     var body: some View {
         ScrollView {
@@ -21,14 +23,14 @@ struct DoneView: View {
                     .font(.system(size: glyphSize))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                // Read by the tests as one text: exactly "N items removed".
-                Text("\(summary.removedCount) items removed")
+                // Read by the tests as one text: exactly "N items removed", or "Nothing was removed".
+                headline
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityFocused($headlineFocused)
                     .accessibilityIdentifier("done.removed")
-                if summary.removedCount > 0 {
+                if removedAnything {
                     // The honest figure: it is only free once Recently Deleted is emptied, and with
                     // iCloud Optimize Storage the space on this device can differ.
                     Text(
@@ -46,12 +48,7 @@ struct DoneView: View {
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("done.failures")
                 }
-                Text(verbatim: restoreParagraph)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, Space.m)
-                    .accessibilityIdentifier("done.restore")
+                if removedAnything { restoreGuidance }
             }
             .padding(.horizontal, platformGutter)
             .padding(.top, Space.xl)
@@ -79,13 +76,38 @@ struct DoneView: View {
         }
     }
 
-    /// The steps, then the one thing they cannot promise.
-    private var restoreParagraph: String {
-        RestoreHelp.steps + " "
-            + String(
-                localized:
-                    "If your photos are in iCloud, the space you get back on this device can differ."
+    private var headline: Text {
+        removedAnything
+            ? Text("\(summary.removedCount) items removed") : Text("Nothing was removed")
+    }
+
+    /// One sentence about time in the primary colour, the steps one tap away, and the one thing they
+    /// cannot promise. Not shown when nothing was removed: there is nothing to put back.
+    private var restoreGuidance: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text(RestoreHelp.retentionOnReceipt)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("done.restore")
+            DisclosureGroup {
+                RestoreSteps()
+                    .padding(.top, Space.s)
+            } label: {
+                Text("How to put them back")
+                    .font(.body)
+                    .foregroundStyle(Palette.accentText)
+                    // On the label, not the group: an id on the group is given to the steps too.
+                    .accessibilityIdentifier("done.howTo")
+            }
+            .tint(Palette.accentText)
+            QuietNote(
+                "If your photos are in iCloud, the space you get back on this device can differ.",
+                systemImage: "icloud"
             )
+            .accessibilityIdentifier("done.icloud")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, Space.m)
     }
 
     private var platformGutter: CGFloat {
@@ -105,10 +127,10 @@ struct DoneView: View {
                 #endif
         }
         .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
         #if os(iOS)
             .controlSize(.large)
         #endif
+        .actionShape(pinned: true)
         .accessibilityIdentifier("done.close")
     }
 }
