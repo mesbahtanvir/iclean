@@ -116,6 +116,7 @@
                 .accessibilityAction(named: Text("Always Keep")) {
                     Task { await model.alwaysKeep(assetID) }
                 }
+                .modifier(RestOfGroupAction(group: group, model: model))
         }
 
         // MARK: Pointer
@@ -153,10 +154,31 @@
             }
             if let group, group.members.count > 1 {
                 Button("Select the Rest of This Group") {
-                    // The photos suggested to keep stay: this is "the rest", not "all".
-                    model.setSelected(group.members.filter { !group.keepers.contains($0) }, true)
+                    RestOfGroupAction.select(group, in: model)
                 }
             }
+        }
+    }
+
+    /// "Select the Rest of This Group" for VoiceOver and Switch Control, as the context menu has it,
+    /// on the photos of a group of more than one.
+    private struct RestOfGroupAction: ViewModifier {
+        let group: ResultGroup?
+        let model: AppModel
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if let group, group.members.count > 1 {
+                content.accessibilityAction(named: Text("Select the Rest of This Group")) {
+                    Self.select(group, in: model)
+                }
+            } else {
+                content
+            }
+        }
+
+        /// The photos suggested to keep stay: this is "the rest", not "all".
+        @MainActor static func select(_ group: ResultGroup, in model: AppModel) {
+            model.setSelected(group.members.filter { !group.keepers.contains($0) }, true)
         }
     }
 
