@@ -11,15 +11,20 @@ public enum DuplicateVideoThresholds {
 public struct DuplicateVideoDetector: CategoryDetector {
     public let category = CleanupCategory.duplicateVideos
     public let needsAnalysis = true
+    public let parallelism: Int
 
-    public init() {}
+    public init(parallelism: Int = 1) { self.parallelism = max(1, parallelism) }
 
     public func detect(items: [LibraryItem]) -> [ResultGroup] {
         let videos = items.filter { $0.metadata.kind == .video && $0.analysis != nil }
-        let groups = DuplicateGrouping.group(videos) { a, b in
-            guard let da = a.metadata.duration, let db = b.metadata.duration else { return false }
-            return abs(da - db) <= DuplicateVideoThresholds.duration
-        }
+        let groups = DuplicateGrouping.group(
+            videos,
+            extraCheck: { a, b in
+                guard let da = a.metadata.duration, let db = b.metadata.duration else {
+                    return false
+                }
+                return abs(da - db) <= DuplicateVideoThresholds.duration
+            }, parallelism: parallelism)
         let context = DateContext(items: items)
         return groups.map { members in
             let keepers = KeeperRules.duplicateKeepers(members, context: context)

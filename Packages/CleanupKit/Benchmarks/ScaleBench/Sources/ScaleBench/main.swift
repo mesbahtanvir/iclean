@@ -155,6 +155,56 @@ let skipResults = args.contains("--no-results")
 /// Leaves out the old `items()` read, so the lean path's memory is not measured on top of it.
 let skipFullItems = args.contains("--no-full-items")
 
+func intArg(_ name: String) -> Int? { args.firstIndex(of: name).flatMap { Int(args[$0 + 1]) } }
+
+if args.contains("--analyzer-scaling") {
+    // The real analyzer on realistic images, at several widths (spec 009).
+    let cores = ProcessInfo.processInfo.activeProcessorCount
+    let widths = args.firstIndex(of: "--widths").map {
+        args[$0 + 1].split(separator: ",").compactMap { Int($0) }
+    } ?? [1, 2, 4, 8, cores, cores * 2]
+    await runAnalyzerScaling(
+        distinct: intArg("--distinct") ?? 240, perRun: intArg("--per-run") ?? 600, widths: widths,
+        only: args.firstIndex(of: "--only").map { args[$0 + 1] })
+    exit(0)
+}
+
+if args.contains("--vision-probe") {
+    await runVisionProbe()
+    await runVisionDevices(distinct: 120, perRun: 600)
+    exit(0)
+}
+
+if let i = args.firstIndex(of: "--bucket-stats") {
+    try await runBucketStats(folder: URL(fileURLWithPath: args[i + 1]))
+    exit(0)
+}
+
+if let i = args.firstIndex(of: "--results-profile") {
+    try await runResultsProfile(
+        folder: URL(fileURLWithPath: args[i + 1]), repeats: intArg("--repeats") ?? 3)
+    exit(0)
+}
+
+if args.contains("--real-scan") {
+    // A full scan with the real analyzer and the results build after it (spec 009).
+    var o = RealScanOptions()
+    o.count = intArg("--count") ?? 3_000
+    o.concurrency = intArg("--concurrency") ?? 4
+    o.chunk = intArg("--chunk") ?? 32
+    o.latencyMs = intArg("--latency-ms") ?? 0
+    o.lanes = intArg("--lanes") ?? 1
+    o.writeBehind = intArg("--write-behind") ?? 0
+    o.profile = args.firstIndex(of: "--profile").map { args[$0 + 1] } ?? ""
+    o.keep = args.firstIndex(of: "--keep").map { args[$0 + 1] }
+    o.demo = args.contains("--demo")
+    o.completeVision = args.contains("--no-defer-vision")
+    let sampler = PeakSampler()
+    try await runRealScan(o, sampler: sampler)
+    sampler.stop()
+    exit(0)
+}
+
 if args.contains("--stages") {
     await runStageTimings(
         iterations: args.firstIndex(of: "--count").flatMap { Int(args[$0 + 1]) } ?? 200)

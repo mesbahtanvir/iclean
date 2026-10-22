@@ -36,6 +36,9 @@ final class LibraryItemRecord {
     // fill in the next time the item's metadata is refreshed.
     var addedDate: Date?
     var hasLocation: Bool?
+    // Spec 010: the Vision work left out of the analysis on purpose (`VisionWork.rawValue`). Optional,
+    // and nil for stores written before, which skipped nothing.
+    var visionSkippedRaw: Int?
 
     init(_ item: LibraryItem) {
         assetID = item.assetID
@@ -80,6 +83,7 @@ final class LibraryItemRecord {
         sharpness = a?.sharpness
         aestheticsScore = a?.aestheticsScore
         faceQuality = a?.faceQuality
+        visionSkippedRaw = a.flatMap { $0.skippedVision.isEmpty ? nil : $0.skippedVision.rawValue }
         byteSize = item.byteSize
         isSizeEstimated = item.isSizeEstimated
         analyzedAt = item.analyzedAt
@@ -93,6 +97,7 @@ final class LibraryItemRecord {
             \.assetID, \.kindRaw, \.captureDate, \.modificationDate, \.pixelWidth, \.pixelHeight,
             \.duration, \.isFavorite, \.hasAdjustments, \.isPortrait, \.isLongExposure, \.burstID,
             \.albumNames, \.analysisSourceRaw, \.scanAttempts, \.addedDate, \.hasLocation,
+            \.visionSkippedRaw,
         ]
     }
 
@@ -119,7 +124,8 @@ final class LibraryItemRecord {
         StoredItemSummary(
             metadata: metadata,
             analysisSource: AnalysisSource(rawValue: analysisSourceRaw) ?? .notScanned,
-            scanAttempts: scanAttempts ?? 0)
+            scanAttempts: scanAttempts ?? 0,
+            skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0))
     }
 
     /// The item without its feature print (`featurePrint` is empty). Reads no feature print.
@@ -129,7 +135,8 @@ final class LibraryItemRecord {
             analysis = Analysis(
                 dHash: UInt64(bitPattern: dHashBits), thumbprint: thumbprint ?? Data(),
                 featurePrint: Data(), sharpness: sharpness, aestheticsScore: aestheticsScore,
-                faceQuality: faceQuality)
+                faceQuality: faceQuality, skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
+            )
         }
         return LibraryItem(
             metadata: metadata,
@@ -202,7 +209,8 @@ final class LibraryItemRecord {
                 dHash: UInt64(bitPattern: dHashBits), thumbprint: thumbprint ?? Data(),
                 featurePrint: featurePrint,
                 sharpness: sharpness, aestheticsScore: aestheticsScore,
-                faceQuality: faceQuality)
+                faceQuality: faceQuality, skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
+            )
         }
         return LibraryItem(
             metadata: metadata,

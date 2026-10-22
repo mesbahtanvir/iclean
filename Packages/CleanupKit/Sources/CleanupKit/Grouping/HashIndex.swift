@@ -51,6 +51,73 @@ struct HashIndex {
         }
     }
 
+    // MARK: Work split for the parallel build (spec 009)
+
+    /// A share of the candidate pairs: rows `rows` of one bucket, each row paired with every later
+    /// member of the bucket. Splitting by row keeps one huge bucket from being one worker's job.
+    struct Slab: Sendable {
+        var chunk: Int
+        var bucket: Int
+        var rows: Range<Int>
+        var pairs: Int
+    }
+
+    /// The buckets with more than one member, for every hash chunk.
+    func buckets(_ hashes: [UInt64]) -> [[[Int]]] {
+        chunks.indices.map { c in
+            var buckets: [UInt64: [Int]] = [:]
+            let chunk = chunks[c]
+            for (i, h) in hashes.enumerated() {
+                buckets[(h >> chunk.shift) & chunk.mask, default: []].append(i)
+            }
+            return buckets.values.filter { $0.count > 1 }
+        }
+    }
+
+    /// Cuts the buckets into slabs of about `targetPairs` pairs, biggest first.
+    func slabs(_ buckets: [[[Int]]], targetPairs: Int) -> [Slab] {
+        var out: [Slab] = []
+        for (c, list) in buckets.enumerated() {
+            for (b, bucket) in list.enumerated() {
+                let m = bucket.count
+                var start = 0
+                var pairs = 0
+                for a in 0..<(m - 1) {
+                    pairs += m - 1 - a
+                    if pairs >= targetPairs {
+                        out.append(Slab(chunk: c, bucket: b, rows: start..<(a + 1), pairs: pairs))
+                        start = a + 1
+                        pairs = 0
+                    }
+                }
+                if start < m - 1 {
+                    out.append(Slab(chunk: c, bucket: b, rows: start..<(m - 1), pairs: pairs))
+                }
+            }
+        }
+        return out.sorted {
+            ($0.pairs, $1.chunk, $1.bucket, $1.rows.lowerBound)
+                > ($1.pairs, $0.chunk, $0.bucket, $0.rows.lowerBound)
+        }
+    }
+
+    /// The candidate pairs of one slab: the pairs `forEachCandidatePair` reports for those rows.
+    func forEachCandidatePair(
+        in slab: Slab, buckets: [[[Int]]], hashes: [UInt64], _ body: (Int, Int) -> Void
+    ) {
+        let bucket = buckets[slab.chunk][slab.bucket]
+        for a in slab.rows {
+            for b in (a + 1)..<bucket.count {
+                let i = bucket[a]
+                let j = bucket[b]
+                if sharesEarlierChunk(hashes[i], hashes[j], before: slab.chunk) { continue }
+                if hammingDistance(hashes[i], hashes[j]) <= maxDistance {
+                    body(min(i, j), max(i, j))
+                }
+            }
+        }
+    }
+
     private func sharesEarlierChunk(_ a: UInt64, _ b: UInt64, before c: Int) -> Bool {
         for k in 0..<c where (a >> chunks[k].shift) & chunks[k].mask == (b >> chunks[k].shift) & chunks[k].mask {
             return true

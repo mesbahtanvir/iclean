@@ -39,8 +39,8 @@ struct AppEnvironment: Sendable {
             library: library, store: store,
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
-                chunkSize: LaunchArguments.chunkSize, features: features,
-                minProgressInterval: .milliseconds(250)),
+                profile: LaunchArguments.scanProfile, features: features,
+                deferVision: LaunchArguments.deferVision, minProgressInterval: .milliseconds(250)),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
@@ -86,6 +86,34 @@ enum LaunchArguments {
             }
         #endif
         return 32
+    }
+
+    /// How wide the scan works (spec 009): every core on a Mac, the narrow settings of spec 008 on a
+    /// phone. DEBUG only: `-ScanProfile phone` or `-ScanProfile mac` picks one, so the narrow scan can
+    /// be run on a Mac and the wide one compared with it.
+    static var scanProfile: ScanProfile {
+        var profile = ScanProfile.current
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-ScanProfile"), i + 1 < args.count {
+                profile = args[i + 1] == "phone" ? .phone : .mac()
+            }
+        #endif
+        profile.chunkSize = chunkSize
+        return profile
+    }
+
+    /// Whether the scan leaves out the feature print and face quality of photos no detector can read
+    /// them for (spec 010). DEBUG only: `-DeferVision off` runs them for every photo, so the two scans
+    /// can be timed against each other on a device. The results are the same either way.
+    static var deferVision: Bool {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-DeferVision"), i + 1 < args.count {
+                return args[i + 1] != "off"
+            }
+        #endif
+        return true
     }
 
     /// What Pro unlocks. Always free in a release build: the one-time Pro purchase is not

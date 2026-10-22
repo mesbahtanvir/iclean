@@ -35,6 +35,9 @@ import Testing
         #expect(analyzed.metadata.albumNames == ["Trip"])
         #expect(analyzed.scanFailure == nil)
         #expect(analyzed.scanAttempts == 0)
+        // Spec 010: a store from before records no skipped Vision work, and nothing is repaired.
+        #expect(analyzed.analysis?.skippedVision == [])
+        #expect(try await store.itemSummaries().allSatisfy { $0.skippedVision == [] })
         // Columns added later open as "not known yet", not as "none" (date-aware keepers).
         #expect(analyzed.metadata.addedDate == nil)
         #expect(analyzed.metadata.hasLocation == nil)

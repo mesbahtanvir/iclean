@@ -15,11 +15,11 @@ import Foundation
 /// - The brightness difference is exact and checked before the correlation.
 /// - Each photo's centred high-pass image is computed once and kept, up to a bound, so the
 ///   correlation of a pair is one pass over two arrays.
-struct ThumbprintMatcher {
+struct ThumbprintMatcher: Sendable {
     private static let blocks = 16
 
     /// What the correlation needs of one photo, computed once.
-    private struct Profile {
+    fileprivate struct Profile: Sendable {
         var mean: Double
         var isFlat: Bool
         /// The high-pass image minus its own mean.
@@ -31,8 +31,10 @@ struct ThumbprintMatcher {
     private let data: [Data]
     private let coarse: [Int32]
     private let isUsable: [Bool]
-    private let cacheLimit: Int
+    private var cacheLimit: Int
     private var profiles: [Int: Profile] = [:]
+    /// Set for matchers that run on several threads: the profiles are computed once for all of them.
+    private var shared: SharedProfiles?
 
     init(_ thumbprints: [Data], cacheLimit: Int = 4_000) {
         self.cacheLimit = cacheLimit
@@ -55,6 +57,17 @@ struct ThumbprintMatcher {
         }
         self.coarse = coarse
         isUsable = usable
+    }
+
+    /// A matcher for another thread: shares the miniatures and their block sums (copy on write,
+    /// never copied) and, when `shared` is given, the high-pass images too, which are then computed
+    /// once for all threads. Without it the copy keeps a cache of its own.
+    func forAnotherWorker(cacheLimit: Int, shared: SharedProfiles? = nil) -> ThumbprintMatcher {
+        var copy = self
+        copy.cacheLimit = cacheLimit
+        copy.profiles = [:]
+        copy.shared = shared
+        return copy
     }
 
     mutating func confirms(_ i: Int, _ j: Int) -> Bool {
@@ -91,9 +104,16 @@ struct ThumbprintMatcher {
     }
 
     private mutating func profile(_ i: Int) -> Profile {
+        if let shared { return shared.profile(i) { makeProfile(i) } }
         if let cached = profiles[i] { return cached }
         // Bound the memory: the working set of one bucket is far smaller than the limit.
         if profiles.count >= cacheLimit { profiles.removeAll(keepingCapacity: true) }
+        let p = makeProfile(i)
+        profiles[i] = p
+        return p
+    }
+
+    private func makeProfile(_ i: Int) -> Profile {
         let pixels = Thumbprint.values(data[i])!
         let detail = Thumbprint.highPass(pixels)
         let m = Thumbprint.mean(detail)
@@ -104,10 +124,50 @@ struct ThumbprintMatcher {
             centered[k] = d
             energy += d * d
         }
-        let p = Profile(
+        return Profile(
             mean: Thumbprint.mean(pixels), isFlat: Thumbprint.isFlat(pixels), centered: centered,
             energy: energy)
-        profiles[i] = p
-        return p
+    }
+}
+
+/// High-pass profiles computed once and shared by the threads of a parallel build (spec 009).
+/// Profiles never change, so a thread that finds one can use it without further locking; the table
+/// stops storing at `limit` profiles (about 8 KB each) and computes the rest every time, so its
+/// memory is bounded however many photos there are.
+final class SharedProfiles: @unchecked Sendable {
+    private let slots: UnsafeMutablePointer<ThumbprintMatcher.Profile?>
+    private let count: Int
+    private let limit: Int
+    private let stripes = (0..<64).map { _ in NSLock() }
+    private let totalLock = NSLock()
+    private var stored = 0
+
+    init(count: Int, limit: Int) {
+        self.count = count
+        self.limit = limit
+        slots = .allocate(capacity: max(1, count))
+        slots.initialize(repeating: nil, count: max(1, count))
+    }
+
+    deinit {
+        slots.deinitialize(count: max(1, count))
+        slots.deallocate()
+    }
+
+    fileprivate func profile(
+        _ i: Int, compute: () -> ThumbprintMatcher.Profile
+    ) -> ThumbprintMatcher.Profile {
+        let lock = stripes[i & 63]
+        if let found = lock.withLock({ slots[i] }) { return found }
+        let made = compute()
+        let room = totalLock.withLock { () -> Bool in
+            guard stored < limit else { return false }
+            stored += 1
+            return true
+        }
+        if room {
+            lock.withLock { slots[i] = made }
+        }
+        return made
     }
 }

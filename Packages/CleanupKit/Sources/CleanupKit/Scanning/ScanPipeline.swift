@@ -24,13 +24,16 @@ public actor ScanPipeline: Scanner {
     private let library: PhotoLibrary
     private let store: Store
     private let analyzer: Analyzer
-    private let concurrency: Int
+    private let profile: ScanProfile
     private let progressEvery: Int
     private let policy: ScanRetryPolicy
     private let features: ProFeatures
+    /// Whether plans leave out the Vision work no detector can read (spec 010).
+    private let deferVision: Bool
     private let pauseWaitLimit: Duration
     private let minProgressInterval: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
+    private let lowPowerMode: @Sendable () -> Bool
     /// Identifies this process. A chunk leased by another incarnation was left behind
     /// by a process that died (003 FR-005).
     private let incarnation = UUID()
@@ -54,6 +57,8 @@ public actor ScanPipeline: Scanner {
     /// The chunks those results belong to: written in the same transaction as the results, so a
     /// chunk is never stored as unfinished next to results that say it is done.
     private var unsavedChunks: [ScanChunk] = []
+    /// The counters that belong to `unsaved`, added to the session by the next write.
+    private var owedTally = Tally()
     private var runKind: ScanKind = .full
     private var session: ScanSession?
     private var chunks: [ScanChunk] = []
@@ -67,17 +72,41 @@ public actor ScanPipeline: Scanner {
     /// in-memory counters, which run ahead of the saved results while a chunk is in
     /// flight (review fix: a kill after a pause must not leave counters above the results).
     private var storedSession: ScanSession?
-    /// The chunk this process leased, as last saved.
-    private var storedLeased: ScanChunk?
+    /// The session as it was when the job was loaded or planned. The base of a write while the
+    /// store holds no copy of it yet (the first write of the job failed).
+    private var jobStart: ScanSession?
+    /// The chunks this process leased, as last saved, by chunk id. With several lanes more than one
+    /// is leased at a time.
+    private var storedLeased: [String: ScanChunk] = [:]
+    /// Lanes that are working on a chunk right now.
+    private var activeChunks = 0
+    /// Finished chunks in the order they will be written. One writer takes them one at a time, so
+    /// the counters in the session a write carries are exactly those of what the store holds.
+    private var writeQueue: [PendingWrite] = []
+    private var writerActive = false
+    /// Chunks that are queued or being written, plus the one a lane is waiting for. A chunk is not
+    /// leased again until its last write has landed, or an old state could overwrite the new lease.
+    private var pendingWriteChunks: Set<Int> = []
+    private var outstandingWrites = 0
+    private var writeWaiters: [CheckedContinuation<Void, Never>] = []
+    private var progressSink: (@Sendable (ScanProgress) -> Void)?
+    /// Held while a write that changes chunk rows and counters runs, so a pause's release of leased
+    /// chunks can never land after, and undo, the write that finished one of them.
+    private var gateHeld = false
+    private var gateWaiters: [CheckedContinuation<Void, Never>] = []
     /// Set when a job is resumed from the store: items added or changed while it was
     /// interrupted are picked up before it completes (003 FR-011).
     private var needsCatchUp = false
 
     /// - Parameters:
-    ///   - chunkSize: items per chunk, the unit of durability (1…64).
+    ///   - profile: how wide the scan works (spec 009): photos at a time, chunks at a time, how many
+    ///     finished chunks may wait for the store, and the chunk size (1…64, the unit of durability).
     ///   - progressEvery: analyzed items between two progress events (002 R4).
     ///   - policy: retry, timeout and crash limits (003).
     ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
+    ///   - deferVision: leave out the feature print and face quality of photos that no detector can
+    ///     read them for, and analyze them later if that changes (spec 010). False is the scan of
+    ///     spec 009, for comparison; the results are the same either way.
     ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
     ///     acknowledge; tests raise it so a slow machine cannot hit it.
     ///   - minProgressInterval: at most one progress event per interval while items finish.
@@ -85,25 +114,52 @@ public actor ScanPipeline: Scanner {
     ///     scan otherwise sent about 4,000 events, each one a screen update and a system call.
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
-        concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
-        policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
+        profile: ScanProfile, progressEvery: Int = 10, policy: ScanRetryPolicy = .default,
+        features: ProFeatures = .free, deferVision: Bool = true,
         pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
+        },
+        lowPowerMode: @escaping @Sendable () -> Bool = {
+            ProcessInfo.processInfo.isLowPowerModeEnabled
         }
     ) {
         self.library = library
         self.store = store
         self.analyzer = analyzer
-        self.concurrency = max(1, concurrency)
+        self.profile = profile
         self.progressEvery = max(1, progressEvery)
         var policy = policy
-        policy.chunkSize = min(max(1, chunkSize), ScanChunk.maxSize)
+        policy.chunkSize = min(max(1, profile.chunkSize), ScanChunk.maxSize)
         self.policy = policy
         self.features = features
+        self.deferVision = deferVision
         self.pauseWaitLimit = pauseWaitLimit
         self.minProgressInterval = minProgressInterval
         self.thermalState = thermalState
+        self.lowPowerMode = lowPowerMode
+    }
+
+    /// One lane, no write-behind: the narrow scan of specs 003 to 008.
+    ///   - concurrency: photos analyzed at the same time.
+    ///   - chunkSize: items per chunk, the unit of durability (1…64).
+    public init(
+        library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
+        concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
+        policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
+        deferVision: Bool = true, pauseWaitLimit: Duration = .seconds(2),
+        minProgressInterval: Duration = .zero,
+        thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
+            ProcessInfo.processInfo.thermalState
+        }
+    ) {
+        self.init(
+            library: library, store: store, analyzer: analyzer,
+            profile: ScanProfile(name: "custom", concurrency: concurrency, chunkSize: chunkSize),
+            progressEvery: progressEvery, policy: policy, features: features,
+            deferVision: deferVision, pauseWaitLimit: pauseWaitLimit,
+            minProgressInterval: minProgressInterval,
+            thermalState: thermalState)
     }
 
     // MARK: Scanner
@@ -196,18 +252,44 @@ public actor ScanPipeline: Scanner {
     /// counters and the leased chunk released, so a death while in-flight items finish
     /// is an interruption, not a crash (003 FR-010).
     private func persistPaused() async {
-        guard var s = storedSession else { return }
-        s.state = .paused
-        if var leased = storedLeased, leased.state == .running {
-            leased.state = .pending
-            leased.owner = nil
-            if (try? await store.saveChunks([leased], session: s)) != nil {
-                storedLeased = leased
+        await withStoreGate {
+            // Read under the gate: a chunk whose write landed meanwhile is no longer leased.
+            guard var s = storedSession else { return }
+            s.state = .paused
+            // Every chunk this process leased, not only one: with several lanes more are running.
+            let released: [ScanChunk] = storedLeased.values.filter { $0.state == .running }
+                .sorted { $0.sequence < $1.sequence }
+                .map {
+                    var chunk = $0
+                    chunk.state = .pending
+                    chunk.owner = nil
+                    return chunk
+                }
+            if !released.isEmpty {
+                if (try? await store.saveChunks(released, session: s)) != nil {
+                    for chunk in released { storedLeased[chunk.id] = chunk }
+                    storedSession = s
+                }
+            } else if (try? await store.saveSession(s)) != nil {
                 storedSession = s
             }
-        } else if (try? await store.saveSession(s)) != nil {
-            storedSession = s
         }
+    }
+
+    /// Runs `body` with no other gated write running: they take turns, in the order they asked.
+    private func withStoreGate<T>(_ body: () async -> T) async -> T {
+        if gateHeld {
+            await withCheckedContinuation { gateWaiters.append($0) }
+        } else {
+            gateHeld = true
+        }
+        let result = await body()
+        if gateWaiters.isEmpty {
+            gateHeld = false
+        } else {
+            gateWaiters.removeFirst().resume()
+        }
+        return result
     }
 
     public func stop() async {
@@ -222,24 +304,33 @@ public actor ScanPipeline: Scanner {
     // MARK: Run
 
     @discardableResult
-    private func run(kind: ScanKind, progress: @Sendable (ScanProgress) -> Void) async
+    private func run(kind: ScanKind, progress: @escaping @Sendable (ScanProgress) -> Void) async
         -> ScanProgress
     {
         sinceProgress = 0
         lastProgressAt = nil
         publishedRevision = 0
         storedSession = nil
-        storedLeased = nil
+        jobStart = nil
+        storedLeased = [:]
         needsCatchUp = false
         saveFailures = 0
         unsaved = []
         unsavedChunks = []
+        owedTally = Tally()
+        writeQueue = []
+        pendingWriteChunks = []
+        outstandingWrites = 0
+        activeChunks = 0
+        progressSink = progress
         runKind = kind
         guard await loadJob(kind: kind) else { return await finish(progress: progress) }
         nextBlockEdge = ScanBlocks.edge(after: session?.processedItems ?? 0)
         progress(snapshot())
         var caughtUp = false
         while !stopRequested {
+            // Nothing is in flight here, so the store must hold everything that was finished.
+            await drainWrites()
             await waitWhilePaused(progress: progress)
             if stopRequested { break }
             guard let index = nextEligibleIndex() else {
@@ -255,10 +346,68 @@ public actor ScanPipeline: Scanner {
                 }
                 break
             }
-            await runChunk(at: index, progress: progress)
+            if profile.lanes > 1, !chunks[index].isolate {
+                await runLanes(progress: progress)
+            } else {
+                // One chunk alone: always the case after a crash (003 FR-006), where the item
+                // being analyzed must be the only one that could have killed the process.
+                await runChunk(at: index, progress: progress)
+            }
         }
+        await drainWrites()
         await saveUnsaved(progress: progress)
         return await finish(progress: progress)
+    }
+
+    // MARK: Lanes
+
+    /// Works on several chunks at once (spec 009): each lane leases a chunk, opens and analyzes its
+    /// previews, and hands the result to the writer, so one lane's wait for the last photo of its
+    /// chunk, its lease and its store write overlap the analysis of the others. Ends when no
+    /// chunk is left to start, on pause, stop or heat, or when the next chunk must run alone.
+    private func runLanes(progress: @escaping @Sendable (ScanProgress) -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<profile.lanes {
+                group.addTask { await self.laneLoop(progress: progress) }
+            }
+        }
+    }
+
+    private enum Pick {
+        case none
+        /// The next chunk must run alone.
+        case isolated
+        /// A chunk is ready but its last state has not been written yet.
+        case blocked
+        case chunk(Int)
+    }
+
+    private func pickChunk() -> Pick {
+        let now = Date.now
+        var blocked = false
+        for (i, chunk) in chunks.enumerated() where chunk.isEligible(at: now) {
+            if pendingWriteChunks.contains(i) {
+                blocked = true
+                continue
+            }
+            return chunk.isolate ? .isolated : .chunk(i)
+        }
+        return blocked ? .blocked : .none
+    }
+
+    private func laneLoop(progress: @escaping @Sendable (ScanProgress) -> Void) async {
+        while !stopRequested, !isPaused, !isTooHot {
+            // The writer is behind: starting more chunks would only pile up results.
+            if outstandingWrites > profile.writeBehind {
+                await waitForWriter()
+                continue
+            }
+            switch pickChunk() {
+            case .none, .isolated: return
+            case .blocked: await waitForWriter()
+            case .chunk(let index): await runChunk(at: index, progress: progress)
+            }
+        }
     }
 
     /// Tries once more to write results that earlier checkpoints could not. A full scan waits for
@@ -267,16 +416,19 @@ public actor ScanPipeline: Scanner {
     private func saveUnsaved(progress: @Sendable (ScanProgress) -> Void) async {
         while !unsaved.isEmpty, !stopRequested {
             let written: Bool
-            if let s = session {
+            if session != nil {
+                let s = sessionForWrite(adding: owedTally)
                 written =
                     (try? await store.checkpoint(items: unsaved, chunks: unsavedChunks, session: s))
                     != nil
+                if written { storedSession = s }
             } else {
                 written = (try? await store.upsert(unsaved)) != nil
             }
             if written {
                 unsaved = []
                 unsavedChunks = []
+                owedTally = Tally()
                 saveFailures = 0
                 return
             }
@@ -343,6 +495,7 @@ public actor ScanPipeline: Scanner {
             }
             if saved { storedSession = s }
             session = s
+            jobStart = s
             chunks = reclaimed.chunks
             needsCatchUp = true
             return true
@@ -354,7 +507,8 @@ public actor ScanPipeline: Scanner {
         let library = await self.library.fetchAllItems()
         let stored = (try? await store.itemSummaries()) ?? []
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: kind, policy: policy, features: features)
+            library: library, stored: stored, kind: kind, policy: policy, features: features,
+            deferVision: deferVision)
         await apply(plan)
         var s: ScanSession
         if var previous {
@@ -367,9 +521,11 @@ public actor ScanPipeline: Scanner {
             s = ScanSession(kind: kind, state: .running, totalItems: plan.toAnalyze.count)
         }
         let new = ScanPlanner.chunks(
-            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize)
+            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize,
+            skipVision: plan.skipVision)
         if (try? await store.createJob(s, chunks: new)) != nil { storedSession = s }
         session = s
+        jobStart = s
         chunks = new
         return true
     }
@@ -407,7 +563,7 @@ public actor ScanPipeline: Scanner {
         // already gave up on.
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: .quickCheck, policy: policy,
-            features: features)
+            features: features, deferVision: deferVision)
         await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
@@ -423,11 +579,15 @@ public actor ScanPipeline: Scanner {
         guard !ids.isEmpty else { return }
         let new = ScanPlanner.chunks(
             jobID: jobID, assetIDs: ids, size: policy.chunkSize,
-            firstSequence: (chunks.map(\.sequence).max() ?? -1) + 1)
+            firstSequence: (chunks.map(\.sequence).max() ?? -1) + 1, skipVision: plan.skipVision)
         session?.totalItems += ids.count
         chunks += new
+        jobStart = session
         if let s = session, (try? await store.saveChunks(new, session: s)) != nil {
             storedSession = s
+        } else {
+            // The store still holds the old total; the next write carries the difference.
+            owedTally.totalAdded += ids.count
         }
     }
 
@@ -451,8 +611,11 @@ public actor ScanPipeline: Scanner {
         chunks = []
         unsaved = []
         unsavedChunks = []
+        owedTally = Tally()
         storedSession = nil
-        storedLeased = nil
+        jobStart = nil
+        storedLeased = [:]
+        progressSink = nil
         return final
     }
 
@@ -461,6 +624,35 @@ public actor ScanPipeline: Scanner {
     private func nextEligibleIndex() -> Int? {
         let now = Date.now
         return chunks.firstIndex { $0.isEligible(at: now) }
+    }
+
+    /// Counters that a finished chunk adds to the session. Kept apart from the live session, which
+    /// moves the moment a photo finishes: what a write carries must equal what the store holds, so
+    /// a death between two writes never leaves counters above the saved results (002 G1).
+    struct Tally: Sendable {
+        var processed = 0
+        var notScanned = 0
+        var failed = 0
+        /// Items that left the library while their chunk waited.
+        var itemsGone = 0
+        /// Items added to the job by a catch-up whose save failed.
+        var totalAdded = 0
+        var lastAssetID: String?
+
+        static func + (a: Tally, b: Tally) -> Tally {
+            Tally(
+                processed: a.processed + b.processed, notScanned: a.notScanned + b.notScanned,
+                failed: a.failed + b.failed, itemsGone: a.itemsGone + b.itemsGone,
+                totalAdded: a.totalAdded + b.totalAdded,
+                lastAssetID: b.lastAssetID ?? a.lastAssetID)
+        }
+    }
+
+    private struct PendingWrite: Sendable {
+        var index: Int
+        var items: [LibraryItem]
+        var chunk: ScanChunk
+        var tally: Tally
     }
 
     private func earliestRetryTime() -> Date? {
@@ -472,21 +664,33 @@ public actor ScanPipeline: Scanner {
         case failed(ScanFailure)
     }
 
-    private func runChunk(at index: Int, progress: @Sendable (ScanProgress) -> Void) async {
+    /// Photos each lane keeps in flight now.
+    private func laneWidth() -> Int {
+        profile.laneWidth(total: profile.width(thermal: thermalState(), lowPower: lowPowerMode()))
+    }
+
+    private func runChunk(
+        at index: Int, progress: @escaping @Sendable (ScanProgress) -> Void
+    ) async {
         guard index < chunks.count, session != nil else { return }
         var chunk = chunks[index]
-        // Lease: written before any work, so a death during the chunk is visible.
+        // Lease: written before any work, so a death during the chunk is visible. The state is
+        // changed before the first suspension, so no other lane can pick the same chunk.
         chunk.state = .running
         chunk.owner = incarnation
         chunk.notBefore = nil
         chunk.inFlightIndex = nil
         chunks[index] = chunk
-        if (try? await store.saveChunks([chunk], session: nil)) != nil { storedLeased = chunk }
+        activeChunks += 1
+        if (try? await store.saveChunks([chunk], session: nil)) != nil {
+            storedLeased[chunk.id] = chunk
+        }
 
         let undone = chunk.undoneIndices
         let fresh = await library.fetchItems(withIDs: undone.map { chunk.assetIDs[$0] })
         let byID = Dictionary(fresh.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
         var work: [Int] = []
+        var tally = Tally()
         for i in undone {
             if byID[chunk.assetIDs[i]] == nil {
                 // No longer in the library: it leaves the job, finished and no longer
@@ -495,6 +699,7 @@ public actor ScanPipeline: Scanner {
                 // Read first: assigning through `session?` starts the write before the
                 // right-hand side runs, and that side reads `session` too.
                 if let total = session?.totalItems { session?.totalItems = max(0, total - 1) }
+                tally.itemsGone += 1
             } else {
                 work.append(i)
             }
@@ -509,6 +714,9 @@ public actor ScanPipeline: Scanner {
         // the chunk that the code below mutates.
         let metadata: [Int: AssetMetadata] = Dictionary(
             uniqueKeysWithValues: work.map { ($0, byID[chunk.assetIDs[$0]]!) })
+        // The Vision work the plan left out, by work index (spec 010), captured the same way.
+        let skips: [Int: VisionWork] = Dictionary(
+            uniqueKeysWithValues: work.map { ($0, chunk.skippedVision(at: $0)) })
 
         if chunk.isolate {
             // After a crash: one item at a time. The item is saved as in flight before it
@@ -522,59 +730,74 @@ public actor ScanPipeline: Scanner {
                 chunk.inFlightIndex = i
                 chunks[index] = chunk
                 if (try? await store.saveChunks([chunk], session: nil)) != nil {
-                    storedLeased = chunk
+                    storedLeased[chunk.id] = chunk
                 }
                 let outcome = await Self.analyze(
                     metadata[i]!, library: library, analyzer: analyzer, limit: limit,
-                    analyzeVideos: features.videoAnalysis)
+                    analyzeVideos: features.videoAnalysis, skipping: skips[i] ?? [])
                 chunk.inFlightIndex = nil
                 record(
                     i, outcome, chunk: &chunk, results: &results, failures: &failures,
-                    index: index, progress: progress)
-                if case .item = outcome, let s = session {
+                    tally: &tally, index: index, progress: progress)
+                if case .item = outcome, session != nil {
                     await stampAttempts(&results)
-                    if (try? await store.checkpoint(items: results, chunk: chunk, session: s))
-                        != nil
-                    {
+                    let written = await withStoreGate { () -> Bool in
+                        let s = sessionForWrite(adding: tally)
+                        guard
+                            (try? await store.checkpoint(items: results, chunk: chunk, session: s))
+                                != nil
+                        else { return false }
                         storedSession = s
-                        storedLeased = chunk
+                        return true
+                    }
+                    if written {
+                        storedLeased[chunk.id] = chunk
                         results.removeAll()
+                        tally = Tally()
                         saveFailures = 0
                     } else {
                         noteSaveFailure()
                     }
                 } else if (try? await store.saveChunks([chunk], session: nil)) != nil {
-                    storedLeased = chunk
+                    storedLeased[chunk.id] = chunk
                 }
             }
         } else {
             await withTaskGroup(of: (Int, ItemOutcome).self) { group in
                 var next = 0
+                var inFlight = 0
                 func addNext() -> Bool {
                     guard !stopRequested, !isPaused, !isTooHot, next < work.count else {
                         return false
                     }
                     let i = work[next]
                     next += 1
+                    inFlight += 1
                     let m = metadata[i]!
                     let analyzeVideos = features.videoAnalysis
+                    let skipped = skips[i] ?? []
                     group.addTask(priority: .userInitiated) { [library, analyzer] in
                         (
                             i,
                             await Self.analyze(
                                 m, library: library, analyzer: analyzer, limit: limit,
-                                analyzeVideos: analyzeVideos)
+                                analyzeVideos: analyzeVideos, skipping: skipped)
                         )
                     }
                     return true
                 }
-                for _ in 0..<concurrency where !addNext() { break }
+                // On pause, stop or heat: add no more work, let in-flight items finish.
+                func fill() {
+                    let width = laneWidth()
+                    while inFlight < width, addNext() {}
+                }
+                fill()
                 while let (i, outcome) = await group.next() {
+                    inFlight -= 1
                     record(
                         i, outcome, chunk: &chunk, results: &results, failures: &failures,
-                        index: index, progress: progress)
-                    // On pause, stop or heat: add no more work, let in-flight items finish.
-                    _ = addNext()
+                        tally: &tally, index: index, progress: progress)
+                    fill()
                 }
                 cutShort = next < work.count
             }
@@ -609,6 +832,9 @@ public actor ScanPipeline: Scanner {
                     session?.processedItems += 1
                     session?.notScannedCount += 1
                     session?.failedItems += 1
+                    tally.processed += 1
+                    tally.notScanned += 1
+                    tally.failed += 1
                 }
                 chunk.state = .done
                 chunk.owner = nil
@@ -621,37 +847,115 @@ public actor ScanPipeline: Scanner {
         }
         chunk.inFlightIndex = nil
         chunks[index] = chunk
-        await stampAttempts(&results)
-        if let s = session {
-            // Results an earlier checkpoint could not write go out together with these.
-            let pending = unsaved + results
-            let owed = unsavedChunks + [chunk]
-            if (try? await store.checkpoint(items: pending, chunks: owed, session: s)) != nil {
-                storedSession = s
-                storedLeased = nil
-                saveFailures = 0
-                unsaved = []
-                unsavedChunks = []
-            } else {
-                unsaved = pending
-                unsavedChunks = owed
-                noteSaveFailure()
-            }
+        activeChunks -= 1
+        enqueue(PendingWrite(index: index, items: results, chunk: chunk, tally: tally))
+        // The next chunk starts once the writer is no further behind than the profile allows.
+        while outstandingWrites > profile.writeBehind { await waitForWriter() }
+    }
+
+    // MARK: Writer
+
+    /// Hands a finished chunk to the writer, which stores chunks one at a time, in order, while the
+    /// lanes go on analyzing (spec 009).
+    private func enqueue(_ write: PendingWrite) {
+        writeQueue.append(write)
+        pendingWriteChunks.insert(write.index)
+        outstandingWrites += 1
+        guard !writerActive else { return }
+        writerActive = true
+        Task { await self.runWriter() }
+    }
+
+    /// Chunks the writer stores in one transaction when it has fallen behind. A transaction costs
+    /// about 8 ms however small, which on its own limited a scan to about 4,000 photos a second.
+    private static let writeBatch = 8
+
+    private func runWriter() async {
+        while !writeQueue.isEmpty {
+            let batch = Array(writeQueue.prefix(Self.writeBatch))
+            writeQueue.removeFirst(batch.count)
+            await commit(batch)
+            for write in batch { pendingWriteChunks.remove(write.index) }
+            outstandingWrites -= batch.count
+            wakeWriteWaiters()
         }
-        if isPaused, pauseReason != .storageUnavailable { pausedAndSaved = true }
-        if unsaved.isEmpty, let done = session?.processedItems, done >= nextBlockEdge {
+        writerActive = false
+        wakeWriteWaiters()
+    }
+
+    /// Stores finished chunks, their states and the session counters in one transaction
+    /// (003 FR-002). Results an earlier write could not store go out with these.
+    private func commit(_ batch: [PendingWrite]) async {
+        var items = batch.flatMap(\.items)
+        await stampAttempts(&items)
+        guard session != nil else { return }
+        let pending = unsaved + items
+        let owed = unsavedChunks + batch.map(\.chunk)
+        let tally = batch.reduce(owedTally) { $0 + $1.tally }
+        let stored = await withStoreGate { () -> ScanSession? in
+            let s = sessionForWrite(adding: tally)
+            guard (try? await store.checkpoint(items: pending, chunks: owed, session: s)) != nil
+            else { return nil }
+            storedSession = s
+            for chunk in owed { storedLeased[chunk.id] = nil }
+            return s
+        }
+        if stored != nil {
+            saveFailures = 0
+            unsaved = []
+            unsavedChunks = []
+            owedTally = Tally()
+        } else {
+            unsaved = pending
+            unsavedChunks = owed
+            owedTally = tally
+            noteSaveFailure()
+        }
+        if isPaused, pauseReason != .storageUnavailable, activeChunks == 0, writeQueue.isEmpty {
+            pausedAndSaved = true
+        }
+        if unsaved.isEmpty, let done = (storedSession ?? session)?.processedItems,
+            done >= nextBlockEdge
+        {
             // A block of photos is finished and saved: the results can be rebuilt from the store.
             publishedRevision += 1
             nextBlockEdge = ScanBlocks.edge(after: done)
         }
-        emit(snapshot(), progress)
+        if let sink = progressSink { emit(snapshot(), sink) }
+    }
+
+    /// The session a write carries: what the store holds, plus the counters of what the write adds.
+    private func sessionForWrite(adding tally: Tally) -> ScanSession {
+        var s = storedSession ?? jobStart ?? session ?? ScanSession(kind: runKind, state: .running)
+        s.processedItems += tally.processed
+        s.notScannedCount += tally.notScanned
+        s.failedItems += tally.failed
+        s.totalItems = max(0, s.totalItems - tally.itemsGone + tally.totalAdded)
+        if let id = tally.lastAssetID { s.lastProcessedAssetID = id }
+        if let live = session { s.state = live.state }
+        return s
+    }
+
+    private func waitForWriter() async {
+        await withCheckedContinuation { writeWaiters.append($0) }
+    }
+
+    private func wakeWriteWaiters() {
+        let waiters = writeWaiters
+        writeWaiters = []
+        waiters.forEach { $0.resume() }
+    }
+
+    /// Returns once every queued write has landed or failed.
+    private func drainWrites() async {
+        while writerActive || !writeQueue.isEmpty { await waitForWriter() }
     }
 
     /// Records one finished item. `session` is read and written in place: pause() may
     /// change its state while a chunk is draining, and that must not be lost.
     private func record(
         _ i: Int, _ outcome: ItemOutcome, chunk: inout ScanChunk, results: inout [LibraryItem],
-        failures: inout [(index: Int, failure: ScanFailure)], index: Int,
+        failures: inout [(index: Int, failure: ScanFailure)], tally: inout Tally, index: Int,
         progress: @Sendable (ScanProgress) -> Void
     ) {
         switch outcome {
@@ -659,8 +963,13 @@ public actor ScanPipeline: Scanner {
             results.append(item)
             chunk.markDone(i)
             session?.processedItems += 1
-            if item.analysisSource == .notScanned { session?.notScannedCount += 1 }
+            tally.processed += 1
+            if item.analysisSource == .notScanned {
+                session?.notScannedCount += 1
+                tally.notScanned += 1
+            }
             session?.lastProcessedAssetID = item.assetID
+            tally.lastAssetID = item.assetID
         case .failed(let failure):
             failures.append((i, failure))
         }
@@ -763,7 +1072,7 @@ public actor ScanPipeline: Scanner {
     /// their analysis), so opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
-        analyzeVideos: Bool
+        analyzeVideos: Bool, skipping skipped: VisionWork = []
     ) async -> ItemOutcome {
         if m.kind == .screenshot || (m.kind.isVideo && !analyzeVideos) {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
@@ -775,7 +1084,8 @@ public actor ScanPipeline: Scanner {
                 return .item(LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil))
             }
             do {
-                let analysis = try await analyzer.analyze(image, metadata: m)
+                let analysis = try await analyzer.analyze(
+                    image, metadata: m, vision: VisionWork.all.subtracting(skipped))
                 return .item(
                     LibraryItem(metadata: m, analysisSource: preview.source, analysis: analysis))
             } catch {
