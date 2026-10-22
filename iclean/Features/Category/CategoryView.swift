@@ -10,6 +10,7 @@ struct CategoryView: View {
     let category: CleanupCategory
 
     @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.displayScale) private var displayScale
     #if os(macOS)
@@ -70,7 +71,8 @@ struct CategoryView: View {
                 }
             }
             #if os(iOS)
-                .pinnedBar(isPresented: true) {
+                // Nothing left to remove: no bar either, not a dead disabled one.
+                .pinnedBar(isPresented: !isEmptyNow) {
                     CategoryRemoveBar(category: category) { requestConfirm() }
                 }
             #else
@@ -79,7 +81,9 @@ struct CategoryView: View {
                     MacRemoveStatusBar(category: category) { requestConfirm() }
                 }
             #endif
-            .sheet(isPresented: $showConfirm) { ConfirmSheet(category: category) }
+            .sheet(isPresented: $showConfirm, onDismiss: leaveIfEmpty) {
+                ConfirmSheet(category: category)
+            }
             .photoViewer($viewing)
     }
 
@@ -215,6 +219,23 @@ struct CategoryView: View {
         #endif
     }
 
+    // MARK: When nothing is left
+
+    /// Every item here was removed (by this screen's own receipt, or from outside): the results are
+    /// ready and this category is not in them.
+    private var isEmptyNow: Bool {
+        model.launchPhase == .ready && !model.isBuildingResults
+            && model.results.category(category) == nil
+    }
+
+    /// The receipt closed and it emptied this category: there is nothing to look at, so go back to
+    /// Home, which says what is left. Only after the sheet is gone, because the sheet belongs to
+    /// this screen. Where the screen is not pushed (the Mac's detail pane) this does nothing and the
+    /// empty state below stays.
+    private func leaveIfEmpty() {
+        if isEmptyNow { dismiss() }
+    }
+
     // MARK: Sizes
 
     private struct PrefetchKey: Equatable {
@@ -285,9 +306,12 @@ struct CategoryView: View {
     /// Two lines above the photos, at the 16 pt gutter: what the default is, and how much there is.
     private func intro(_ result: CategoryResult?, layout: Layout) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Text(category.explanation)
-                .font(.subheadline)
-                .padding(.horizontal, Space.l)
+            // Not when nothing is left: "All are selected for removal" would be about photos that are gone.
+            if !isEmptyNow {
+                Text(category.explanation)
+                    .font(.subheadline)
+                    .padding(.horizontal, Space.l)
+            }
             if let result {
                 CategorySummaryLine(
                     category: category, count: result.groups.count, isGrouped: layout == .groups)

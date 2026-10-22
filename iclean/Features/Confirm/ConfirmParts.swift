@@ -67,7 +67,7 @@ struct ConfirmHero: View {
                 .minimumScaleFactor(0.5)
             caption
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +135,7 @@ struct PhotoStrip: View {
                 if more > 0 {
                     Text(verbatim: "+\(more.formatted())")
                         .font(.subheadline.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                         .frame(width: tile, height: tile)
                         .background(
                             .fill.secondary,
@@ -180,7 +180,7 @@ struct ConfirmCategoryRows: View {
                 Text(category.title)
                 Text("^[\(total.count) \(noun.singular)](inflect: true)")
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
             if !typeSize.isAccessibilitySize { Spacer(minLength: Space.m) }
             Text(Format.bytes(total.bytes, estimate: preview.isEstimate))

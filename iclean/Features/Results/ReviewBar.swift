@@ -26,12 +26,10 @@ struct ReviewBar: View {
                 .multilineTextAlignment(.center)
             }
             .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
             .controlSize(.large)
             // A pinned control stays a control at the largest sizes: at AX5 it filled a third of the
-            // screen and covered the rows it sits over. The text still grows to AX1, like the
-            // system's own bars; the list above carries the rest.
-            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            // screen and covered the rows it sits over.
+            .actionShape(pinned: true)
             .accessibilityLabel(spokenLabel)
             .accessibilityHint("Opens a summary. Nothing is removed until you confirm.")
             .accessibilityIdentifier("results.reviewAll")
@@ -58,7 +56,7 @@ struct ReviewNote: View {
             "Nothing is removed until you confirm. Removed items go to Recently Deleted in Photos."
         )
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .multilineTextAlignment(alignment)
         .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .center)
         .fixedSize(horizontal: false, vertical: true)

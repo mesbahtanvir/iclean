@@ -16,11 +16,11 @@ shipped after that change; the words and layouts are in `specs/009-calm-polish/s
 | **Group detail** | Side-by-side compare, change keeper | `group.compare`, `group.summary`, `group.makeKeeper`, `group.toggle.<assetID>`, `group.keeperReason.<assetID>`, `group.dateNote.<assetID>.<reason>`, `group.dateLikely.<assetID>`, `group.loading` |
 | **Photo viewer** | Full screen view, zoom, play a local video, keep/remove, "always keep" | `viewer.state`, `viewer.toggleSelect`, `viewer.alwaysKeep`, `viewer.play`; the button labelled "Done" |
 | **Confirm sheet** | What will move to Recently Deleted, that it can be put back, one confirm button (FR-012) | `confirm.summary`, `confirm.reassurance`, `confirm.strip`, `confirm.removeAllWarning`, `confirm.dropped`, `confirm.error`, `confirm.checking`, `confirm.footnote`, `confirm.remove`, `confirm.cancel` |
-| **Done** | The receipt: removed count, the honest figure, how to restore, failures | `done.removed` (exactly "N item(s) removed"), `done.freed`, `done.restore`, `done.failures`, `done.close` |
+| **Done** | The receipt: removed count (or "Nothing was removed"), the honest figure, one sentence and the steps to restore, failures | `done.removed` (exactly "N item(s) removed", or "Nothing was removed" when every item failed), `done.freed`, `done.restore`, `done.howTo`, `done.icloud`, `done.failures`, `done.close` |
 | **Settings** | Three rows (Recent Scans, What iclean Remembers, Restore Removed Photos), the privacy line, and Delete All iclean Data in its own section | `settings.recentScans`, `settings.savedData`, `settings.restoreHelp`, `settings.deleteAllData`, `settings.confirmDelete`, `settings.baseline` (debug builds) |
 | **What iclean Remembers** | What is kept, and the tools to clear it, each with a confirmation | `saved.results`, `saved.choices`, `saved.alwaysKeep`, `saved.clearResults`, `saved.resetChoices`, `saved.confirmReset`, `saved.clearAlwaysKeep`, `saved.confirmClearAlwaysKeep`, `saved.erase`, `saved.confirmErase` |
 | **Recent Scans** | Full scans one by one, quick checks folded into one line | `settings.session` (label contains the outcome, e.g. "Completed"), `recentScans.empty` |
-| **Restore Removed Photos** | How to put removed photos back from Recently Deleted | `restoreHelp.steps` |
+| **Restore Removed Photos** | How long they stay, and how to put removed photos back from Recently Deleted | `restoreHelp.retention`, `restoreHelp.steps` |
 
 Removed in 009: `results.checking` (the separate "looking for things" row) and
 `settings.clearKeepMarks` (clearing Always Keep moved to What iclean Remembers).

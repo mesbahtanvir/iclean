@@ -82,6 +82,29 @@ final class HomeStatesTests: XCTestCase {
         XCTAssertTrue(gear.exists, "with results")
     }
 
+    /// Pause and Resume are one button whose words change, and Stop has a 44 pt hit area both ways.
+    func testPauseBecomesResumeAndBack() {
+        let app = launchApp(scenario: "slow")
+        app.buttons["home.scan"].tap()
+        let pause = app.buttons["scan.pause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        XCTAssertEqual(pause.label, "Pause")
+        XCTAssertGreaterThanOrEqual(pause.frame.height, 44)
+        let stop = app.buttons["scan.stop"]
+        XCTAssertGreaterThanOrEqual(stop.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
+        pause.tap()
+        let resume = app.buttons["scan.resume"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 10))
+        XCTAssertEqual(resume.label, "Resume")
+        XCTAssertFalse(app.buttons["scan.pause"].exists)
+        XCTAssertTrue(anything(app, "scan.status").label.hasPrefix("Paused"))
+        XCTAssertGreaterThanOrEqual(app.buttons["scan.stop"].frame.width, 44)
+        resume.tap()
+        XCTAssertTrue(app.buttons["scan.pause"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["scan.resume"].exists)
+    }
+
     func testStoppingAFirstScanOffersScanLibraryAndNoResume() {
         let app = launchApp(scenario: "slow")
         app.buttons["home.scan"].tap()
@@ -143,8 +166,8 @@ final class HomeStatesTests: XCTestCase {
         confirmRemoval(app)
         let closeAgain = app.buttons["done.close"]
         XCTAssertTrue(closeAgain.waitForExistence(timeout: 10))
+        // Nothing is left in Large Videos, so closing the receipt goes back to Home by itself.
         closeAgain.tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         XCTAssertTrue(anything(app, "results.empty").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["All cleaned up"].exists)

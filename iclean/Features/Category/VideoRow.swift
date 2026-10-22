@@ -61,7 +61,7 @@ struct VideoRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(item))
         .accessibilityValue(ReviewState.text(selected: selected))
-        .accessibilityHint(ReviewState.changeHint)
+        .accessibilityHint(Text("Changes whether this video is removed"))
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("category.item.\(assetID)")
@@ -103,7 +103,7 @@ struct VideoRow: View {
             if let line = detail(item) {
                 Text(line)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
     }

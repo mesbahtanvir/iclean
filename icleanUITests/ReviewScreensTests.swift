@@ -162,15 +162,23 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertFalse(app.buttons["viewer.play"].waitForExistence(timeout: 2))
     }
 
-    func testNothingLeftShowsAllClear() {
+    /// Removing every item of a category and closing the receipt leaves nothing to look at there, so
+    /// the person is taken back to Home, not left on a screen with a stale caption and a dead bar.
+    func testEmptyingACategoryReturnsToHome() {
         let app = launchApp()
         scan(app, expect: "results.category.screenshots")
         openCategory(app, "screenshots")
         confirmRemoval(app)
         XCTAssertTrue(app.staticTexts["done.removed"].waitForExistence(timeout: 10))
         app.buttons["done.close"].tap()
-        XCTAssertTrue(app.staticTexts["All Clear"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Nothing left to review here."].exists)
+        // Home again: the other categories are there, and this one is gone from the list.
+        XCTAssertTrue(
+            element(app, "results.category.duplicates").waitForExistence(timeout: 10),
+            "Back on Home")
+        XCTAssertTrue(app.buttons["home.settings"].exists)
+        XCTAssertFalse(element(app, "results.category.screenshots").exists)
+        XCTAssertFalse(app.buttons["category.removeSelected"].exists, "No dead bar left behind")
+        XCTAssertFalse(app.staticTexts["All Clear"].exists)
     }
 
     // MARK: Group compare

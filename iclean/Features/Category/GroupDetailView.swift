@@ -17,6 +17,8 @@ struct GroupDetailView: View {
     @State private var viewing: String?
     @State private var width: CGFloat = 0
     @ScaledMetric(relativeTo: .body) private var slot: CGFloat = 36
+    /// A slot that holds the "Keep This Copy" button, which is 44 pt or more tall.
+    @ScaledMetric(relativeTo: .body) private var buttonSlot: CGFloat = 50
     @ScaledMetric(relativeTo: .body) private var tallSlot: CGFloat = 60
 
     var body: some View {
@@ -104,7 +106,9 @@ struct GroupDetailView: View {
             scale: Double(displayScale), cap: 1024)
         // A favorite keeper has a second line; every card keeps the same slot height so the
         // Remove switches stay at one height.
-        let slotHeight = group.hasFavoriteKeeper(in: model.results) ? tallSlot : slot
+        let hasButton = group.type != .similarShots
+        let slotHeight =
+            group.hasFavoriteKeeper(in: model.results) ? tallSlot : (hasButton ? buttonSlot : slot)
         if stacked {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Space.xl) {
@@ -162,11 +166,11 @@ struct GroupDetailView: View {
                     // The Mac's control is a checkbox, not a switch.
                     Text("Uncheck a photo’s Remove box to keep it.")
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 #else
                     Text("Turn off a photo’s Remove switch to keep it.")
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 #endif
             }
         }
@@ -316,12 +320,12 @@ struct CompareCard: View {
             } else {
                 Text("No date")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
             if let item {
                 Text(Format.facts(of: item))
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
     }
@@ -377,15 +381,20 @@ struct CompareCard: View {
                 if item?.metadata.isFavorite == true {
                     Text("Marked as a favorite")
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                         .accessibilityIdentifier("group.keeperReason.\(assetID)")
                 }
             } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {
-                Button("Keep This Copy") {
+                Button {
                     taps += 1
                     model.makeKeeper(assetID)
+                } label: {
+                    // The label, not the tint: a tint would colour the button's fill too.
+                    Text("Keep This Copy").foregroundStyle(Palette.accentText)
                 }
                 .buttonStyle(.bordered)
+                // Large is the 44 pt hit area; the status slot below is tall enough to hold it.
+                .controlSize(.large)
                 .accessibilityIdentifier("group.makeKeeper")
             }
         }

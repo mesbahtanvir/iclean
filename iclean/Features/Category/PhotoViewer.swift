@@ -83,15 +83,6 @@ struct PhotoViewer: View {
 
     private var isVideo: Bool { model.results.items[assetID]?.metadata.kind.isVideo == true }
 
-    /// How to zoom without a touch screen: the keys on a Mac, the pinch-like swipe on a phone.
-    private var zoomHint: Text {
-        #if os(macOS)
-            Text("Press Command-Plus or Command-Minus to zoom")
-        #else
-            Text("Swipe up or down to zoom")
-        #endif
-    }
-
     /// The pixels asked for: the picture of a photo filling a big screen.
     private var pixelRequest: Int {
         #if os(macOS)
@@ -184,8 +175,8 @@ struct PhotoViewer: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(ItemKind.photo.spokenName))
+            // The adjustable trait below tells how to change it, in the platform's own words.
             .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
-            .accessibilityHint(zoomHint)
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: setZoom(baseScale * 1.5, item: item)
@@ -229,7 +220,6 @@ struct PhotoViewer: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(ItemKind.photo.spokenName))
                 .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
-                .accessibilityHint(zoomHint)
                 .accessibilityAdjustableAction { direction in
                     switch direction {
                     case .increment: setZoom(baseScale * 1.25, item: item)

@@ -43,6 +43,21 @@ enum Radius {
     static let card: CGFloat = 12
 }
 
+/// The two text colours the system does not have (spec 009 4.2). System `.secondary` is about 3.4:1
+/// on white in light mode: right for an icon, too faint for a sentence. Both colours are assets with
+/// light, dark and Increase Contrast variants, so they are read the same way on every surface.
+enum Palette {
+    /// A caption, a footnote, a caveat: the supporting words under or beside the thing that decides.
+    /// At least 4.5:1 on white, on the grouped background and on a bordered button's fill, in light
+    /// and in dark. Reassurance at reading size is `.primary` instead; `.secondary` is for icons.
+    static let quietText = Color("QuietText")
+
+    /// The accent as text or tint on a neutral surface: a link, the label of a bordered button. The
+    /// accent itself (white label on a filled button) is darker in dark mode than text needs, so it
+    /// is 2.8:1 on a bordered fill there; this one is at least 4.5:1 on every surface it sits on.
+    static let accentText = Color("AccentText")
+}
+
 enum Layout {
     /// Home, Done and the Mac Overview: wider than this reads badly.
     static let readable: CGFloat = 560

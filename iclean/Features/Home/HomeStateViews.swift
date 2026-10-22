@@ -32,7 +32,7 @@ struct HomeMessage<Actions: View>: View {
                         .accessibilityAddTraits(.isHeader)
                     message
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     actions
@@ -98,8 +98,8 @@ struct HomeFirstRun: View {
         ) {
             Button("Scan Library") { model.startScan() }
                 .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
                 .controlSize(.large)
+                .actionShape()
                 .accessibilityIdentifier("home.scan")
         }
     }
@@ -117,8 +117,8 @@ struct HomeInterruptedEmpty: View {
         ) {
             Button("Resume Scan") { model.startScan() }
                 .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
                 .controlSize(.large)
+                .actionShape()
                 .accessibilityIdentifier("home.resume")
         }
     }
@@ -135,10 +135,16 @@ struct HomeNothingToShow: View {
     var body: some View {
         HomeMessage(systemImage: symbol, title: title, message: message) {
             // An empty library can only be fixed outside iclean; scanning is still offered.
-            Button("Scan Again") { model.startScan() }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityIdentifier("home.scan")
+            Button {
+                model.startScan()
+            } label: {
+                // The label, not the tint: a tint would colour the button's fill too.
+                Text("Scan Again").foregroundStyle(Palette.accentText)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .actionShape()
+            .accessibilityIdentifier("home.scan")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("results.empty")

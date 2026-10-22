@@ -262,7 +262,7 @@ struct ConfirmSheet: View {
             "\(count) items were left out because they changed since the scan (deleted, edited, favorited or no longer suggested). They stay in your library."
         )
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("confirm.dropped")
     }
@@ -301,7 +301,7 @@ struct ConfirmSheet: View {
             }
         }
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
@@ -348,10 +348,8 @@ struct ConfirmSheet: View {
         #if os(iOS)
             .controlSize(.large)
         #endif
-        // A capsule turns into a blob when the label wraps to four lines.
-        .buttonBorderShape(
-            typeSize.isAccessibilitySize ? .roundedRectangle(radius: Radius.card) : .capsule
-        )
+        // The pinned button wraps long labels: a rounded rectangle, and text that stops at AX1.
+        .actionShape(pinned: true)
         .disabled(!enabled || isRemoving)
         .accessibilityHint(
             blocked

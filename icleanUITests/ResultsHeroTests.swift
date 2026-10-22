@@ -146,6 +146,23 @@ final class ResultsHeroTests: XCTestCase {
         XCTAssertTrue(hero(app).label.contains("Nothing selected yet"), hero(app).label)
     }
 
+    /// A row with nothing selected must not sound as if its figure were selected: it says what could
+    /// be freed. (On screen the figure reads "up to 924.2 MB", so the meaning does not rest on a gray.)
+    func testARowWithNothingSelectedSpeaksTheTotalThatCouldBeFreed() {
+        let app = launchApp()
+        scan(app, expect: "results.category.largeVideos")
+        let large = app.descendants(matching: .any)["results.category.largeVideos"].firstMatch
+        XCTAssertTrue(large.label.hasPrefix("Large Videos, None selected, up to "), large.label)
+        XCTAssertTrue(large.label.hasSuffix("could be freed"), large.label)
+        XCTAssertFalse(large.label.contains("about"), large.label)
+        // A row with a selection speaks the size of the selection first.
+        let screenshots = app.descendants(matching: .any)["results.category.screenshots"].firstMatch
+        XCTAssertTrue(screenshots.exists)
+        XCTAssertTrue(screenshots.label.hasPrefix("Screenshots, "), screenshots.label)
+        XCTAssertTrue(screenshots.label.contains("selected"), screenshots.label)
+        XCTAssertFalse(screenshots.label.contains("could be freed"), screenshots.label)
+    }
+
     func testTheHeroAndTheScanStatusWhileScanning() {
         // Every preview takes six seconds, so the scan is still going when the quick wins appear.
         let app = launchApp(scenario: "verySlow")

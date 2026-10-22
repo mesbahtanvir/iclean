@@ -119,11 +119,11 @@ private struct ScanRow: View {
             Text(ScanDay.phrase(for: session.when, capitalized: true))
             Text(detail)
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
             if session.failedItems > 0 {
                 Text("\(session.failedItems) couldn’t be checked")
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

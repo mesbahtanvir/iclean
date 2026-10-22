@@ -21,7 +21,7 @@ struct HeroFigure: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             Text(overline)
                 .font(.headline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
             Text(value)
                 .heroFigureFont()
                 .lineLimit(1)
@@ -30,7 +30,7 @@ struct HeroFigure: View {
                 .calmAnimation(value: value)
             Text(caption)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -71,7 +71,7 @@ struct QuietNote: View {
         Label {
             text
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: systemImage)
@@ -194,7 +194,7 @@ struct DelayedProgress: View {
                 if let caption {
                     Text(caption)
                         .font(Typography.note)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
             }
         }
@@ -211,6 +211,31 @@ extension View {
     /// goes, so the list underneath keeps its identity and scroll position when the bar appears.
     func pinnedBar<Bar: View>(isPresented: Bool, @ViewBuilder content: () -> Bar) -> some View {
         modifier(PinnedBar(isPresented: isPresented, bar: content()))
+    }
+
+    /// The shape of a prominent button: a capsule, or at accessibility sizes a rounded rectangle,
+    /// because a capsule around a label that wraps turns into an oval blob. For a button pinned to an
+    /// edge pass `pinned`: its text stops growing at accessibility1, so it stays a control at the
+    /// largest sizes instead of filling a third of the screen (the way the system's own bars do);
+    /// the content above it carries the rest. Texts capped here need an identifier and an entry in
+    /// the allowance lists of the accessibility audits.
+    func actionShape(pinned: Bool = false) -> some View {
+        modifier(ActionShape(pinned: pinned))
+    }
+}
+
+private struct ActionShape: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let pinned: Bool
+
+    func body(content: Content) -> some View {
+        // The size is read here, outside the cap, so the shape follows the real text size.
+        content
+            .buttonBorderShape(
+                typeSize.isAccessibilitySize ? .roundedRectangle(radius: Radius.card) : .capsule
+            )
+            .dynamicTypeSize(
+                ...(pinned ? DynamicTypeSize.accessibility1 : DynamicTypeSize.accessibility5))
     }
 }
 

@@ -5,8 +5,8 @@ import SwiftUI
 /// One list row with the status, a thin bar, one count line, Pause and Stop, and one footnote.
 ///
 /// This is the only view that reads `model.progress`, so a progress tick re-evaluates this row and
-/// nothing else. It does not announce anything: the one VoiceOver announcement at the end of a scan
-/// is posted by the model once the final results are built.
+/// nothing else. It announces only changes of state (paused, resumed, stopped), never progress: the
+/// announcement at the end of a scan is posted by the model once the final results are built.
 struct ScanningView: View {
     /// False on the Mac, where Pause, Resume and Stop are in the toolbar and this is status only.
     var showsControls = true
@@ -26,29 +26,31 @@ struct ScanningView: View {
             if starting {
                 Text("Results appear here as they’re found.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             } else if let p {
                 // One text, "12,408 of 30,112 checked": a test and VoiceOver read it whole.
                 Text("\(p.processed, format: .number) of \(p.total, format: .number) checked")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
             }
             if let failed = p?.failed, failed > 0 {
                 Text("\(failed, format: .number) couldn’t be checked")
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
                     .accessibilityIdentifier("scan.failed")
             }
             if showsControls { controls(paused: paused) }
             if !paused, let note = whenYouLeave {
                 Text(note)
                     .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.quietText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("scan.whenYouLeave")
             }
         }
         .padding(.vertical, Space.xs)
+        // Said when the state changes, whoever changed it: the button, the heat, or the system.
+        .onChange(of: Phase(p)) { old, new in announce(from: old, to: new, p) }
     }
 
     // MARK: Pieces
@@ -91,36 +93,72 @@ struct ScanningView: View {
         }
     }
 
-    @ViewBuilder private func primaryControl(paused: Bool) -> some View {
-        if paused {
-            let resume = Button("Resume") { model.resumeScan() }
-                .controlSize(.large)
-                .accessibilityIdentifier("scan.resume")
-            // The one filled control on screen is the Review bar when there is one.
-            if model.summary.count > 0 {
-                resume.buttonStyle(.bordered)
-            } else {
-                resume.buttonStyle(.borderedProminent)
-            }
-        } else {
-            Button("Pause") { model.pauseScan() }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityIdentifier("scan.pause")
+    /// Pause and Resume are one button whose words, id and look change, so VoiceOver keeps its focus
+    /// on it and reads the new label; two different views would have dropped the focus.
+    private func primaryControl(paused: Bool) -> some View {
+        Button {
+            if paused { model.resumeScan() } else { model.pauseScan() }
+        } label: {
+            if paused { Text("Resume") } else { Text("Pause") }
         }
+        // The one filled control on screen is the Review bar when there is one.
+        .buttonStyle(ScanControlStyle(prominent: paused && model.summary.count == 0))
+        .accessibilityIdentifier(paused ? "scan.resume" : "scan.pause")
     }
 
     private var stopButton: some View {
         Button {
             model.stopScan()
+            // The card is gone a moment later, so the one thing VoiceOver hears is this.
+            AccessibilityNotification.Announcement(String(localized: "Scan stopped")).post()
         } label: {
             Text("Stop")
-                .foregroundStyle(Color.secondary)
-                .frame(minHeight: Hit.minimum)
+                .foregroundStyle(Palette.quietText)
+                .frame(minWidth: Hit.minimum, minHeight: Hit.minimum)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .accessibilityIdentifier("scan.stop")
+    }
+
+    // MARK: Announcements
+
+    /// What the scan is doing, as far as the words on the card go.
+    private enum Phase: Equatable {
+        case starting, running, coolingDown, paused(ScanPauseReason?)
+
+        init(_ p: ScanProgress?) {
+            guard let p, p.total > 0 else {
+                self = .starting
+                return
+            }
+            if p.isThermalPaused {
+                self = .coolingDown
+            } else if p.state == .paused {
+                self = .paused(p.pauseReason)
+            } else {
+                self = .running
+            }
+        }
+    }
+
+    private func announce(from old: Phase, to new: Phase, _ p: ScanProgress?) {
+        let text: String
+        switch new {
+        case .starting:
+            return
+        case .running:
+            // Only coming back from a pause is news; a scan that was just starting is not.
+            guard old != .starting else { return }
+            text = String(localized: "Scan resumed")
+        case .coolingDown, .paused(.some(.stoppedOutsideApp)), .paused(.some(.backgroundLimit)),
+            .paused(.some(.storageUnavailable)):
+            // The reason is the news, and the card has the words for it.
+            text = statusText(p, starting: false)
+        case .paused(.user), .paused(nil):
+            text = String(localized: "Scan paused")
+        }
+        AccessibilityNotification.Announcement(text).post()
     }
 
     // MARK: Words
@@ -155,5 +193,45 @@ struct ScanningView: View {
             }
         }
         return String(localized: "Scanning your library…")
+    }
+}
+
+/// Pause, Resume and the look of both: the bordered gray capsule with the accent as text, or the
+/// accent fill with a white label when Resume is the one next step. A style of its own because the
+/// system's `.bordered` and `.borderedProminent` are different types, and swapping them would swap
+/// the view and with it VoiceOver's focus.
+private struct ScanControlStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        Look(configuration: configuration, prominent: prominent)
+    }
+
+    private struct Look: View {
+        let configuration: ButtonStyleConfiguration
+        let prominent: Bool
+
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        var body: some View {
+            // A capsule turns into a blob around a label that wraps, so a rounded rectangle then.
+            let shape =
+                typeSize.isAccessibilitySize
+                ? AnyShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                : AnyShape(Capsule())
+            configuration.label
+                .font(.body)
+                .foregroundStyle(
+                    prominent ? AnyShapeStyle(.white) : AnyShapeStyle(Palette.accentText)
+                )
+                .padding(.horizontal, Space.xl - Space.xs)
+                .padding(.vertical, Space.m + 2)
+                .background(
+                    prominent ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.fill.secondary),
+                    in: shape
+                )
+                .contentShape(shape)
+                .opacity(configuration.isPressed ? 0.6 : 1)
+        }
     }
 }

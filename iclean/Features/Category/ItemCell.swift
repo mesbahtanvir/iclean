@@ -67,7 +67,7 @@ struct ItemCell: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description(item: item, favorite: favorite, inAlbums: inAlbums))
             .accessibilityValue(ReviewState.text(selected: selected))
-            .accessibilityHint(ReviewState.changeHint)
+            .accessibilityHint(ReviewState.changeHint(isVideo: item?.metadata.kind.isVideo == true))
             .accessibilityAddTraits(.isButton)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("category.item.\(assetID)")
@@ -109,13 +109,12 @@ struct ItemCell: View {
 }
 
 extension ReviewState {
-    /// What VoiceOver says about how to change it: a double tap on a phone, the Space bar on a Mac.
-    static var changeHint: Text {
-        #if os(macOS)
-            Text("Press the Space bar to change")
-        #else
-            Text("Double tap to change")
-        #endif
+    /// What VoiceOver says about what a press does: the result, not the gesture, which is the
+    /// platform's to announce.
+    static func changeHint(isVideo: Bool) -> Text {
+        isVideo
+            ? Text("Changes whether this video is removed")
+            : Text("Changes whether this photo is removed")
     }
 }
 

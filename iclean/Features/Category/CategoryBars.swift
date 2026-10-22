@@ -45,11 +45,13 @@ struct CategoryRemoveBar: View {
                 VStack(spacing: 2) {
                     title(count: tally.selected)
                         .font(.headline)
+                        .accessibilityIdentifier("category.removeSelected.title")
                     // At accessibility sizes the second line moves into the scroll content, so
                     // the pinned area stays one button tall.
                     if !typeSize.isAccessibilitySize {
                         Text(destination(tally))
                             .font(.subheadline.weight(.medium))
+                            .accessibilityIdentifier("category.removeSelected.detail")
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -59,6 +61,8 @@ struct CategoryRemoveBar: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            // Capped like the Review bar: a pinned bar must not grow into the photos above it.
+            .actionShape(pinned: true)
             .accessibilityHint(Text("Opens a summary. Nothing is removed until you confirm."))
             .accessibilityIdentifier("category.removeSelected")
         } else {
@@ -67,9 +71,11 @@ struct CategoryRemoveBar: View {
                     .font(.headline)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("category.removeSelected.title")
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .actionShape(pinned: true)
             .disabled(true)
             .accessibilityIdentifier("category.removeSelected")
         }
@@ -161,7 +167,7 @@ struct CategoryBarDetail: View {
         if tally.selected > 0 {
             Text(destination(tally))
                 .font(Typography.note)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.quietText)
                 .padding(.horizontal, Space.l)
         }
     }
@@ -206,15 +212,26 @@ struct CategorySummaryLine: View {
     let isGrouped: Bool
 
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let tally = model.summary.perCategory[category]
-        Self.text(
-            category: category, count: count, isGrouped: isGrouped,
-            size: tally.map { Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate) }
-        )
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Self.text(
+                category: category, count: count, isGrouped: isGrouped,
+                size: tally.map {
+                    Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate)
+                })
+            if typeSize.isAccessibilitySize {
+                // The pinned bar is one short line here, so where the photos go is said at the top,
+                // where it is seen on arrival, and not only at the end of a long list.
+                Text(
+                    "Nothing is removed until you confirm. Removed items go to Recently Deleted in Photos."
+                )
+            }
+        }
         .font(Typography.note)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Palette.quietText)
         .padding(.horizontal, Space.l)
     }
 
@@ -296,14 +313,16 @@ struct GroupHeader: View {
                     title.font(.headline)
                     selectedText(selected)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                 }
                 if !typeSize.isAccessibilitySize { Spacer(minLength: Space.s) }
                 HStack(spacing: Space.xs) {
                     Text("Compare")
                         .font(.subheadline)
                         .foregroundStyle(
-                            emphasized ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                            emphasized
+                                ? AnyShapeStyle(Palette.accentText)
+                                : AnyShapeStyle(Palette.quietText))
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)

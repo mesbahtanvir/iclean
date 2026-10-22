@@ -229,7 +229,9 @@
                         favorite: favorite, inAlbums: inAlbums)
                 )
                 .accessibilityValue(ReviewState.text(selected: selected))
-                .accessibilityHint(ReviewState.changeHint)
+                .accessibilityHint(
+                    ReviewState.changeHint(isVideo: item?.metadata.kind.isVideo == true)
+                )
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .accessibilityIdentifier("category.item.\(assetID)")

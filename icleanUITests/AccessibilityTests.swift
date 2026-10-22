@@ -23,6 +23,11 @@ final class AccessibilityTests: XCTestCase {
         // The pinned Review bar stops growing at accessibility1, so it stays a control at the
         // largest sizes instead of covering a third of the screen (spec 009 4.3).
         "results.reviewAll.title", "results.reviewAll.size",
+        // Every other pinned bar is capped the same way (`actionShape(pinned: true)`): the Category
+        // Remove bar (the audit reports its two texts), the Confirm and Done buttons and the Access
+        // button (it reports the buttons).
+        "category.removeSelected.title", "category.removeSelected.detail", "confirm.remove",
+        "done.close", "access.allow", "access.openSettings",
         "Removed items go to Recently Deleted in the Photos app.",
         "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
     ]
