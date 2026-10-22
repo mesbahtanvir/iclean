@@ -46,7 +46,17 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
 - Overview: hero at 40 pt, one prominent "Review N Items…" under it, category rows (a click selects the
   sidebar row).
 - Toolbar: Scan Library, then Pause or Resume and Stop while scanning, with the count in the middle.
-  The photo-size slider on a grid category, not on Large Videos.
+  The photo-size slider on a grid category, not on Large Videos. No Scan / Resume Scan button (and
+  the Scan menu item is dimmed) while the window says "Getting ready…" or "Getting your results
+  ready…", or while a scan is finishing.
+- Continue reviewing (relaunch after more than a day with a category open, or a failed restore): the
+  row is on the Overview, and in the sidebar footer while a category is open. Click it with another
+  category already selected and with a group's compare screen open: the window goes to the saved
+  category and group each time.
+- Close the window with a category or a group open, then click the Dock icon: the window comes back
+  to the same category and group, and results found meanwhile are still held ("Show N new items")
+  until you go to the Overview. Remove the last photos of a category: the window goes to the
+  Overview behind the receipt.
 - Grid: at rest only photos. Hover shows the check mark and the expand control; a selected photo keeps
   its trash mark. Click focuses (3 pt accent ring) and changes nothing else; a click on the check
   mark toggles; Space toggles; Return and double-click open the viewer; arrows move (and scroll);
@@ -60,7 +70,18 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
 - Large Videos: sorting by a header, checkbox per row, double-click and Return open the viewer, Space
   toggles the picked rows.
 - Group compare: up to four copies in a row with Taken, Dimensions and Size lined up; checkboxes;
-  Left and Right move the ring; Space toggles; Return looks at the copy.
+  Left and Right move the ring; Space toggles; Return looks at the copy. A group of 9 or more similar
+  shots wraps into rows that build as you scroll (watch memory in Activity Monitor), and Right past
+  the last copy of a row scrolls to the next. VoiceOver: one copy at a time (photo, one line with
+  Taken, Dimensions and Size, verdict, checkbox), not all photos and then all dates; the reading
+  order is by sort priority inside a Grid, which has not been heard yet.
+- Held keys: hold Space on a photo, on a compare copy and on a picked video row: it toggles once.
+  Hold an arrow key in a long grid: the focus keeps up and never jumps back.
+- Check mark: Command-click toggles once (not twice), Shift-click selects the range from the last
+  photo. A click on the album/favorite chip focuses the photo like a click anywhere else on it.
+- Group header ("3 copies"): "Compare" and its chevron are always there (muted); the word turns to
+  the accent on hover and, with Full Keyboard Access, on keyboard focus (`isFocused` in a link's label
+  has not been seen to work).
 - Viewer: Command-plus, Command-minus, Command-0, double-click between fit and 100%, two-finger
   scroll pans a zoomed photo, Escape closes.
 - Confirm and Done: the sheet is as tall as its content, 440 pt wide; Cancel left of the filled

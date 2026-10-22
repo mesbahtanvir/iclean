@@ -56,7 +56,6 @@
             .environment(
                 \.openConfirm, { category in confirm = ConfirmRequest(category: category) }
             )
-            .environment(\.continueReviewing, { continueReviewing() })
             .focusedSceneValue(\.reviewActions, reviewActions)
             .sheet(item: $confirm) { ConfirmSheet(category: $0.category) }
             .alert(
@@ -183,47 +182,17 @@
         /// The review stack the model knows about: the selected category, then the groups pushed on
         /// it. Nothing on the Overview. The same list the phone's stack holds, so saving a position
         /// and putting it back (spec 007) and the route validator need no change.
-        private var route: [Route] {
-            if case .category(let category) = navigation.selection {
-                return [.category(category)] + navigation.groupPath
-            }
-            return []
-        }
+        private var route: [Route] { navigation.route }
 
-        /// The route as a binding: its first element is the sidebar's choice, the rest the stack.
-        private var routeBinding: Binding<[Route]> {
-            Binding(
-                get: { route },
-                set: { new in
-                    if case .category(let category)? = new.first {
-                        navigation.selection = .category(category)
-                        navigation.groupPath = Array(new.dropFirst())
-                    } else {
-                        navigation.selection = .overview
-                        navigation.groupPath = []
-                    }
-                })
-        }
-
-        /// Puts the saved review back. The route is always used up, here or not at all: one left
-        /// behind would be applied by a later window, long after the person went somewhere else.
-        ///
-        /// The restore at launch never moves a person who has already chosen a place; "Continue
-        /// reviewing" (`force`) is that person asking to be taken there, wherever they are.
-        private func restore(_ restored: RestoredRoute?, force: Bool = false) {
+        /// Puts the saved review back at launch. The route is always used up, here or not at all:
+        /// one left behind would be applied by a later window, long after the person went
+        /// elsewhere. It never moves a person who has already chosen a place ("Continue reviewing"
+        /// is that person asking, and `MacContinueRow` takes them there in any state).
+        private func restore(_ restored: RestoredRoute?) {
             guard let restored else { return }
             model.restoredRoute = nil
-            guard force || route.isEmpty else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { routeBinding.wrappedValue = restored.path }
-        }
-
-        /// "Continue reviewing" in the sidebar or on the Overview: the model works out the place and
-        /// checks it against the results as they are now; this goes there, in any state.
-        private func continueReviewing() {
-            model.continueReviewing()
-            restore(model.restoredRoute, force: true)
+            guard route.isEmpty else { return }
+            navigation.go(to: restored.path)
         }
 
         /// The sidebar appears once, when the first results do. Until then the window is one

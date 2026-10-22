@@ -29,10 +29,6 @@
         /// Opens the Confirm sheet for a category (nil: for everything). The shell owns the sheet, so
         /// it lives as long as the window does and a screen can disappear while its receipt is up.
         @Entry var openConfirm: (@MainActor (CleanupCategory?) -> Void)?
-
-        /// "Continue reviewing": takes the person to the saved place. The shell owns the navigation,
-        /// so it is the one that applies the route, whatever is open now.
-        @Entry var continueReviewing: (@MainActor () -> Void)?
     }
 
     /// Counts the sheets that are up (the Confirm sheet, the viewer). The menu commands read it and
@@ -59,6 +55,31 @@
         var selection: SidebarItem = .overview
         /// The screens pushed inside the detail pane: group compare only, each a `.group` route.
         var groupPath: [Route] = []
+
+        /// The review stack as `AppModel` knows it: the selected category, then the groups pushed on
+        /// it. Nothing on the Overview.
+        var route: [Route] {
+            if case .category(let category) = selection {
+                return [.category(category)] + groupPath
+            }
+            return []
+        }
+
+        /// Goes to a saved review stack (its first element is the sidebar's choice, the rest the
+        /// groups), without animation: it is a restore, not a move the person made.
+        func go(to path: [Route]) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if case .category(let category)? = path.first {
+                    selection = .category(category)
+                    groupPath = Array(path.dropFirst())
+                } else {
+                    selection = .overview
+                    groupPath = []
+                }
+            }
+        }
     }
 
     extension KeyPress {
