@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// Items or groups in one category, with selection toggles (spec 011 6.5 and 6.6).
+/// Items or groups in one category, with selection toggles (spec 012 6.5 and 6.6).
 ///
 /// The body reads the results and never the selection: the bottom bar, the toolbar button and the
 /// summary line are their own views reading `model.summary`, and every photo reads its own state, so

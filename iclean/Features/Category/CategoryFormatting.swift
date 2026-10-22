@@ -1,7 +1,7 @@
 import CleanupKit
 import Foundation
 
-/// Small helpers the category, compare and viewer screens share (spec 011 6.5 to 6.8).
+/// Small helpers the category, compare and viewer screens share (spec 012 6.5 to 6.8).
 
 extension Format {
     /// "4,032 × 3,024 · 3.2 MB", with the length of a video at the end ("· 0:12").

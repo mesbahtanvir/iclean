@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// The last full scans and how each ended (003 FR-012, spec 011 section 6.13). Reached from
+/// The last full scans and how each ended (003 FR-012, spec 012 section 6.13). Reached from
 /// Settings, so that screen stays short. Quick checks for new photos run on every return to the app,
 /// so they are folded into one quiet line instead of burying the real scans.
 struct RecentScansView: View {

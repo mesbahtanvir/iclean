@@ -36,7 +36,7 @@ extension String {
     }
 }
 
-/// Which of Home's screens to show. One answer, resolved in this order (spec 011, amendment 0.2):
+/// Which of Home's screens to show. One answer, resolved in this order (spec 012, amendment 0.2):
 /// launching, failed, scanning or finishing, building, results, interrupted with nothing found,
 /// first run, empty library, all cleaned, clean. Reads only cheap facts: nothing here touches a
 /// photo, and nothing reads the scan's progress.

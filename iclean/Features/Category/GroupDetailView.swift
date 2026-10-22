@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// Compare the photos in a group side by side and change the keeper (spec 011 6.7).
+/// Compare the photos in a group side by side and change the keeper (spec 012 6.7).
 ///
 /// The title is the group's own name, a live summary line sits above the cards, and each card is
 /// about 60% of the width so the next one peeks. The rows of a card are in a fixed order, so the
@@ -75,7 +75,7 @@ struct GroupDetailView: View {
 
     #if os(macOS)
         /// The copies side by side, not in a scroller: up to four in a row, with the facts lined up
-        /// across them (spec 011 section 6.15).
+        /// across them (spec 012 section 6.15).
         @ViewBuilder private func macContent(_ group: ResultGroup) -> some View {
             let ratio = aspectRatio(of: group)
             // A favorite keeper has a second line; every card keeps the same slot height so the

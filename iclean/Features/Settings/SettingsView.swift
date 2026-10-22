@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-/// Settings, ordered by consequence (spec 011 section 6.11): three places to look, then the one
+/// Settings, ordered by consequence (spec 012 section 6.11): three places to look, then the one
 /// thing that cannot be undone, alone at the end.
 struct SettingsView: View {
     var body: some View {

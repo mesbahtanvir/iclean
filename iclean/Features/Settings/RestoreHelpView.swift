@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// How to bring removed photos back. Removing is recoverable for at least 30 days, and this is the
-/// permanent path to it (spec 011 section 6.14): reached from Settings and read again on the receipt.
+/// permanent path to it (spec 012 section 6.14): reached from Settings and read again on the receipt.
 enum RestoreHelp {
     /// How long they stay, and what happens then. Settings says it at the top of its page.
     static var retention: String {

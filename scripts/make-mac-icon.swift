@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-// Renders the Mac app icon slots from the iPhone icon (spec 011 section 6.15, amendment 0.2 item 15).
+// Renders the Mac app icon slots from the iPhone icon (spec 012 section 6.15, amendment 0.2 item 15).
 //
 //   swift scripts/make-mac-icon.swift
 //

@@ -3,7 +3,7 @@ import SwiftUI
 
 // The parts of the Category screen that read the selection. Each is its own view reading
 // `model.summary`, so a toggle re-draws these and the photos that changed, and `CategoryView.body`
-// (with every group in it) does not run again (spec 011 6.5, 9).
+// (with every group in it) does not run again (spec 012 6.5, 9).
 
 /// What the bars need from the summary, with zeros while the category is not in it yet.
 private struct Tally {
@@ -92,7 +92,7 @@ struct CategoryRemoveBar: View {
 }
 
 #if os(macOS)
-    /// The Mac's remove bar: a 40 pt status bar, not a slab (spec 011 section 6.15). The count and the
+    /// The Mac's remove bar: a 40 pt status bar, not a slab (spec 012 section 6.15). The count and the
     /// size, quietly, on the left; on the right the one filled control, regular size, whose ellipsis
     /// says it opens a summary first. It has no keyboard shortcut: Return never removes anything.
     struct MacRemoveStatusBar: View {

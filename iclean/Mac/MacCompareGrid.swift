@@ -2,7 +2,7 @@
     import CleanupKit
     import SwiftUI
 
-    /// The copies of a group side by side (spec 011 section 6.15): up to four in a row, and when there
+    /// The copies of a group side by side (spec 012 section 6.15): up to four in a row, and when there
     /// are more, or the pane is narrow, further rows of the same. A grid lines up the rows that
     /// matter across the copies: the photos, then Taken, Dimensions and Size, then the verdict and
     /// the Remove checkbox.

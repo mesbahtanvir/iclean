@@ -1,8 +1,8 @@
 # Contract: Screens and states
 
 What the user sees. UI tests are written against these screens, states, and
-accessibility identifiers. Amended by spec 011 (calm polish): the screens below are the ones
-shipped after that change; the words and layouts are in `specs/011-calm-polish/spec.md`.
+accessibility identifiers. Amended by spec 012 (calm polish): the screens below are the ones
+shipped after that change; the words and layouts are in `specs/012-calm-polish/spec.md`.
 
 ## Screens
 
@@ -38,7 +38,7 @@ Review bar) → 5. interrupted with nothing found (`home.resume`) → 6. first r
 "A full scan has finished" means a session of kind full that ran to the end; a quick check or a
 stopped scan does not count.
 
-## Mac window (spec 011 section 6.15)
+## Mac window (spec 012 section 6.15)
 
 The Mac is a sidebar and a detail pane, not the phone's stack. The same screens and ids apply in the
 detail pane (the Overview is Home's results screen with `results.reviewAll` as an inline button), and

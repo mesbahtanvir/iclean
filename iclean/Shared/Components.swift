@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-// The few views iclean draws itself (spec 011 section 4.4). Everything else is a system component.
+// The few views iclean draws itself (spec 012 section 4.4). Everything else is a system component.
 //
 // Buttons: the one next step is `.borderedProminent` at `.large` (a capsule); a secondary action is
 // `.bordered`; a quiet one is `.borderless`. A disabled primary becomes `.bordered`, never a faded

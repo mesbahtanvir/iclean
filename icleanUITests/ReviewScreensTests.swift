@@ -1,6 +1,6 @@
 import XCTest
 
-/// The review screens of spec 011 (6.5 to 6.8): the category screen and its bars, Large Videos,
+/// The review screens of spec 012 (6.5 to 6.8): the category screen and its bars, Large Videos,
 /// group compare and the viewer. The flow tests (`DuplicatesFlowTests` and the others) keep the
 /// behaviour; these read the words and the states the design promises.
 @MainActor

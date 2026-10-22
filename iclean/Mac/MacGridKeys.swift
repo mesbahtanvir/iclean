@@ -3,7 +3,7 @@
     import SwiftUI
 
     extension View {
-        /// Makes a scroll view of photos one keyboard target (spec 011 section 6.15, spec 005
+        /// Makes a scroll view of photos one keyboard target (spec 012 section 6.15, spec 005
         /// FR-015/016): arrows move, Shift-arrows extend a range, Space toggles, Return opens, Delete
         /// opens the Confirm sheet. None of these removes anything.
         func gridKeys(

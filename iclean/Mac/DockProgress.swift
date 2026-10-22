@@ -2,7 +2,7 @@
     import AppKit
 
     /// A thin accent bar over the app's icon in the Dock while a scan runs, instead of a red number
-    /// (spec 011 section 6.15; the design brief allows no red badges). Dimmed while the scan is
+    /// (spec 012 section 6.15; the design brief allows no red badges). Dimmed while the scan is
     /// paused, and gone when it ends.
     ///
     /// Drawn with AppKit and not a SwiftUI view: a Dock tile's content view has no window, and a plain

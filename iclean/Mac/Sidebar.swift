@@ -8,7 +8,7 @@
         case category(CleanupCategory)
     }
 
-    /// The Mac's list of places (spec 011 section 6.15): "Overview", then a "Cleanup" section of the
+    /// The Mac's list of places (spec 012 section 6.15): "Overview", then a "Cleanup" section of the
     /// categories with their sizes as native badges, and the quiet scan state in the footer. It reads
     /// only cached numbers: no photo is drawn here.
     struct Sidebar: View {

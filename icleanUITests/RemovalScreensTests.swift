@@ -1,6 +1,6 @@
 import XCTest
 
-/// Spec 011 sections 6.9 and 6.10: the Confirm sheet and the receipt. Removal itself is covered by
+/// Spec 012 sections 6.9 and 6.10: the Confirm sheet and the receipt. Removal itself is covered by
 /// the flow tests; these look at what the person is told before and after.
 @MainActor
 final class RemovalScreensTests: XCTestCase {

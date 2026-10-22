@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The app's vocabulary of sizes, colours and motion (spec 011 section 4). Small on purpose: system
+/// The app's vocabulary of sizes, colours and motion (spec 012 section 4). Small on purpose: system
 /// components and text styles do the rest, so Dynamic Type, Dark Mode and platform looks come free.
 
 enum Space {
@@ -43,7 +43,7 @@ enum Radius {
     static let card: CGFloat = 12
 }
 
-/// The two text colours the system does not have (spec 011 4.2). System `.secondary` is about 3.4:1
+/// The two text colours the system does not have (spec 012 4.2). System `.secondary` is about 3.4:1
 /// on white in light mode: right for an icon, too faint for a sentence. Both colours are assets with
 /// light, dark and Increase Contrast variants, so they are read the same way on every surface.
 enum Palette {

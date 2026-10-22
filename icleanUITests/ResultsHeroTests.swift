@@ -1,6 +1,6 @@
 import XCTest
 
-/// Spec 011 section 6.3: Home says how much can be freed once, and the number, the Review bar and
+/// Spec 012 section 6.3: Home says how much can be freed once, and the number, the Review bar and
 /// the Confirm sheet agree because they read the same selection.
 @MainActor
 final class ResultsHeroTests: XCTestCase {

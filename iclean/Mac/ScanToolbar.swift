@@ -3,7 +3,7 @@
     import SwiftUI
 
     /// What starting a scan means right now, from the same state machine as the phone's Home
-    /// (`HomeState`, spec 011 section 0.2). The toolbar, the Scan menu and the sidebar footer all ask
+    /// (`HomeState`, spec 012 section 0.2). The toolbar, the Scan menu and the sidebar footer all ask
     /// it, so none of them can offer a scan the phone's Home would not: not while the saved data is
     /// opening or being built, not after it could not be read, and not while a scan is running or
     /// finishing.
@@ -43,7 +43,7 @@
         }
     }
 
-    /// The scan controls in the window's toolbar (spec 011 section 6.15): Scan Library (or Scan Again,
+    /// The scan controls in the window's toolbar (spec 012 section 6.15): Scan Library (or Scan Again,
     /// or Resume Scan) when nothing is running, and Pause or Resume and Stop while a scan is. A
     /// toolbar is where a Mac looks for the one thing the window can do; the same actions are in the
     /// Scan menu with their shortcuts.

@@ -171,7 +171,7 @@
         }
 
         /// Photos, but nothing to clean up: every photo is sharp and different, none is a screenshot
-        /// or a video. The scan ends with "Nothing to clean up" (spec 011).
+        /// or a video. The scan ends with "Nothing to clean up" (spec 012).
         private func buildClean() {
             for i in 0..<8 {
                 add(

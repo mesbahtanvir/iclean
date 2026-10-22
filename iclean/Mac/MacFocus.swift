@@ -3,7 +3,7 @@
     import Observation
     import SwiftUI
 
-    // What the menu bar and the screens inside the window need from each other (spec 011 section
+    // What the menu bar and the screens inside the window need from each other (spec 012 section
     // 6.15). The shell publishes where the window is pointing; the menu commands read it. Nothing
     // here removes a photo: the commands only open the Confirm sheet, which is the one place a
     // removal is confirmed.

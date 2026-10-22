@@ -8,7 +8,7 @@
         let category: CleanupCategory?
     }
 
-    /// The Mac's window (spec 011 section 6.15): a sidebar, and a detail pane that shows the Overview or
+    /// The Mac's window (spec 012 section 6.15): a sidebar, and a detail pane that shows the Overview or
     /// the selected category, with group compare pushed inside the detail pane.
     ///
     /// The iPhone's Home is a stack of screens; this is the same screens laid out for a window. It

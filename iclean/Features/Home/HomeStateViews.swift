@@ -1,7 +1,7 @@
 import CleanupKit
 import SwiftUI
 
-// The screens Home shows when there is no list: one sentence, and at most one button (spec 011
+// The screens Home shows when there is no list: one sentence, and at most one button (spec 012
 // section 6.2). They look like the system's ContentUnavailableView (a symbol, a title, a sentence,
 // an action) but are drawn by `HomeMessage`: the system view fails Xcode's Dynamic Type audit on
 // the first screen of the app, and this one scrolls instead of clipping at the largest text sizes.

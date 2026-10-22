@@ -3,7 +3,7 @@
     import CleanupKit
     import SwiftUI
 
-    /// The menu bar (spec 011 section 6.15): one window only, a Scan menu, selection commands under
+    /// The menu bar (spec 012 section 6.15): one window only, a Scan menu, selection commands under
     /// Edit, and a Help item that explains removal.
     ///
     /// The selection commands are added after the pasteboard group, never in place of it, so Copy,

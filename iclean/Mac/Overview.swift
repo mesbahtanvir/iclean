@@ -21,7 +21,7 @@
         }
     }
 
-    /// The Mac's front screen once there is something to show (spec 011 section 6.15): the hero, the
+    /// The Mac's front screen once there is something to show (spec 012 section 6.15): the hero, the
     /// one prominent button right under it, and the categories, in a centred column of a readable
     /// width. It is the phone's Home, laid out for a window.
     ///
