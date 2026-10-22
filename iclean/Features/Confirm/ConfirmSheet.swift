@@ -337,10 +337,8 @@ struct ConfirmSheet: View {
         #if os(iOS)
             .controlSize(.large)
         #endif
-        // A capsule turns into a blob when the label wraps to four lines.
-        .buttonBorderShape(
-            typeSize.isAccessibilitySize ? .roundedRectangle(radius: Radius.card) : .capsule
-        )
+        // The pinned button wraps long labels: a rounded rectangle, and text that stops at AX1.
+        .actionShape(pinned: true)
         .disabled(!enabled || isRemoving)
         .accessibilityHint(
             blocked

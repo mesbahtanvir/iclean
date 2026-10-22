@@ -212,6 +212,31 @@ extension View {
     func pinnedBar<Bar: View>(isPresented: Bool, @ViewBuilder content: () -> Bar) -> some View {
         modifier(PinnedBar(isPresented: isPresented, bar: content()))
     }
+
+    /// The shape of a prominent button: a capsule, or at accessibility sizes a rounded rectangle,
+    /// because a capsule around a label that wraps turns into an oval blob. For a button pinned to an
+    /// edge pass `pinned`: its text stops growing at accessibility1, so it stays a control at the
+    /// largest sizes instead of filling a third of the screen (the way the system's own bars do);
+    /// the content above it carries the rest. Texts capped here need an identifier and an entry in
+    /// the allowance lists of the accessibility audits.
+    func actionShape(pinned: Bool = false) -> some View {
+        modifier(ActionShape(pinned: pinned))
+    }
+}
+
+private struct ActionShape: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let pinned: Bool
+
+    func body(content: Content) -> some View {
+        // The size is read here, outside the cap, so the shape follows the real text size.
+        content
+            .buttonBorderShape(
+                typeSize.isAccessibilitySize ? .roundedRectangle(radius: Radius.card) : .capsule
+            )
+            .dynamicTypeSize(
+                ...(pinned ? DynamicTypeSize.accessibility1 : DynamicTypeSize.accessibility5))
+    }
 }
 
 private struct PinnedBar<Bar: View>: ViewModifier {

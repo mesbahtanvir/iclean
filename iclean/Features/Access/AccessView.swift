@@ -123,8 +123,8 @@ struct AccessView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
             .controlSize(.large)
+            .actionShape(pinned: true)
             .accessibilityIdentifier("access.openSettings")
         } else if isRequesting {
             // Waiting for the system dialog: the button is disabled and says so, it is not a
@@ -135,8 +135,8 @@ struct AccessView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
             .controlSize(.large)
+            .actionShape(pinned: true)
             .disabled(true)
             .accessibilityLabel("Allow Access to Photos")
             .accessibilityIdentifier("access.allow")
@@ -152,8 +152,8 @@ struct AccessView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
             .controlSize(.large)
+            .actionShape(pinned: true)
             .accessibilityIdentifier("access.allow")
         }
     }

@@ -98,8 +98,8 @@ struct HomeFirstRun: View {
         ) {
             Button("Scan Library") { model.startScan() }
                 .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
                 .controlSize(.large)
+                .actionShape()
                 .accessibilityIdentifier("home.scan")
         }
     }
@@ -117,8 +117,8 @@ struct HomeInterruptedEmpty: View {
         ) {
             Button("Resume Scan") { model.startScan() }
                 .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
                 .controlSize(.large)
+                .actionShape()
                 .accessibilityIdentifier("home.resume")
         }
     }
@@ -139,6 +139,7 @@ struct HomeNothingToShow: View {
                 .buttonStyle(.bordered)
                 .tint(Palette.accentText)
                 .controlSize(.large)
+                .actionShape()
                 .accessibilityIdentifier("home.scan")
         }
         .accessibilityElement(children: .contain)
