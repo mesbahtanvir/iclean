@@ -31,6 +31,9 @@ struct PhotoViewer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(macOS)
+        @Environment(\.displayScale) private var displayScale
+    #endif
 
     /// How far the photo is zoomed and where it is moved to. The base values are kept between
     /// gestures, so a second pinch starts from where the first one ended.
@@ -70,6 +73,8 @@ struct PhotoViewer: View {
         #if os(macOS)
             // A sheet on the Mac has no size of its own.
             .frame(minWidth: 640, idealWidth: 900, minHeight: 480, idealHeight: 700)
+            .background { zoomShortcuts(item) }
+            .tracksSheet()
         #endif
         .task { await prepareVideo(item) }
         .onChange(of: assetID) { resetZoom() }
@@ -77,6 +82,15 @@ struct PhotoViewer: View {
     }
 
     private var isVideo: Bool { model.results.items[assetID]?.metadata.kind.isVideo == true }
+
+    /// How to zoom without a touch screen: the keys on a Mac, the pinch-like swipe on a phone.
+    private var zoomHint: Text {
+        #if os(macOS)
+            Text("Press Command-Plus or Command-Minus to zoom")
+        #else
+            Text("Swipe up or down to zoom")
+        #endif
+    }
 
     /// The pixels asked for: the picture of a photo filling a big screen.
     private var pixelRequest: Int {
@@ -99,7 +113,11 @@ struct PhotoViewer: View {
                 still
                     .overlay { if playable != nil { playButton } }
             } else {
-                zoomable(still, item)
+                #if os(macOS)
+                    macZoomable(item)
+                #else
+                    zoomable(still, item)
+                #endif
             }
         }
         .onGeometryChange(for: CGSize.self) {
@@ -167,7 +185,7 @@ struct PhotoViewer: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(ItemKind.photo.spokenName))
             .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
-            .accessibilityHint(Text("Swipe up or down to zoom"))
+            .accessibilityHint(zoomHint)
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: setZoom(baseScale * 1.5, item: item)
@@ -176,6 +194,95 @@ struct PhotoViewer: View {
                 }
             }
     }
+
+    #if os(macOS)
+        /// The photo on a Mac: its fitted size times the zoom, in a scroll view, so a zoomed photo is
+        /// moved with the scroll wheel or two fingers on the trackpad and has scroll bars. Pinch zooms,
+        /// a double click toggles between fit and 100%, Command-plus, Command-minus and Command-0 zoom
+        /// from the keyboard.
+        private func macZoomable(_ item: CleanupKit.LibraryItem?) -> some View {
+            let fitted = fittedSize(item)
+            return ScrollViewReader { reader in
+                ScrollView([.horizontal, .vertical]) {
+                    still
+                        .frame(width: fitted.width * scale, height: fitted.height * scale)
+                        // Smaller than the stage (at 1x), the photo sits in the middle of it.
+                        .frame(minWidth: stage.width, minHeight: stage.height)
+                        .id("photo")
+                }
+                .scrollIndicators(scale > 1 ? .automatic : .hidden)
+                .defaultScrollAnchor(.center)
+                // A new zoom keeps the middle of the photo in the middle of the window.
+                .onChange(of: scale) { reader.scrollTo("photo", anchor: .center) }
+                .gesture(
+                    MagnifyGesture()
+                        .onChanged { value in
+                            scale = (baseScale * value.magnification).clamped(to: 1...Self.maxScale)
+                        }
+                        .onEnded { value in
+                            baseScale = (baseScale * value.magnification)
+                                .clamped(to: 1...Self.maxScale)
+                            if baseScale < 1.02 { resetZoom() } else { scale = baseScale }
+                        }
+                )
+                .onTapGesture(count: 2) { toggleActualSize(item) }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(ItemKind.photo.spokenName))
+                .accessibilityValue(Text("Zoom \(Int((scale * 100).rounded())) percent"))
+                .accessibilityHint(zoomHint)
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: setZoom(baseScale * 1.25, item: item)
+                    case .decrement: setZoom(baseScale / 1.25, item: item)
+                    @unknown default: break
+                    }
+                }
+            }
+        }
+
+        /// The photo's size at 1x: fitted into the stage.
+        private func fittedSize(_ item: CleanupKit.LibraryItem?) -> CGSize {
+            let aspect =
+                (item?.metadata.aspectRatio).flatMap { $0 > 0 ? CGFloat($0) : nil } ?? 4 / 3
+            guard stage.width > 0, stage.height > 0 else { return .zero }
+            return aspect > stage.width / stage.height
+                ? CGSize(width: stage.width, height: stage.width / aspect)
+                : CGSize(width: stage.height * aspect, height: stage.height)
+        }
+
+        /// A double click: back to fit when zoomed in, otherwise to 100%, where one pixel of the photo
+        /// is one pixel of the screen (twice the size when the photo is smaller than the window).
+        private func toggleActualSize(_ item: CleanupKit.LibraryItem?) {
+            if baseScale > 1.02 {
+                setZoom(1, item: item)
+                return
+            }
+            let fitted = fittedSize(item)
+            let pixels = CGFloat(item?.metadata.pixelWidth ?? 0)
+            guard fitted.width > 0, pixels > 0 else { return setZoom(2, item: item) }
+            let actual = pixels / displayScale / fitted.width
+            setZoom(actual > 1.05 ? actual : 2, item: item)
+        }
+
+        /// Command-plus, Command-minus and Command-0. Buttons the eye never sees, so the shortcuts
+        /// belong to this window and work while it is key.
+        private func zoomShortcuts(_ item: CleanupKit.LibraryItem?) -> some View {
+            Group {
+                Button("Zoom In") { setZoom(baseScale * 1.25, item: item) }
+                    .keyboardShortcut("+", modifiers: .command)
+                Button("Zoom In") { setZoom(baseScale * 1.25, item: item) }
+                    .keyboardShortcut("=", modifiers: .command)
+                Button("Zoom Out") { setZoom(baseScale / 1.25, item: item) }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Fit in Window") { setZoom(1, item: item) }
+                    .keyboardShortcut("0", modifiers: .command)
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    #endif
 
     private func setZoom(_ target: CGFloat, item: CleanupKit.LibraryItem?) {
         let value = target.clamped(to: 1...Self.maxScale)
@@ -307,6 +414,13 @@ struct PhotoViewer: View {
         .buttonStyle(.bordered)
         .controlSize(.large)
         .labelStyle(.titleAndIcon)
+        #if os(macOS)
+            .help(
+                selected
+                    ? LocalizedStringKey("Take it off the removal list. It stays in your library.")
+                    : LocalizedStringKey(
+                        "Select it for removal. Nothing is removed until you confirm."))
+        #endif
         .accessibilityIdentifier("viewer.toggleSelect")
     }
 
@@ -323,6 +437,9 @@ struct PhotoViewer: View {
         .buttonStyle(.bordered)
         .controlSize(.large)
         .labelStyle(.titleAndIcon)
+        #if os(macOS)
+            .help("Never suggest this again, and take it off the removal list.")
+        #endif
         .accessibilityIdentifier("viewer.alwaysKeep")
     }
 }

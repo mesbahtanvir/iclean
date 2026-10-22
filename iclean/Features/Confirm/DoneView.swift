@@ -14,54 +14,30 @@ struct DoneView: View {
     private var failed: Int { summary.failedAssetIDs.count }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Space.m) {
-                Image(systemName: failed > 0 ? "info.circle" : "checkmark.circle")
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: glyphSize))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                // Read by the tests as one text: exactly "N items removed".
-                Text("\(summary.removedCount) items removed")
-                    .font(.title2.bold())
-                    .multilineTextAlignment(.center)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityFocused($headlineFocused)
-                    .accessibilityIdentifier("done.removed")
-                if summary.removedCount > 0 {
-                    // The honest figure: it is only free once Recently Deleted is emptied, and with
-                    // iCloud Optimize Storage the space on this device can differ.
-                    Text(
-                        "You’ll get about \(Format.byteValue(summary.bytesFreed)) back once Recently Deleted is emptied"
-                    )
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("done.freed")
-                }
-                if failed > 0 {
-                    Text(
-                        "\(failed) items could not be removed. They are still in your library."
-                    )
-                    .font(.subheadline)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("done.failures")
-                }
-                Text(verbatim: restoreParagraph)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, Space.m)
-                    .accessibilityIdentifier("done.restore")
+        layout
+            // One quiet success tap, and only when everything asked for happened.
+            .sensoryFeedback(.success, trigger: succeeded)
+            .task {
+                if failed == 0 { succeeded = true }
+                // VoiceOver starts on the headline, after the sheet has finished growing.
+                try? await Task.sleep(for: .milliseconds(400))
+                headlineFocused = true
             }
-            .padding(.horizontal, platformGutter)
-            .padding(.top, Space.xl)
-            .padding(.bottom, Space.l)
-            .readableColumn()
-        }
+    }
+
+    /// The receipt, with the one button: pinned to the bottom of a phone's sheet, and under the text
+    /// at the foot of a Mac's, where the sheet is as tall as what it says and scrolls only when the
+    /// screen is shorter.
+    @ViewBuilder private var layout: some View {
         #if os(iOS)
-            .pinnedBar(isPresented: true) { doneButton }
+            ScrollView { receipt }
+                .pinnedBar(isPresented: true) { doneButton }
         #else
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                ViewThatFits(in: .vertical) {
+                    receipt
+                    ScrollView { receipt }
+                }
                 HStack {
                     Spacer()
                     doneButton
@@ -69,14 +45,51 @@ struct DoneView: View {
                 .padding(Space.xl)
             }
         #endif
-        // One quiet success tap, and only when everything asked for happened.
-        .sensoryFeedback(.success, trigger: succeeded)
-        .task {
-            if failed == 0 { succeeded = true }
-            // VoiceOver starts on the headline, after the sheet has finished growing.
-            try? await Task.sleep(for: .milliseconds(400))
-            headlineFocused = true
+    }
+
+    private var receipt: some View {
+        VStack(spacing: Space.m) {
+            Image(systemName: failed > 0 ? "info.circle" : "checkmark.circle")
+                .symbolRenderingMode(.hierarchical)
+                .font(.system(size: glyphSize))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            // Read by the tests as one text: exactly "N items removed".
+            Text("\(summary.removedCount) items removed")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityFocused($headlineFocused)
+                .accessibilityIdentifier("done.removed")
+            if summary.removedCount > 0 {
+                // The honest figure: it is only free once Recently Deleted is emptied, and with
+                // iCloud Optimize Storage the space on this device can differ.
+                Text(
+                    "You’ll get about \(Format.byteValue(summary.bytesFreed)) back once Recently Deleted is emptied"
+                )
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("done.freed")
+            }
+            if failed > 0 {
+                Text(
+                    "\(failed) items could not be removed. They are still in your library."
+                )
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("done.failures")
+            }
+            Text(verbatim: restoreParagraph)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, Space.m)
+                .accessibilityIdentifier("done.restore")
         }
+        .padding(.horizontal, platformGutter)
+        .padding(.top, Space.xl)
+        .padding(.bottom, Space.l)
+        .readableColumn()
     }
 
     /// The steps, then the one thing they cannot promise.
@@ -108,6 +121,9 @@ struct DoneView: View {
         .buttonBorderShape(.capsule)
         #if os(iOS)
             .controlSize(.large)
+        #else
+            // On a Mac Return closes the receipt: there is nothing left to confirm.
+            .keyboardShortcut(.defaultAction)
         #endif
         .accessibilityIdentifier("done.close")
     }

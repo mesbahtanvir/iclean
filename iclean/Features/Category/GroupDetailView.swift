@@ -61,6 +61,33 @@ struct GroupDetailView: View {
     // MARK: Layout
 
     @ViewBuilder private func content(_ group: ResultGroup) -> some View {
+        #if os(macOS)
+            macContent(group)
+        #else
+            phoneContent(group)
+        #endif
+    }
+
+    #if os(macOS)
+        /// The copies side by side, not in a scroller: up to four in a row, with the facts lined up
+        /// across them (spec 009 section 6.15).
+        @ViewBuilder private func macContent(_ group: ResultGroup) -> some View {
+            let ratio = aspectRatio(of: group)
+            // A favorite keeper has a second line; every card keeps the same slot height so the
+            // Remove checkboxes stay at one height.
+            let slotHeight = group.hasFavoriteKeeper(in: model.results) ? tallSlot : slot
+            VStack(alignment: .leading, spacing: Space.m) {
+                summary(group, inset: true)
+                MacCompareGrid(
+                    group: group, width: width, ratio: ratio, slotHeight: slotHeight,
+                    displayScale: displayScale, onView: { viewing = $0 }
+                )
+                .accessibilityIdentifier("group.compare")
+            }
+        }
+    #endif
+
+    @ViewBuilder private func phoneContent(_ group: ResultGroup) -> some View {
         let ratio = aspectRatio(of: group)
         let stacked = typeSize.isAccessibilitySize
         // About 60% of the width, so the next card peeks: three of five columns with a gap
@@ -131,9 +158,16 @@ struct GroupDetailView: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             GroupSummaryLine(group: group)
             if group.type == .similarShots {
-                Text("Turn off a photo’s Remove switch to keep it.")
-                    .font(Typography.note)
-                    .foregroundStyle(.secondary)
+                #if os(macOS)
+                    // The Mac's control is a checkbox, not a switch.
+                    Text("Uncheck a photo’s Remove box to keep it.")
+                        .font(Typography.note)
+                        .foregroundStyle(.secondary)
+                #else
+                    Text("Turn off a photo’s Remove switch to keep it.")
+                        .font(Typography.note)
+                        .foregroundStyle(.secondary)
+                #endif
             }
         }
         .padding(.horizontal, inset ? Space.l : 0)
@@ -195,7 +229,7 @@ private struct GroupSummaryLine: View {
 }
 
 /// One copy: the photo, its facts, whether it is the keeper, and the switch that decides.
-private struct CompareCard: View {
+struct CompareCard: View {
     let group: ResultGroup
     let assetID: String
     let index: Int
@@ -203,6 +237,19 @@ private struct CompareCard: View {
     let pixelSize: Int
     let slotHeight: CGFloat
     let onView: () -> Void
+
+    /// The rows of a card, which the phone shows together and the Mac's grid asks for one at a time,
+    /// so that the same row of every copy lines up.
+    enum Part: Hashable {
+        case photo, facts, taken, dimensions, size, status, toggle, notes
+    }
+
+    /// The rows to show. The phone's card has all of its rows.
+    var parts: Set<Part> = [.photo, .facts, .status, .toggle, .notes]
+    /// A width of its own, for a cell of the Mac's grid.
+    var fixedWidth: CGFloat?
+    /// The keyboard is on this copy (Mac): its photo gets the focus ring.
+    var ringed = false
 
     @Environment(AppModel.self) private var model
     @State private var taps = 0
@@ -212,13 +259,19 @@ private struct CompareCard: View {
         let selected = model.isSelected(assetID)
         let isKeeper = group.keepers.contains(assetID)
         VStack(alignment: .leading, spacing: Space.s) {
-            photo(item, selected: selected)
-            facts(item)
-            status(item, isKeeper: isKeeper)
-            removeSwitch(item, selected: selected)
-            notes(isKeeper: isKeeper)
+            if parts.contains(.photo) { photo(item, selected: selected) }
+            if parts.contains(.facts) { facts(item) }
+            if parts.contains(.taken) { taken(item) }
+            if parts.contains(.dimensions) { dimensions(item) }
+            if parts.contains(.size) { size(item) }
+            if parts.contains(.status) { status(item, isKeeper: isKeeper) }
+            if parts.contains(.toggle) { removeSwitch(item, selected: selected) }
+            if parts.contains(.notes) { notes(isKeeper: isKeeper) }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(
+            maxWidth: fixedWidth == nil ? .infinity : nil, alignment: .topLeading
+        )
+        .frame(width: fixedWidth, alignment: .topLeading)
         .accessibilityElement(children: .contain)
     }
 
@@ -239,6 +292,13 @@ private struct CompareCard: View {
                         .padding(Space.s)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                .overlay {
+                    // The keyboard is on this copy: the same 3 pt ring as in the grid.
+                    if ringed {
+                        RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                            .strokeBorder(Color.accentColor, lineWidth: 3)
+                    }
+                }
                 .calmAnimation(value: selected)
         }
         .buttonStyle(.plain)
@@ -263,6 +323,43 @@ private struct CompareCard: View {
                     .font(Typography.note)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    // The Mac's grid shows the facts as three rows of their own, so each lines up across the copies.
+
+    /// When it was taken.
+    @ViewBuilder private func taken(_ item: CleanupKit.LibraryItem?) -> some View {
+        if let date = item?.metadata.captureDate {
+            Text(Format.capture(date))
+                .font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("No date")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "4,032 × 3,024".
+    @ViewBuilder private func dimensions(_ item: CleanupKit.LibraryItem?) -> some View {
+        if let m = item?.metadata {
+            // Numbers are grouped here ("4,032"): a String interpolation of an Int is not.
+            let width = m.pixelWidth.formatted()
+            let height = m.pixelHeight.formatted()
+            Text("\(width) × \(height)")
+                .font(.subheadline)
+                .monospacedDigit()
+        }
+    }
+
+    /// "3.2 MB", and the length of a video after it ("· 0:12").
+    @ViewBuilder private func size(_ item: CleanupKit.LibraryItem?) -> some View {
+        if let item {
+            let bytes = Format.bytes(item.effectiveByteSize, estimate: item.sizeIsEstimate)
+            Text(item.metadata.duration.map { "\(bytes) · \(Format.duration($0))" } ?? bytes)
+                .font(.subheadline)
+                .monospacedDigit()
         }
     }
 

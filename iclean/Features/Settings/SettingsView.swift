@@ -4,9 +4,6 @@ import SwiftUI
 /// Settings, ordered by consequence (spec 009 section 6.11): three places to look, then the one
 /// thing that cannot be undone, alone at the end.
 struct SettingsView: View {
-    @Environment(AppModel.self) private var model
-    @State private var confirmDelete = false
-
     var body: some View {
         Form {
             Section {
@@ -29,34 +26,9 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.restoreHelp")
             } footer: {
-                Text(
-                    "Everything stays on this \(Device.noun). No account, no internet connection, nothing collected."
-                )
+                PrivacyNote()
             }
-            Section {
-                // The system's destructive role: the only red text on this screen.
-                Button("Delete All iclean Data", role: .destructive) {
-                    confirmDelete = true
-                }
-                .accessibilityIdentifier("settings.deleteAllData")
-                // On the button itself, so the system dialog points at what it is about.
-                .confirmationDialog(
-                    "Delete All iclean Data?", isPresented: $confirmDelete,
-                    titleVisibility: .visible
-                ) {
-                    Button("Delete All iclean Data", role: .destructive) {
-                        Task { await model.deleteAllData() }
-                    }
-                    .accessibilityIdentifier("settings.confirmDelete")
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text(
-                        "This removes scan results, your selections and Always Keep photos. Your photos are not touched."
-                    )
-                }
-            } footer: {
-                Text(deleteFooter)
-            }
+            DeleteAllSection()
             #if DEBUG
                 Section {
                     NavigationLink("Baseline Library (Debug)") {
@@ -73,6 +45,53 @@ struct SettingsView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
         #endif
+    }
+}
+
+/// "Everything stays on this iPhone. No account, no internet connection, nothing collected." One
+/// sentence, written once: Settings shows it under its rows and the Mac Settings window shows it too.
+struct PrivacyNote: View {
+    var body: some View {
+        Text(
+            "Everything stays on this \(Device.noun). No account, no internet connection, nothing collected."
+        )
+    }
+}
+
+/// The one thing that cannot be undone, alone in its own section: the only red text on the screen,
+/// and it asks first. Settings and the Mac Settings window both show it.
+struct DeleteAllSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirmDelete = false
+
+    var body: some View {
+        Section {
+            // The system's destructive role: the only red text on this screen.
+            Button("Delete All iclean Data", role: .destructive) {
+                confirmDelete = true
+            }
+            #if os(macOS)
+                .buttonStyle(.borderless)
+            #endif
+            .accessibilityIdentifier("settings.deleteAllData")
+            // On the button itself, so the system dialog points at what it is about.
+            .confirmationDialog(
+                "Delete All iclean Data?", isPresented: $confirmDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete All iclean Data", role: .destructive) {
+                    Task { await model.deleteAllData() }
+                }
+                .accessibilityIdentifier("settings.confirmDelete")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "This removes scan results, your selections and Always Keep photos. Your photos are not touched."
+                )
+            }
+        } footer: {
+            Text(deleteFooter)
+        }
     }
 
     /// What deleting does, and when the saved data is unreadable, that deleting starts fresh.

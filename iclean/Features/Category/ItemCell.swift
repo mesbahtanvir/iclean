@@ -67,7 +67,7 @@ struct ItemCell: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(description(item: item, favorite: favorite, inAlbums: inAlbums))
             .accessibilityValue(ReviewState.text(selected: selected))
-            .accessibilityHint(Text("Double tap to change"))
+            .accessibilityHint(ReviewState.changeHint)
             .accessibilityAddTraits(.isButton)
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("category.item.\(assetID)")
@@ -77,10 +77,20 @@ struct ItemCell: View {
             }
     }
 
-    /// A description only: what the photo is. Whether it goes is the value.
     private func description(item: CleanupKit.LibraryItem?, favorite: Bool, inAlbums: Bool)
         -> String
     {
+        Self.description(
+            item: item, isKeeper: isKeeper, confidence: confidence, favorite: favorite,
+            inAlbums: inAlbums)
+    }
+
+    /// A description only: what the photo is. Whether it goes is the value. The Mac's cell says the
+    /// same words.
+    static func description(
+        item: CleanupKit.LibraryItem?, isKeeper: Bool, confidence: Confidence, favorite: Bool,
+        inAlbums: Bool
+    ) -> String {
         var parts: [String] = []
         var first = item?.metadata.kind.spokenName ?? ItemKind.photo.spokenName
         if let date = item?.metadata.captureDate { first += ", " + Format.capture(date) }
@@ -98,8 +108,19 @@ struct ItemCell: View {
     }
 }
 
+extension ReviewState {
+    /// What VoiceOver says about how to change it: a double tap on a phone, the Space bar on a Mac.
+    static var changeHint: Text {
+        #if os(macOS)
+            Text("Press the Space bar to change")
+        #else
+            Text("Double tap to change")
+        #endif
+    }
+}
+
 /// Opens the viewer. A 24 pt glyph on a scrim with a 44 pt hit area, tucked into the corner.
-private struct ExpandButton: View {
+struct ExpandButton: View {
     let action: () -> Void
 
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 24

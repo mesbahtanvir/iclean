@@ -21,16 +21,19 @@ struct HomeView: View {
                 #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
                 #endif
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        NavigationLink {
-                            SettingsView()
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
+                #if os(iOS)
+                    // The Mac has a Settings window (Command-comma), so no gear there.
+                    .toolbar {
+                        ToolbarItem(placement: .primaryAction) {
+                            NavigationLink {
+                                SettingsView()
+                            } label: {
+                                Label("Settings", systemImage: "gearshape")
+                            }
+                            .accessibilityIdentifier("home.settings")
                         }
-                        .accessibilityIdentifier("home.settings")
                     }
-                }
+                #endif
                 .navigationDestination(for: Route.self) { RouteDestinationView(route: $0) }
                 .overlay(alignment: .bottom) { tripwireCount }
         }
@@ -77,16 +80,7 @@ struct HomeView: View {
     private func withNotices<Content: View>(
         iCloud: Bool = false, @ViewBuilder _ content: () -> Content
     ) -> some View {
-        content()
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(alignment: .leading, spacing: Space.s) {
-                    if iCloud { ICloudFootnote(count: model.results.notScannedCount) }
-                    HomeNotices()
-                }
-                .padding(.horizontal, Space.l)
-                .padding(.vertical, Space.m)
-                .readableColumn()
-            }
+        content().homeNotices(iCloud: iCloud)
     }
 
     private func restore(_ restored: RestoredRoute?) {

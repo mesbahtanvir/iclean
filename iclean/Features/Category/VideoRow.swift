@@ -61,7 +61,7 @@ struct VideoRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(item))
         .accessibilityValue(ReviewState.text(selected: selected))
-        .accessibilityHint(Text("Double tap to change"))
+        .accessibilityHint(ReviewState.changeHint)
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("category.item.\(assetID)")

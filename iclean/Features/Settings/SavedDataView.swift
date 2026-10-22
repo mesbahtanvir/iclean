@@ -6,44 +6,10 @@ import SwiftUI
 struct SavedDataView: View {
     @Environment(AppModel.self) private var model
     @State private var inventory: AppModel.SavedDataInventory?
-    @State private var confirmErase = false
-    @State private var confirmReset = false
-    @State private var confirmClearAlwaysKeep = false
-    /// The count the dialog names, fixed when it opens so it does not change as it closes.
-    @State private var alwaysKeepInDialog = 0
 
     var body: some View {
         Form {
-            Section {
-                if let inventory {
-                    resultsRow(inventory)
-                    LabeledContent("Your selections") {
-                        Text("\(inventory.decisionCount + inventory.keeperChoices)")
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("saved.choices")
-                    LabeledContent("Always Keep") {
-                        if inventory.keepMarkCount > 0 {
-                            Text("^[\(inventory.keepMarkCount) photo](inflect: true)")
-                        } else {
-                            Text("None")
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("saved.alwaysKeep")
-                } else {
-                    // No identifiers until the numbers are real, so nothing reads a placeholder.
-                    placeholderRows
-                }
-            } footer: {
-                Text(
-                    "iclean saves this so it can pick up where you left off. It notes which photos are grouped and what you chose, never the photos themselves, and none of it leaves this \(Device.noun)."
-                )
-            }
-            clearResultsSection
-            resetSection
-            if let inventory, inventory.keepMarkCount > 0 { alwaysKeepSection(inventory) }
-            if model.storeProblem != nil { eraseSection }
+            SavedDataSections(inventory: $inventory)
         }
         .formStyle(.grouped)
         .navigationTitle("What iclean Remembers")
@@ -51,6 +17,51 @@ struct SavedDataView: View {
             .navigationBarTitleDisplayMode(.inline)
         #endif
         .task { inventory = await model.savedDataInventory() }
+    }
+}
+
+/// The sections of that screen, so the Mac Settings window can show the same rows and tools in one
+/// form. The host owns the inventory and loads it (a modifier on these sections would repeat on each).
+struct SavedDataSections: View {
+    @Environment(AppModel.self) private var model
+    @Binding var inventory: AppModel.SavedDataInventory?
+    @State private var confirmErase = false
+    @State private var confirmReset = false
+    @State private var confirmClearAlwaysKeep = false
+    /// The count the dialog names, fixed when it opens so it does not change as it closes.
+    @State private var alwaysKeepInDialog = 0
+
+    var body: some View {
+        Section {
+            if let inventory {
+                resultsRow(inventory)
+                LabeledContent("Your selections") {
+                    Text("\(inventory.decisionCount + inventory.keeperChoices)")
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("saved.choices")
+                LabeledContent("Always Keep") {
+                    if inventory.keepMarkCount > 0 {
+                        Text("^[\(inventory.keepMarkCount) photo](inflect: true)")
+                    } else {
+                        Text("None")
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("saved.alwaysKeep")
+            } else {
+                // No identifiers until the numbers are real, so nothing reads a placeholder.
+                placeholderRows
+            }
+        } footer: {
+            Text(
+                "iclean saves this so it can pick up where you left off. It notes which photos are grouped and what you chose, never the photos themselves, and none of it leaves this \(Device.noun)."
+            )
+        }
+        clearResultsSection
+        resetSection
+        if let inventory, inventory.keepMarkCount > 0 { alwaysKeepSection(inventory) }
+        if model.storeProblem != nil { eraseSection }
     }
 
     // MARK: Tools

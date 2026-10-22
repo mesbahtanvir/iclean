@@ -25,6 +25,17 @@ enum Gutter {
     }
 }
 
+enum Hit {
+    /// The smallest comfortable hit area of a quiet button: a fingertip on a phone, a pointer on a Mac.
+    static var minimum: CGFloat {
+        #if os(macOS)
+            28
+        #else
+            44
+        #endif
+    }
+}
+
 enum Radius {
     /// Thumbnails and video thumbnails.
     static let tile: CGFloat = 8
@@ -37,6 +48,8 @@ enum Layout {
     static let readable: CGFloat = 560
     static let access: CGFloat = 480
     static let macSheet: CGFloat = 440
+    /// The Mac Settings window: fixed width, the height follows the tab.
+    static let macSettings: CGFloat = 480
 }
 
 enum Typography {

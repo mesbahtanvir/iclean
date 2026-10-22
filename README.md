@@ -51,6 +51,10 @@ build/DerivedDataMac/Build/Products/Debug/iclean.app/Contents/MacOS/iclean -UITe
 `-TraceScan` prints progress and each rebuild of the results. In a debug build the CleanupKit package
 is still compiled with optimization (see `Package.swift`): unoptimized it is about 80 times slower.
 
+A debug Mac build can save its own windows (a sheet included) as PNG files, without Screen Recording
+permission, with `-SnapshotTo`, `-SelectSidebar`, `-OpenSheet` and `-ShowScreen`. The launch line for
+each screen and the list of things to check by hand are in `specs/009-calm-polish/mac-checks.md`.
+
 ## Test
 
 Core logic (no simulator needed):

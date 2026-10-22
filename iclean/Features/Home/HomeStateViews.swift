@@ -191,6 +191,33 @@ struct HomeNothingToShow: View {
 
 // MARK: Notices
 
+extension View {
+    /// A one-sentence state with the notices (limited access, store problems, iCloud-only photos) as
+    /// footnotes at the bottom edge, where they never compete with the sentence. The slot exists in
+    /// every state, on a phone's Home and in the Mac window's detail pane.
+    func homeNotices(iCloud: Bool = false) -> some View {
+        modifier(HomeNoticesInset(iCloud: iCloud))
+    }
+}
+
+private struct HomeNoticesInset: ViewModifier {
+    let iCloud: Bool
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    if iCloud { ICloudFootnote(count: model.results.notScannedCount) }
+                    HomeNotices()
+                }
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.m)
+                .readableColumn()
+            }
+    }
+}
+
 /// What Home says about its own situation, as footnotes in the periphery: only some of your photos
 /// are shared, the saved data has a problem, some photos are only in iCloud. Never red, never a
 /// card; they always come last. The slot exists in every state.

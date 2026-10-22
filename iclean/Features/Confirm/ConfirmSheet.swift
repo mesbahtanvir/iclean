@@ -47,6 +47,10 @@ struct ConfirmSheet: View {
                     if receipt != nil { chosenDetent = .large }
                 #endif
             }
+            #if os(macOS)
+                // The menu commands wait while this question is up.
+                .tracksSheet()
+            #endif
     }
 
     private var isReceipt: Bool { summary.map { !$0.cancelled } ?? false }
@@ -154,45 +158,43 @@ struct ConfirmSheet: View {
         let big = typeSize.isAccessibilitySize
         let preview = loaded.preview
         let blocked = !preview.wholeGroupsSelected.isEmpty && !confirmWholeGroups
-        let content = ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
-                #if os(macOS)
-                    question(loaded)
-                        .font(.title2.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                #endif
-                if preview.count > 0 {
-                    VStack(alignment: .leading, spacing: Space.m) {
-                        ConfirmHero(bytes: preview.bytes, count: preview.count, noun: loaded.noun)
-                        ConfirmReassurance()
-                    }
-                } else {
-                    Text("Nothing is left to remove.")
-                        .font(.headline)
+        let stack = VStack(alignment: .leading, spacing: Space.xl) {
+            #if os(macOS)
+                question(loaded)
+                    .font(.title2.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+            #endif
+            if preview.count > 0 {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    ConfirmHero(bytes: preview.bytes, count: preview.count, noun: loaded.noun)
+                    ConfirmReassurance()
                 }
-                if !preview.wholeGroupsSelected.isEmpty {
-                    WholeGroupsCallout(
-                        sets: preview.wholeGroupsSelected.count, confirmed: $confirmWholeGroups)
-                }
-                if !big, !loaded.strip.isEmpty {
-                    PhotoStrip(ids: loaded.strip, total: preview.count)
-                }
-                if loaded.categories.count >= 2 {
-                    ConfirmCategoryRows(categories: loaded.categories, preview: preview)
-                }
-                if loaded.plan.droppedCount > 0 { dropped(loaded.plan.droppedCount) }
-                if big {
-                    // The pinned area stays one button tall; what would sit under it scrolls instead.
-                    if let error = model.removalError { errorNote(error) }
-                    footnote(blocked: blocked)
-                }
+            } else {
+                Text("Nothing is left to remove.")
+                    .font(.headline)
             }
-            .padding(.horizontal, platformGutter)
-            .padding(.top, Space.s)
-            .padding(.bottom, Space.l)
+            if !preview.wholeGroupsSelected.isEmpty {
+                WholeGroupsCallout(
+                    sets: preview.wholeGroupsSelected.count, confirmed: $confirmWholeGroups)
+            }
+            if !big, !loaded.strip.isEmpty {
+                PhotoStrip(ids: loaded.strip, total: preview.count)
+            }
+            if loaded.categories.count >= 2 {
+                ConfirmCategoryRows(categories: loaded.categories, preview: preview)
+            }
+            if loaded.plan.droppedCount > 0 { dropped(loaded.plan.droppedCount) }
+            if big {
+                // The pinned area stays one button tall; what would sit under it scrolls instead.
+                if let error = model.removalError { errorNote(error) }
+                footnote(blocked: blocked)
+            }
         }
+        .padding(.horizontal, platformGutter)
+        .padding(.top, Space.s)
+        .padding(.bottom, Space.l)
         #if os(iOS)
-            return content.pinnedBar(isPresented: true) {
+            return ScrollView { stack }.pinnedBar(isPresented: true) {
                 VStack(spacing: Space.s) {
                     if !big, let error = model.removalError { errorNote(error) }
                     removeButton(loaded, blocked: blocked)
@@ -201,15 +203,24 @@ struct ConfirmSheet: View {
             }
         #else
             return VStack(spacing: 0) {
-                content
+                // The sheet is as tall as what it says; it scrolls only when the screen is shorter.
+                ViewThatFits(in: .vertical) {
+                    stack
+                    ScrollView { stack }
+                }
                 Divider()
                 if let error = model.removalError {
                     errorNote(error).padding([.horizontal, .top], Space.xl)
                 }
-                HStack {
-                    Spacer()
-                    cancelButton
-                    removeButton(loaded, blocked: blocked)
+                VStack(spacing: Space.s) {
+                    // Cancel on the left of the one filled button, which has no keyboard shortcut:
+                    // Return does nothing here, Escape cancels.
+                    HStack {
+                        Spacer()
+                        cancelButton
+                        removeButton(loaded, blocked: blocked)
+                    }
+                    if !big { footnote(blocked: blocked) }
                 }
                 .padding(Space.xl)
             }

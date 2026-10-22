@@ -85,6 +85,71 @@ struct CategoryRemoveBar: View {
     }
 }
 
+#if os(macOS)
+    /// The Mac's remove bar: a 40 pt status bar, not a slab (spec 009 section 6.15). The count and the
+    /// size, quietly, on the left; on the right the one filled control, regular size, whose ellipsis
+    /// says it opens a summary first. It has no keyboard shortcut: Return never removes anything.
+    struct MacRemoveStatusBar: View {
+        let category: CleanupCategory
+        let action: () -> Void
+
+        @Environment(AppModel.self) private var model
+
+        var body: some View {
+            let tally = Tally(model.summary, category)
+            HStack(spacing: Space.m) {
+                status(tally)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if tally.selected > 0 {
+                    Button(action: action) { title(count: tally.selected) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                        .help("Opens a summary. Nothing is removed until you confirm.")
+                        .accessibilityHint(
+                            Text("Opens a summary. Nothing is removed until you confirm.")
+                        )
+                        .accessibilityIdentifier("category.removeSelected")
+                } else {
+                    Button(action: action) { Text("Remove…") }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .disabled(true)
+                        .accessibilityIdentifier("category.removeSelected")
+                }
+            }
+            .padding(.horizontal, Space.l)
+            .frame(height: 40)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
+            .calmAnimation(value: tally.selected > 0)
+        }
+
+        /// "3 photos selected · about 4.8 MB", or "Nothing selected".
+        @ViewBuilder private func status(_ tally: Tally) -> some View {
+            if tally.selected > 0 {
+                let size = Format.bytes(tally.selectedBytes, estimate: tally.selectedIsEstimate)
+                let noun = ItemNoun(categories: [category]).singular
+                Text("^[\(tally.selected) \(noun)](inflect: true) selected · \(size)")
+            } else {
+                Text("Nothing selected")
+            }
+        }
+
+        /// "Remove 3 Photos…": the number is grouped and the noun agrees.
+        @ViewBuilder private func title(count: Int) -> some View {
+            switch ItemNoun(categories: [category]) {
+            case .photos: Text("Remove ^[\(count) Photo](inflect: true)…")
+            case .videos: Text("Remove ^[\(count) Video](inflect: true)…")
+            case .items: Text("Remove ^[\(count) Item](inflect: true)…")
+            }
+        }
+    }
+#endif
+
 /// At accessibility sizes the bar's second line lives here, at the end of the scroll content.
 struct CategoryBarDetail: View {
     let category: CleanupCategory
@@ -144,28 +209,53 @@ struct CategorySummaryLine: View {
 
     var body: some View {
         let tally = model.summary.perCategory[category]
-        line(size: tally.map { Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate) })
-            .font(Typography.note)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, Space.l)
+        Self.text(
+            category: category, count: count, isGrouped: isGrouped,
+            size: tally.map { Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate) }
+        )
+        .font(Typography.note)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, Space.l)
     }
 
-    @ViewBuilder private func line(size: String?) -> some View {
+    /// "3 sets · 6.4 MB", "12 photos · 40 MB", or just the count while there is no size yet.
+    static func text(category: CleanupCategory, count: Int, isGrouped: Bool, size: String?)
+        -> Text
+    {
         if let size {
             if isGrouped {
-                Text("^[\(count) set](inflect: true) · \(size)")
-            } else {
-                Text(
-                    "^[\(count) \(ItemNoun(categories: [category]).singular)](inflect: true) · \(size)"
-                )
+                return Text("^[\(count) set](inflect: true) · \(size)")
             }
-        } else if isGrouped {
-            Text("^[\(count) set](inflect: true)")
-        } else {
-            Text("^[\(count) \(ItemNoun(categories: [category]).singular)](inflect: true)")
+            return Text(
+                "^[\(count) \(ItemNoun(categories: [category]).singular)](inflect: true) · \(size)"
+            )
         }
+        if isGrouped { return Text("^[\(count) set](inflect: true)") }
+        return Text("^[\(count) \(ItemNoun(categories: [category]).singular)](inflect: true)")
     }
 }
+
+#if os(macOS)
+    /// The window's subtitle under the category's name: "3 sets · 6.4 MB". A modifier of its own, so
+    /// the summary it reads re-draws it and not the screen it is on.
+    struct CategorySubtitle: ViewModifier {
+        let category: CleanupCategory
+        let count: Int
+        let isGrouped: Bool
+
+        @Environment(AppModel.self) private var model
+
+        func body(content: Content) -> some View {
+            let tally = model.summary.perCategory[category]
+            content.navigationSubtitle(
+                CategorySummaryLine.text(
+                    category: category, count: count, isGrouped: isGrouped,
+                    size: tally.map {
+                        Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate)
+                    }))
+        }
+    }
+#endif
 
 /// The header of one group of copies or similar shots: a 44 pt row that is the whole link to the
 /// compare screen. "3 copies" over "2 selected", then "Compare" in the accent and a chevron.
@@ -175,6 +265,23 @@ struct GroupHeader: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
+    #if os(macOS)
+        /// On a Mac "Compare" is quiet at rest and in the accent when the pointer is over the row or
+        /// the keyboard is on it.
+        @State private var hovering = false
+        @Environment(\.isFocused) private var focused
+    #endif
+
+    /// "Compare" in the accent: always on a phone. On a Mac the word and its chevron are always
+    /// there, so the row reads as a link to someone who has not hovered it yet or who is on the
+    /// keyboard, and the accent says "this one" for the row under the pointer or the focus.
+    private var emphasized: Bool {
+        #if os(macOS)
+            hovering || focused
+        #else
+            true
+        #endif
+    }
 
     var body: some View {
         // A group has a handful of members, so counting the selected ones here is cheap.
@@ -195,7 +302,8 @@ struct GroupHeader: View {
                 HStack(spacing: Space.xs) {
                     Text("Compare")
                         .font(.subheadline)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(
+                            emphasized ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -209,6 +317,10 @@ struct GroupHeader: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, Space.l)
+        #if os(macOS)
+            .onHover { hovering = $0 }
+            .help("Compare these side by side")
+        #endif
         .accessibilityIdentifier("category.group.\(group.id)")
     }
 

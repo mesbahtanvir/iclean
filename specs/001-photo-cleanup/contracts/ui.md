@@ -38,6 +38,35 @@ Review bar) → 5. interrupted with nothing found (`home.resume`) → 6. first r
 "A full scan has finished" means a session of kind full that ran to the end; a quick check or a
 stopped scan does not count.
 
+## Mac window (spec 009 section 6.15)
+
+The Mac is a sidebar and a detail pane, not the phone's stack. The same screens and ids apply in the
+detail pane (the Overview is Home's results screen with `results.reviewAll` as an inline button), and
+these are Mac only:
+
+- Sidebar: `sidebar.overview`, `sidebar.category.<name>` (the Overview keeps `results.category.<name>`).
+  The sidebar footer holds `home.lastScan` and `home.scan` (Scan Again), `home.resume`, `home.continue`,
+  `results.showNew` and, while scanning with results, the scan status. While the Overview is in the
+  detail pane it shows `home.continue` and `results.showNew` itself and the footer leaves them out, so
+  each id is on screen once; with the sidebar hidden they are still on the Overview. While scanning
+  with nothing found yet the scan card is the detail pane; its controls are in the toolbar.
+- Toolbar: `toolbar.scan` (Scan Library, Scan Again), `toolbar.resume` (Resume Scan after an interrupted
+  scan), and while a scan runs `scan.pause`, `scan.resume`, `scan.stop`; on a category
+  `category.photoSize` (the photo-size slider) and `category.selectAll`. The toolbar ids differ from
+  `home.scan` / `home.resume` on purpose: those stay on the buttons in the detail pane and the sidebar,
+  which are on screen at the same time as the toolbar, and one window must not hold two views with one
+  id. The toolbar offers a scan exactly when the phone's Home would (the order above): never while the
+  saved data is opening or being built, after it could not be read, or while a scan runs or finishes.
+- Category: `category.removeSelected` is the button in a 40 pt status bar. Large Videos is a table with
+  `category.item.<assetID>` on the Size cell of each row. Group compare uses checkboxes for
+  `group.toggle.<assetID>` (query `checkBoxes`, not `switches`).
+- Edit menu (no ids; a menu is not queried by id): Select Suggested (Shift-Command-S; "Select All
+  Videos" on Large Videos), Keep All (Option-Command-K) and Remove Selected… (Command-Delete, opens
+  the Confirm sheet only). Command-A stays the system's Select All. Select Suggested and Keep All
+  act on the screen in front: the category, or the group while its compare screen is on top.
+- There is no `home.settings` on the Mac: Settings is the window opened with Command-comma, and the
+  Help menu has "How Removal Works".
+
 ## Flow
 
 ```text
