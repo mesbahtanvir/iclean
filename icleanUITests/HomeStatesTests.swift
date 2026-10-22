@@ -166,8 +166,8 @@ final class HomeStatesTests: XCTestCase {
         confirmRemoval(app)
         let closeAgain = app.buttons["done.close"]
         XCTAssertTrue(closeAgain.waitForExistence(timeout: 10))
+        // Nothing is left in Large Videos, so closing the receipt goes back to Home by itself.
         closeAgain.tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         XCTAssertTrue(anything(app, "results.empty").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["All cleaned up"].exists)
