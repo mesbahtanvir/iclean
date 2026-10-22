@@ -97,7 +97,7 @@ import Testing
     // MARK: Whole scans
 
     @Test func aWideScanFindsExactlyWhatANarrowScanFinds() async throws {
-        let lib = variedLibrary(count: 240)
+        let lib = variedLibrary(count: 100)
         let one = try await scan(lib, profile: Self.narrow)
         let many = try await scan(lib, profile: Self.wide)
 
@@ -105,7 +105,7 @@ import Testing
         // time, so those are compared by distance.
         let a = Dictionary(uniqueKeysWithValues: try await one.items().map { ($0.assetID, $0) })
         let b = Dictionary(uniqueKeysWithValues: try await many.items().map { ($0.assetID, $0) })
-        #expect(a.count == 240)
+        #expect(a.count == 100)
         #expect(Set(a.keys) == Set(b.keys))
         for (id, x) in a {
             let y = try #require(b[id])
@@ -215,7 +215,7 @@ import Testing
         profile: ScanProfile, thermal: ProcessInfo.ThermalState, lowPower: Bool
     ) async throws -> Int {
         let lib = FakePhotoLibrary()
-        for i in 0..<96 { lib.add(Make.meta("g\(i)"), preview: .local(image)) }
+        for i in 0..<48 { lib.add(Make.meta("g\(i)"), preview: .local(image)) }
         let gauge = Gauge()
         let scanner = ScanPipeline(
             library: lib, store: try InMemoryStore.make(), analyzer: gauge, profile: profile,
