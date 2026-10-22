@@ -29,7 +29,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>iclean looks at your photos on this Mac to find duplicates and blurry shots. Nothing ever leaves your Mac.</string>
+	<string>iclean looks through your photos to find duplicates, similar shots, blurry photos, screenshots and large videos. You choose what to remove, and nothing leaves your Mac.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
