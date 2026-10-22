@@ -22,7 +22,7 @@
                     ))
                 step(
                     symbol: "arrow.uturn.backward.circle", title: Text("You can put them back"),
-                    text: Text(verbatim: RestoreHelp.steps)
+                    text: Text(verbatim: RestoreHelp.steps.joined(separator: " "))
                 )
                 .accessibilityIdentifier("restoreHelp.steps")
             }
@@ -42,7 +42,7 @@
                     title.font(.headline)
                     text
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.quietText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
