@@ -80,11 +80,11 @@ struct CategoryView: View {
 
     // MARK: When nothing is left
 
-    /// Every item here was removed (by this screen's own receipt, or from outside): the results are
-    /// ready and this category is not in them.
+    /// Every item here was removed (by this screen's own receipt, or from outside): the saved data is
+    /// open and this category is not in the results. A removal patches the results at once, and a
+    /// build that follows is held while a list is open, so a build in progress changes nothing here.
     private var isEmptyNow: Bool {
-        model.launchPhase == .ready && !model.isBuildingResults
-            && model.results.category(category) == nil
+        model.launchPhase == .ready && model.results.category(category) == nil
     }
 
     /// The receipt closed and it emptied this category: there is nothing to look at, so go back to
@@ -245,8 +245,7 @@ private struct CategoryIntro: View {
 
     var body: some View {
         // Not when nothing is left: "All are selected for removal" would be about photos that are gone.
-        let nothingLeft =
-            result == nil && model.launchPhase == .ready && !model.isBuildingResults
+        let nothingLeft = result == nil && model.launchPhase == .ready
         VStack(alignment: .leading, spacing: Space.s) {
             if !nothingLeft {
                 Text(category.explanation)
@@ -267,6 +266,8 @@ private struct CategoryIntro: View {
                     } icon: {
                         Image(systemName: "arrow.down.circle")
                     }
+                    // The label, not the tint: the tint would colour the bordered fill too.
+                    .foregroundStyle(Palette.accentText)
                 }
                 .buttonStyle(.bordered)
                 .padding(.horizontal, Space.l)

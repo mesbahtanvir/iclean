@@ -125,7 +125,7 @@ struct ScanningView: View {
 
     /// What the scan is doing, as far as the words on the card go.
     private enum Phase: Equatable {
-        case starting, running, coolingDown, paused(ScanPauseReason?)
+        case starting, running, coolingDown, paused(ScanPauseReason?), ended
 
         init(_ p: ScanProgress?) {
             guard let p, p.total > 0 else {
@@ -136,6 +136,8 @@ struct ScanningView: View {
                 self = .coolingDown
             } else if p.state == .paused {
                 self = .paused(p.pauseReason)
+            } else if p.state == .stopped || p.state == .completed {
+                self = .ended
             } else {
                 self = .running
             }
@@ -145,7 +147,8 @@ struct ScanningView: View {
     private func announce(from old: Phase, to new: Phase, _ p: ScanProgress?) {
         let text: String
         switch new {
-        case .starting:
+        case .starting, .ended:
+            // The model announces the end of a scan, and Stop says its own word.
             return
         case .running:
             // Only coming back from a pause is news; a scan that was just starting is not.

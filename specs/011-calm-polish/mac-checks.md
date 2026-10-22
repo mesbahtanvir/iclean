@@ -1,4 +1,4 @@
-# 009 Mac checks
+# 011 Mac checks
 
 The Mac window was built from the spec and Apple's conventions, and compiled for macOS and the iOS
 simulator, but it has not been looked at in a window yet (the build machine's screen was locked).

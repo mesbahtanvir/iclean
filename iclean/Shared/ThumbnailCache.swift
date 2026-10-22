@@ -17,7 +17,13 @@ final class ThumbnailCache: @unchecked Sendable {
     private let lock = NSLock()
     private var keysByAsset: [String: Set<NSString>] = [:]
 
-    init(megabytes: Int = 192) {
+    #if os(macOS)
+        static let defaultMegabytes = 192
+    #else
+        static let defaultMegabytes = 128
+    #endif
+
+    init(megabytes: Int = ThumbnailCache.defaultMegabytes) {
         cache.totalCostLimit = megabytes * 1_048_576
     }
 

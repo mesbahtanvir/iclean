@@ -28,8 +28,6 @@ final class AccessibilityTests: XCTestCase {
         // button (it reports the buttons).
         "category.removeSelected.title", "category.removeSelected.detail", "confirm.remove",
         "done.close", "access.allow", "access.openSettings",
-        "Removed items go to Recently Deleted in the Photos app.",
-        "Deletes scan results, \"Always Keep\" marks and progress. Your photos are not touched.",
     ]
 
     /// Settings and What iclean Remembers (spec 011 sections 6.11, 6.12): rows that are system list

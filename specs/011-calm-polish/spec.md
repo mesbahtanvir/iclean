@@ -1,4 +1,4 @@
-# 009 Calm polish: final design for iclean
+# 011 Calm polish: final design for iclean
 
 Status: design, ready to build. Branch: claude/calm-design-polish. Platforms: iPhone (iOS 18+) and Mac (macOS 15+, Apple silicon) now; iPad later.
 Trigger: the owner looked at the Mac build and said: "This one looks ugly as hell."

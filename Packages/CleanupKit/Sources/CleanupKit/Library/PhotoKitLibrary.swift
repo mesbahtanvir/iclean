@@ -265,6 +265,11 @@
                         // quick picture and the final one and never makes scrolling wait.
                         let handoff = ImageHandoff(image)
                         self.decodeQueue.async {
+                            // A cell that scrolled away is not waiting: skip the decode.
+                            if token.isCancelled {
+                                continuation.finish()
+                                return
+                            }
                             if let cgImage = handoff.image.flatMap(Self.displayReady) {
                                 continuation.yield(
                                     ThumbnailImage(image: cgImage, isFinal: !degraded))

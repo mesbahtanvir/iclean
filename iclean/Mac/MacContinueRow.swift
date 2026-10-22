@@ -24,11 +24,11 @@
                     VStack(alignment: .leading, spacing: Space.xs) {
                         Text("Continue reviewing")
                             .font(.headline)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(Palette.accentText)
                         if let category {
                             Text("\(category.title), \(model.selectedCount(in: category)) selected")
                                 .font(Typography.note)
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Palette.quietText)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: Hit.minimum, alignment: .leading)

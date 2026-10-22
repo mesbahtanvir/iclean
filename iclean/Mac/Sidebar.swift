@@ -62,14 +62,26 @@
                 // The system's label style is kept so the titles line up; the icon is a hint.
                 Image(systemName: category.systemImage).foregroundStyle(.secondary)
             }
-            .badge(figure.map { Text(Format.bytes($0.bytes, estimate: $0.isEstimate)) })
+            .badge(figure.map { badge(for: $0) })
             .accessibilityLabel(spokenLabel(tally: tally, figure: figure))
+        }
+
+        /// The selected size, or with nothing selected what could be freed: "up to 933 MB", so a figure
+        /// never reads as a selection.
+        private func badge(for figure: CategoryRow.Figure) -> Text {
+            let size = Format.bytes(figure.bytes, estimate: figure.isEstimate)
+            return figure.isSelection ? Text(size) : Text("up to \(size)")
         }
 
         private func spokenLabel(tally: CategoryTally?, figure: CategoryRow.Figure?) -> String {
             guard let tally, let figure else { return category.title }
-            let size = SpokenBytes.string(figure.bytes, estimate: figure.isEstimate)
-            return "\(category.title), \(size), \(CategoryRow.detail(tally))"
+            let detail = CategoryRow.detail(tally)
+            if figure.isSelection {
+                let size = SpokenBytes.string(figure.bytes, estimate: figure.isEstimate)
+                return "\(category.title), \(size), \(detail)"
+            }
+            let size = SpokenBytes.string(figure.bytes)
+            return String(localized: "\(category.title), \(detail), up to \(size) could be freed")
         }
     }
 

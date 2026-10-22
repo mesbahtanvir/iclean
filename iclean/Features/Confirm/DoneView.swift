@@ -109,6 +109,7 @@ struct DoneView: View {
                 Text("How to put them back")
                     .font(.body)
                     .foregroundStyle(Palette.accentText)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     // On the label, not the group: an id on the group is given to the steps too.
                     .accessibilityIdentifier("done.howTo")
             }
