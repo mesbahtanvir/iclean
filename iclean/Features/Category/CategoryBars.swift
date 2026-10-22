@@ -266,13 +266,18 @@ struct GroupHeader: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
     #if os(macOS)
-        /// On a Mac "Compare" appears when the pointer is over the row.
+        /// On a Mac "Compare" is quiet at rest and in the accent when the pointer is over the row or
+        /// the keyboard is on it.
         @State private var hovering = false
+        @Environment(\.isFocused) private var focused
     #endif
 
-    private var showsCompare: Bool {
+    /// "Compare" in the accent: always on a phone. On a Mac the word and its chevron are always
+    /// there, so the row reads as a link to someone who has not hovered it yet or who is on the
+    /// keyboard, and the accent says "this one" for the row under the pointer or the focus.
+    private var emphasized: Bool {
         #if os(macOS)
-            hovering
+            hovering || focused
         #else
             true
         #endif
@@ -297,13 +302,13 @@ struct GroupHeader: View {
                 HStack(spacing: Space.xs) {
                     Text("Compare")
                         .font(.subheadline)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(
+                            emphasized ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                 }
-                .opacity(showsCompare ? 1 : 0)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
