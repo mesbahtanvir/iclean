@@ -2,6 +2,25 @@
     import CleanupKit
     import SwiftUI
 
+    /// Keeps the content of a Form in a readable column. On a Mac the Form is itself the scroll view,
+    /// so a maximum width on it would make the scroll view 560 pt wide, with its scroll bar floating
+    /// in the middle of the window and the margins dead to the wheel. The Form keeps the whole pane,
+    /// and the margins move its content in.
+    private struct ReadableFormColumn: ViewModifier {
+        @State private var width: CGFloat = 0
+
+        func body(content: Content) -> some View {
+            content
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.width
+                } action: {
+                    width = $0
+                }
+                .contentMargins(
+                    .horizontal, max(0, (width - Layout.readable) / 2), for: .scrollContent)
+        }
+    }
+
     /// The Mac's front screen once there is something to show (spec 009 section 6.15): the hero, the
     /// one prominent button right under it, and the categories, in a centred column of a readable
     /// width. It is the phone's Home, laid out for a window.
@@ -28,7 +47,7 @@
                 footerSection
             }
             .formStyle(.grouped)
-            .readableColumn()
+            .modifier(ReadableFormColumn())
             .calmAnimation(value: hasSelection)
         }
 
