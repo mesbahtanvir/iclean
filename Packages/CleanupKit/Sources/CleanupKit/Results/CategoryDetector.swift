@@ -56,6 +56,30 @@ public protocol CategoryDetector: Sendable {
     var needsAnalysis: Bool { get }
     /// `items` contains only items not already listed in an earlier category.
     func detect(items: [LibraryItem]) -> [ResultGroup]
+    /// The same, for a category with levels (spec 011): the groups at the chosen level and a summary of
+    /// every level. `all` is every item being examined, for facts that need the neighbours an earlier
+    /// category took away (whether a photo was taken alone). The default has no levels.
+    func detectLevelled(items: [LibraryItem], all: [LibraryItem]) -> LevelledDetection
+}
+
+extension CategoryDetector {
+    public func detectLevelled(items: [LibraryItem], all: [LibraryItem]) -> LevelledDetection {
+        LevelledDetection(groups: detect(items: items), level: nil, levels: [])
+    }
+}
+
+/// What a detector with levels returns.
+public struct LevelledDetection: Sendable {
+    public var groups: [ResultGroup]
+    /// The level `groups` are at; nil for a category without levels.
+    public var level: ResultLevel?
+    public var levels: [LevelSummary]
+
+    public init(groups: [ResultGroup], level: ResultLevel?, levels: [LevelSummary]) {
+        self.groups = groups
+        self.level = level
+        self.levels = levels
+    }
 }
 
 /// FNV-1a: stable across launches, unlike `Hasher`.

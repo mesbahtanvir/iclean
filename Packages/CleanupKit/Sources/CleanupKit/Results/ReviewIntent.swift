@@ -110,7 +110,7 @@ public struct ReviewIntent: Codable, Equatable, Sendable {
     public static func defaults(for results: CleanupResults, keepMarks: Set<String>) -> Set<String>
     {
         var selection: Set<String> = []
-        for c in results.categories where c.category.preselects {
+        for c in results.categories where c.category.preselects(at: c.level) {
             selection.formUnion(c.removable)
         }
         let protected = Set(results.items.values.filter { $0.metadata.isFavorite }.map(\.assetID))

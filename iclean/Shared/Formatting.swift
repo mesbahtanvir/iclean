@@ -75,6 +75,7 @@ extension CleanupCategory {
         case .duplicates: String(localized: "Duplicates")
         case .similar: String(localized: "Similar Shots")
         case .blurry: String(localized: "Blurry Photos")
+        case .unimportant: String(localized: "Unimportant")
         case .screenshots: String(localized: "Screenshots")
         case .duplicateVideos: String(localized: "Duplicate Videos")
         case .largeVideos: String(localized: "Large Videos")
@@ -86,6 +87,7 @@ extension CleanupCategory {
         case .duplicates: "square.on.square"
         case .similar: "square.stack.3d.down.right"
         case .blurry: "camera.filters"
+        case .unimportant: "photo.badge.minus"
         case .screenshots: "camera.viewfinder"
         case .duplicateVideos: "film.stack"
         case .largeVideos: "film"
@@ -109,6 +111,11 @@ extension CleanupCategory {
                 localized:
                     "Photos that look out of focus or shaken. All are selected for removal. Deselect any you want to keep."
             )
+        case .unimportant:
+            String(
+                localized:
+                    "Shaky photos with no people that you probably never look at. Nothing is selected for you."
+            )
         case .screenshots:
             String(
                 localized:
@@ -121,6 +128,20 @@ extension CleanupCategory {
             )
         case .largeVideos:
             String(localized: "Your biggest videos, largest first. Nothing is selected for you.")
+        }
+    }
+}
+
+extension ResultLevel {
+    /// The words for a level in a category with levels (spec 011).
+    func title(for category: CleanupCategory) -> String {
+        switch (category, self) {
+        case (.unimportant, .tight): String(localized: "Most likely")
+        case (.unimportant, .medium): String(localized: "Probably")
+        case (.unimportant, .wide): String(localized: "Maybe")
+        case (_, .tight): String(localized: "Almost identical")
+        case (_, .medium): String(localized: "Same shot")
+        case (_, .wide): String(localized: "Same scene")
         }
     }
 }

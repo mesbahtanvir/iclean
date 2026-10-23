@@ -256,6 +256,9 @@ private struct CategoryIntro: View {
                 CategorySummaryLine(
                     category: category, count: result.groups.count, isGrouped: layout == .groups)
             }
+            if category.hasLevels, let result, !result.levels.isEmpty {
+                LevelPicker(category: category, result: result)
+            }
             if model.pendingNewCount > 0 {
                 // The list never changes under the person; new finds wait behind this (004 FR-010).
                 Button {
@@ -275,6 +278,39 @@ private struct CategoryIntro: View {
                 .accessibilityIdentifier("category.showNew")
             }
         }
+    }
+}
+
+/// How far this category looks (spec 011): a segmented control with what each level lists. Picking one
+/// builds the results again at once, also with this list open, because the list is what was changed.
+private struct LevelPicker: View {
+    let category: CleanupCategory
+    let result: CategoryResult
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let shown = result.level ?? category.defaultLevel
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Picker(
+                "Level",
+                selection: Binding(get: { shown }, set: { model.setLevel($0, for: category) })
+            ) {
+                ForEach(ResultLevel.allCases, id: \.self) { level in
+                    let count = result.levels.first { $0.level == level }?.photos ?? 0
+                    Text("\(level.title(for: category)) \(count)").tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("category.levels")
+            if category == .similar && shown == .wide {
+                Text("Looser matches. Nothing is selected for you here.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, Space.l)
     }
 }
 
@@ -313,7 +349,13 @@ private struct CategoryScroller: View {
                 LazyVStack(alignment: .leading, spacing: Space.xl) {
                     CategoryIntro(category: category, result: result, layout: layout)
                     if let result {
-                        if width > 0 {
+                        if result.groups.isEmpty {
+                            // Another level would list something: the control above stays so the person can go back.
+                            Text("Nothing at this level.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, Space.xl)
+                        } else if width > 0 {
                             content(result)
                         }
                     } else if model.launchPhase != .ready || model.isBuildingResults {

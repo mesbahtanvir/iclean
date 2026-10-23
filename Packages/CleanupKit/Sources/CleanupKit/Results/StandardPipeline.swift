@@ -9,13 +9,17 @@ public enum StandardPipeline {
     ///
     /// `parallelism` is how many threads the pair comparisons may use (spec 009). It never changes
     /// what is found; the default follows the platform (every core on a Mac, one on a phone).
+    ///
+    /// `levels` holds how far Similar Shots and Unimportant look (spec 011); nil lists their defaults.
     public static func detectors(
-        _ features: ProFeatures = .free, parallelism: Int = ScanProfile.current.buildParallelism
+        _ features: ProFeatures = .free, parallelism: Int = ScanProfile.current.buildParallelism,
+        levels: ResultLevels? = nil
     ) -> [any CategoryDetector] {
         var all: [any CategoryDetector] = [
             DuplicatePhotoDetector(parallelism: parallelism),
-            SimilarShotsDetector(parallelism: parallelism),
+            SimilarShotsDetector(parallelism: parallelism, levels: levels),
             BlurDetector(),
+            UnimportantDetector(levels: levels),
             ScreenshotsCategory(),
         ]
         if features.videoAnalysis { all.append(DuplicateVideoDetector(parallelism: parallelism)) }

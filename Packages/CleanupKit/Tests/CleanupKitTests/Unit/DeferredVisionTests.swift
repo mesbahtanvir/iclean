@@ -472,7 +472,9 @@ import Testing
             lock.withLock { asked[metadata.assetID, default: []].append(vision) }
             var a = try await DefaultAnalyzer().analyze(image, metadata: metadata, vision: vision)
             if metadata.assetID.hasPrefix("fr") { a.sharpness = 0.8 }
-            if vision.contains(.faceQuality), metadata.kind == .photo {
+            // The analyzer may run the face pass for a photo it was not asked to (a soft photo the
+            // Unimportant list reads, spec 011): fake what it says it did, not what was asked.
+            if !a.skippedVision.contains(.faceQuality), metadata.kind == .photo {
                 var h: UInt64 = 1_469_598_103_934_665_603
                 for b in metadata.assetID.utf8 { h = (h ^ UInt64(b)) &* 1_099_511_628_211 }
                 a.faceQuality = Double(h % 997) / 997

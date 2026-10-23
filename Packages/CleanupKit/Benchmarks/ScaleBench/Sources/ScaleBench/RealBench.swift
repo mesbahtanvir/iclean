@@ -698,13 +698,15 @@ func runVisionDevices(distinct: Int, perRun: Int) async {
 
 /// Times the results build on a store kept by `--real-scan --keep`: the read, the build, and each
 /// detector on its own.
-func runResultsProfile(folder: URL, repeats: Int) async throws {
+func runResultsProfile(folder: URL, repeats: Int, serial: Bool = false) async throws {
     let work = FileManager.default.temporaryDirectory.appending(
         path: "iclean-realbench-open-\(UUID().uuidString)")
     try FileManager.default.copyItem(at: folder, to: work)
     defer { try? FileManager.default.removeItem(at: work) }
     let store = try SwiftDataStore.at(folder: work)
-    let detectors = StandardPipeline.detectors()
+    // `serial` is what a phone runs: one thread for the store reads and the pair comparisons.
+    let detectors =
+        serial ? StandardPipeline.detectors(parallelism: 1) : StandardPipeline.detectors()
     let builder = DefaultResultsBuilder(detectors: detectors)
     var digest = ""
     for run in 1...repeats {
@@ -773,4 +775,76 @@ func runBucketStats(folder: URL) async throws {
     )
     print("  largest buckets: \(sizes.prefix(12).map(String.init).joined(separator: ", "))")
     print("  pairs in buckets over 1,000 members: \(pairsOfBig)")
+}
+
+// MARK: Levels (spec 011)
+
+/// What each level of Similar Shots and Unimportant lists on a kept store, and how the pairs inside the
+/// similar-shots window are spread over the feature-print distance and the miniature correlation, so the
+/// thresholds of `SimilarThresholds` and `UnimportantThresholds` can be set on a real library.
+func runLevelsProfile(folder: URL) async throws {
+    let work = FileManager.default.temporaryDirectory.appending(
+        path: "iclean-realbench-open-\(UUID().uuidString)")
+    try FileManager.default.copyItem(at: folder, to: work)
+    defer { try? FileManager.default.removeItem(at: work) }
+    let store = try SwiftDataStore.at(folder: work)
+    let items = try await store.resultInputs().items
+    print("\(items.count) items")
+
+    print("Similar Shots, by level (candidates: every analyzed photo):")
+    for level in ResultLevel.allCases {
+        let detection = SimilarShotsDetector(
+            parallelism: 8, levels: ResultLevels([.similar: level])
+        )
+        .detectLevelled(items: items, all: items)
+        let s = detection.levels.first { $0.level == level }
+        print(
+            "  \(level): \(s?.groups ?? 0) groups, \(s?.photos ?? 0) photos, \(s?.removable ?? 0) removable"
+        )
+    }
+    print("Unimportant, by level (all photos, before Blurry and Similar take theirs):")
+    let detection = UnimportantDetector().detectLevelled(items: items, all: items)
+    for s in detection.levels { print("  \(s.level): \(s.photos) photos") }
+
+    // The pairs a level decision is made on.
+    let photos = items.filter {
+        ($0.metadata.kind == .photo || $0.metadata.kind == .livePhoto) && $0.analysis != nil
+    }.sorted {
+        ($0.metadata.captureDate ?? .distantPast) < ($1.metadata.captureDate ?? .distantPast)
+    }
+    let fpEdges: [Double] = [0.02, 0.04, 0.06, 0.08, 0.10, 0.15, 0.22, 0.30]
+    let tEdges: [Double] = [0.3, 0.5, 0.7, 0.85]
+    var fpBins = [Int](repeating: 0, count: fpEdges.count + 2)  // last: no print
+    var tBins = [Int](repeating: 0, count: tEdges.count + 1)
+    var pairs = 0
+    for i in photos.indices {
+        guard let di = photos[i].metadata.captureDate else { continue }
+        var j = i + 1
+        while j < photos.count, let dj = photos[j].metadata.captureDate,
+            dj.timeIntervalSince(di) <= SimilarThresholds.window
+        {
+            pairs += 1
+            let a = photos[i].analysis, b = photos[j].analysis
+            let fp = FeaturePrint.distance(a?.featurePrint ?? Data(), b?.featurePrint ?? Data())
+            fpBins[
+                fp.isFinite ? (fpEdges.firstIndex { fp < $0 } ?? fpEdges.count) : fpEdges.count + 1] +=
+                1
+            let t = Thumbprint.similarity(a?.thumbprint ?? Data(), b?.thumbprint ?? Data())
+            tBins[tEdges.firstIndex { t < $0 } ?? tEdges.count] += 1
+            j += 1
+        }
+    }
+    print("Pairs within \(Int(SimilarThresholds.window)) s: \(pairs)")
+    var labels = fpEdges.enumerated().map { k, e in
+        "< \(e)" + (k == 0 ? "" : " (from \(fpEdges[k - 1]))")
+    }
+    labels.append(">= \(fpEdges.last!)")
+    labels.append("no feature print")
+    print(
+        "  feature-print distance: "
+            + zip(labels, fpBins).map { "\($0) \($1)" }.joined(separator: " | "))
+    let tLabels = tEdges.map { "< \($0)" } + [">= \(tEdges.last!)"]
+    print(
+        "  miniature correlation:  "
+            + zip(tLabels, tBins).map { "\($0) \($1)" }.joined(separator: " | "))
 }

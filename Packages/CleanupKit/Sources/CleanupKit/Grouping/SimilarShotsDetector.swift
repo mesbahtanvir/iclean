@@ -14,9 +14,24 @@ public enum SimilarThresholds {
     /// When Vision is available it must also agree with the thumbprint, so photos
     /// that merely share a layout are not grouped.
     public static let featurePrintAgreement = 0.15
+
+    // Levels (spec 011). `medium` is the rule above, unchanged. The others are starting values to be
+    // calibrated on real libraries (`ScaleBench --levels-profile`).
+
+    /// "Almost identical": the feature print is nearly the same and the miniatures correlate strongly.
+    public static let tightFeaturePrint = 0.04
+    public static let tightThumbprint = 0.7
+    /// Without a feature print, only the miniatures can say it.
+    public static let tightThumbprintWithoutPrint = 0.85
+    /// "Same scene": further apart in the feature print, with some agreement of the miniatures.
+    public static let wideFeaturePrint = 0.22
+    public static let wideThumbprint = 0.3
+    public static let wideThumbprintWithoutPrint = 0.35
 }
 
-/// Groups shots of the same moment and suggests the best one (Story 3).
+/// Groups shots of the same moment and suggests the best one (Story 3). With levels (spec 011) it can
+/// look for almost identical frames only, for the same shot (the default, as before spec 011), or for
+/// everything that looks like the same scene.
 public struct SimilarShotsDetector: CategoryDetector {
     public let category = CleanupCategory.similar
     public let needsAnalysis = true
@@ -25,46 +40,74 @@ public struct SimilarShotsDetector: CategoryDetector {
     /// Photos below which the serial loop is used, because splitting the work costs more than it
     /// saves. Tests lower it to run the parallel code on a small library.
     let parallelThreshold: Int
+    /// The level to list; nil lists the default, `medium`.
+    let levels: ResultLevels?
 
-    public init(parallelism: Int = 1) {
-        self.init(parallelism: parallelism, parallelThreshold: 1_000)
+    public init(parallelism: Int = 1, levels: ResultLevels? = nil) {
+        self.init(parallelism: parallelism, parallelThreshold: 1_000, levels: levels)
     }
 
-    init(parallelism: Int, parallelThreshold: Int) {
+    init(parallelism: Int, parallelThreshold: Int, levels: ResultLevels? = nil) {
         self.parallelism = max(1, parallelism)
         self.parallelThreshold = parallelThreshold
+        self.levels = levels
     }
 
     public func detect(items: [LibraryItem]) -> [ResultGroup] {
+        detectLevelled(items: items, all: items).groups
+    }
+
+    public func detectLevelled(items: [LibraryItem], all: [LibraryItem]) -> LevelledDetection {
+        let chosen = levels?[.similar] ?? CleanupCategory.similar.defaultLevel
         let photos = items
             .filter { ($0.metadata.kind == .photo || $0.metadata.kind == .livePhoto) && $0.analysis != nil }
             .sorted { ($0.metadata.captureDate ?? .distantPast) < ($1.metadata.captureDate ?? .distantPast) }
-        guard photos.count >= 2 else { return [] }
+        guard photos.count >= 2 else {
+            return LevelledDetection(groups: [], level: chosen, levels: [])
+        }
 
-        var uf = UnionFind(count: photos.count)
+        // Every pair that is the same moment at some level, with the tightest level it reaches.
+        let edges: [Edge]
         if parallelism > 1, photos.count >= parallelThreshold {
-            for (i, j) in sameMomentPairsInParallel(photos) { uf.union(i, j) }
+            edges = sameMomentPairsInParallel(photos)
         } else {
             let prints = FeaturePrintCache()
+            var found: [Edge] = []
             for i in photos.indices {
                 guard let di = photos[i].metadata.captureDate else { continue }
                 var j = i + 1
                 while j < photos.count, let dj = photos[j].metadata.captureDate,
                     dj.timeIntervalSince(di) <= SimilarThresholds.window
                 {
-                    if isSameMoment(photos[i], photos[j], prints: prints) { uf.union(i, j) }
+                    if let level = pairLevel(photos[i], photos[j], featurePrintDistance: nil, prints: prints) {
+                        found.append(Edge(i: i, j: j, level: level))
+                    }
                     j += 1
                 }
             }
+            edges = found
         }
-        // Burst frames always belong together, even if more than a minute apart.
+        // Burst frames always belong together, even if more than a minute apart (but a burst is no
+        // proof that two frames are almost identical).
+        var bursts: [(Int, Int)] = []
         var byBurst: [String: Int] = [:]
         for (i, p) in photos.enumerated() {
             guard let burst = p.metadata.burstID else { continue }
-            if let first = byBurst[burst] { uf.union(first, i) } else { byBurst[burst] = i }
+            if let first = byBurst[burst] { bursts.append((first, i)) } else { byBurst[burst] = i }
         }
 
-        return uf.groups().map { indices in
+        func sets(at level: ResultLevel) -> [[Int]] {
+            var uf = UnionFind(count: photos.count)
+            for e in edges where e.level <= level { uf.union(e.i, e.j) }
+            if level >= .medium { for (a, b) in bursts { uf.union(a, b) } }
+            return uf.groups()
+        }
+        let summaries = ResultLevel.allCases.map { level -> LevelSummary in
+            let found = sets(at: level)
+            let count = found.reduce(0) { $0 + $1.count }
+            return LevelSummary(level: level, groups: found.count, photos: count, removable: count - found.count)
+        }
+        let groups = sets(at: chosen).map { indices in
             let members = indices.map { photos[$0] }
             let keepers = KeeperRules.similarKeepers(members)
             return ResultGroup(
@@ -72,13 +115,69 @@ public struct SimilarShotsDetector: CategoryDetector {
                 keepers: keepers,
                 confidence: members.contains { $0.analysisSource == .cloudPreview } ? .lower : .normal)
         }
+        return LevelledDetection(groups: groups, level: chosen, levels: summaries)
     }
 
-    /// The pairs of `photos` (sorted by date) that `isSameMoment` accepts, found by several threads:
-    /// the feature prints are decoded once, then each thread takes runs of first photos and tests
-    /// them against the photos that follow within the window. Whether a pair is the same moment
+    /// A pair of photos (indices into the sorted list) that is the same moment at `level` or looser.
+    struct Edge: Sendable {
+        var i: Int
+        var j: Int
+        var level: ResultLevel
+    }
+
+    /// The tightest level at which two photos are the same moment, or nil. `featurePrintDistance` is
+    /// `.infinity` when Vision was unavailable for either photo; nil asks the cache to work it out.
+    /// At `medium` this is exactly `isSameMoment`.
+    func pairLevel(
+        _ a: LibraryItem, _ b: LibraryItem, featurePrintDistance known: Double?,
+        prints: FeaturePrintCache?
+    ) -> ResultLevel? {
+        let sameBurst = a.metadata.burstID != nil && a.metadata.burstID == b.metadata.burstID
+        // A print left out on purpose (spec 010) belongs to a photo that had no neighbour when it was
+        // analyzed. Reaching one here means a neighbour arrived since and the photo has not been analyzed
+        // again yet; comparing miniatures alone would group photos that merely share a layout, so such a
+        // pair waits for the repair. Frames of one burst group without any print, as always.
+        if !sameBurst,
+            a.analysis?.skippedVision.contains(.featurePrint) == true
+                || b.analysis?.skippedVision.contains(.featurePrint) == true
+        {
+            return nil
+        }
+        let fp = known ?? prints?.distance(a, b) ?? .infinity
+        // The miniatures' correlation costs more than the feature print's distance and most pairs do
+        // not need it, so it is worked out only when a rule asks for it.
+        var correlation: Double?
+        func t() -> Double {
+            if let correlation { return correlation }
+            let value = Thumbprint.similarity(
+                a.analysis?.thumbprint ?? Data(), b.analysis?.thumbprint ?? Data())
+            correlation = value
+            return value
+        }
+        if fp.isFinite {
+            if fp < SimilarThresholds.tightFeaturePrint && t() >= SimilarThresholds.tightThumbprint {
+                return .tight
+            }
+            if sameBurst || fp < SimilarThresholds.featurePrint
+                || (fp < SimilarThresholds.featurePrintAgreement && t() >= SimilarThresholds.thumbprint)
+            {
+                return .medium
+            }
+            if fp < SimilarThresholds.wideFeaturePrint && t() >= SimilarThresholds.wideThumbprint {
+                return .wide
+            }
+            return nil
+        }
+        if t() >= SimilarThresholds.tightThumbprintWithoutPrint { return .tight }
+        if sameBurst || t() >= SimilarThresholds.thumbprint { return .medium }
+        return t() >= SimilarThresholds.wideThumbprintWithoutPrint ? .wide : nil
+    }
+
+    /// The pairs of `photos` (sorted by date) that are the same moment at some level, found by several
+    /// threads: the feature prints are decoded once, then each thread takes runs of first photos and
+    /// tests them against the photos that follow within the window. Whether a pair is the same moment
     /// depends on the pair alone, so the sets joined from these pairs are the serial loop's.
-    func sameMomentPairsInParallel(_ photos: [LibraryItem]) -> [(Int, Int)] {
+    func sameMomentPairsInParallel(_ photos: [LibraryItem]) -> [Edge] {
         let count = photos.count
         let observations = Slots<[FeaturePrintObservation?]>(count: (count + 255) / 256)
         let decodeQueue = WorkQueue(count: (count + 255) / 256)
@@ -95,31 +194,29 @@ public struct SimilarShotsDetector: CategoryDetector {
         }
         let decoded = observations.all.flatMap { $0 ?? [] }
         let queue = WorkQueue(count: (count + 63) / 64)
-        let found = Slots<[(Int, Int)]>(count: queue.count)
+        let found = Slots<[Edge]>(count: queue.count)
         Parallel.run(workers: Parallel.workers(for: queue.count, limit: parallelism)) { _ in
             while let block = queue.take() {
-                var pairs: [(Int, Int)] = []
+                var edges: [Edge] = []
                 for i in (block * 64)..<min(count, block * 64 + 64) {
                     guard let di = photos[i].metadata.captureDate else { continue }
                     var j = i + 1
                     while j < count, let dj = photos[j].metadata.captureDate,
                         dj.timeIntervalSince(di) <= SimilarThresholds.window
                     {
-                        let burst = photos[i].metadata.burstID
-                        let sameBurst = burst != nil && burst == photos[j].metadata.burstID
                         let distance =
-                            sameBurst
-                            ? .infinity
-                            : decoded[i].flatMap { a in
+                            decoded[i].flatMap { a in
                                 decoded[j].map { b in FeaturePrint.distance(a, b) }
                             } ?? .infinity
-                        if isSameMoment(photos[i], photos[j], featurePrintDistance: distance) {
-                            pairs.append((i, j))
+                        if let level = pairLevel(
+                            photos[i], photos[j], featurePrintDistance: distance, prints: nil)
+                        {
+                            edges.append(Edge(i: i, j: j, level: level))
                         }
                         j += 1
                     }
                 }
-                found.set(block, pairs)
+                found.set(block, edges)
             }
         }
         return found.all.flatMap { $0 ?? [] }

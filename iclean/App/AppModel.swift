@@ -537,7 +537,17 @@ final class AppModel {
     private func builderKey() -> BuilderKey {
         BuilderKey(
             detectors: Detectors.all(environment.features).map(\.category),
-            features: environment.features, access: access)
+            features: environment.features, access: access, levels: environment.levels)
+    }
+
+    /// The person chose how far a category looks (spec 011): Similar Shots from almost identical to the same
+    /// scene, Unimportant from most likely to maybe. The results are built again at once, also while a
+    /// list is open, because the list is what they just changed.
+    func setLevel(_ level: ResultLevel, for category: CleanupCategory) {
+        guard category.hasLevels, environment.levels[category] != level else { return }
+        environment.levels[category] = level
+        LevelPreferences.save(level, for: category)
+        Task { await rebuild(firstPublish: true) }
     }
 
     private static func decode<T: Decodable>(
