@@ -9,6 +9,7 @@ import SwiftUI
 /// when the state changes (a Confirm sheet that is open survives its own bar disappearing).
 struct HomeView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// The screens pushed on Home. Typed, so they can be saved and put back after a restart.
     @State private var path: [Route] = []
     /// The Review bar opens the Confirm sheet from here, not from the bar.
@@ -17,9 +18,15 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack { content }
-                .navigationTitle("iclean")
                 #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
+                    // The screen is about the library, so it is named for it, with the large title
+                    // a top-level screen has (spec 013); the app's name is the window's on a Mac.
+                    // At accessibility sizes the title is inline, so the rows stay clear of the
+                    // pinned Review bar.
+                    .navigationTitle("Library")
+                    .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .large)
+                #else
+                    .navigationTitle("iclean")
                 #endif
                 #if os(iOS)
                     // The Mac has a Settings window (Command-comma), so no gear there.

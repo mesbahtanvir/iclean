@@ -375,9 +375,9 @@ private struct PrimaryOrQuiet: ViewModifier {
 
     func body(content: Content) -> some View {
         if prominent {
-            content.buttonStyle(.borderedProminent)
+            content.prominentButtonStyle()
         } else {
-            content.buttonStyle(.bordered)
+            content.secondaryButtonStyle()
         }
     }
 }

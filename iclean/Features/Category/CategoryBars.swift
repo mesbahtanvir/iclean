@@ -59,7 +59,7 @@ struct CategoryRemoveBar: View {
                 // One element for the two lines, so the button is one thing to tap and to read.
                 .accessibilityElement(children: .combine)
             }
-            .buttonStyle(.borderedProminent)
+            .prominentButtonStyle()
             .controlSize(.large)
             // Capped like the Review bar: a pinned bar must not grow into the photos above it.
             .actionShape(pinned: true)
@@ -73,7 +73,7 @@ struct CategoryRemoveBar: View {
                     .frame(maxWidth: .infinity)
                     .accessibilityIdentifier("category.removeSelected.title")
             }
-            .buttonStyle(.bordered)
+            .secondaryButtonStyle()
             .controlSize(.large)
             .actionShape(pinned: true)
             .disabled(true)
@@ -111,7 +111,7 @@ struct CategoryRemoveBar: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if tally.selected > 0 {
                     Button(action: action) { title(count: tally.selected) }
-                        .buttonStyle(.borderedProminent)
+                        .prominentButtonStyle()
                         .controlSize(.regular)
                         .help("Opens a summary. Nothing is removed until you confirm.")
                         .accessibilityHint(
@@ -120,7 +120,7 @@ struct CategoryRemoveBar: View {
                         .accessibilityIdentifier("category.removeSelected")
                 } else {
                     Button(action: action) { Text("Remove…") }
-                        .buttonStyle(.bordered)
+                        .secondaryButtonStyle()
                         .controlSize(.regular)
                         .disabled(true)
                         .accessibilityIdentifier("category.removeSelected")

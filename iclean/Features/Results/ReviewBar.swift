@@ -25,7 +25,7 @@ struct ReviewBar: View {
                 .frame(maxWidth: .infinity)
                 .multilineTextAlignment(.center)
             }
-            .buttonStyle(.borderedProminent)
+            .prominentButtonStyle()
             .controlSize(.large)
             // A pinned control stays a control at the largest sizes: at AX5 it filled a third of the
             // screen and covered the rows it sits over.

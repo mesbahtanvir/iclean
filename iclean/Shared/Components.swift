@@ -3,9 +3,11 @@ import SwiftUI
 
 // The few views iclean draws itself (spec 012 section 4.4). Everything else is a system component.
 //
-// Buttons: the one next step is `.borderedProminent` at `.large` (a capsule); a secondary action is
-// `.bordered`; a quiet one is `.borderless`. A disabled primary becomes `.bordered`, never a faded
-// slab. Because the styles are different types, switch with if/else in a @ViewBuilder, not a ternary.
+// Buttons: the one next step is `prominentButtonStyle()` at `.large` (a capsule); a secondary action
+// is `secondaryButtonStyle()`; a quiet one is `.borderless`. The two are Liquid Glass on iOS 26 and
+// macOS 26 and the system's `.borderedProminent` and `.bordered` before (Glass.swift, spec 013). A
+// disabled primary becomes secondary, never a faded slab. Because the styles are different types,
+// switch with if/else in a @ViewBuilder, not a ternary.
 // Every Button inside a List or Form row gets an explicit `.borderless` or `.plain` style, or macOS
 // draws a bezel around it.
 
@@ -244,15 +246,21 @@ private struct PinnedBar<Bar: View>: ViewModifier {
     let bar: Bar
 
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) {
-            if isPresented {
-                bar
-                    .padding(.horizontal, Space.l)
-                    .padding(.vertical, Space.s)
-                    .frame(maxWidth: .infinity)
-                    .background(.bar)
-                    .transition(.opacity)
-            }
+        if #available(iOS 26, macOS 26, *) {
+            // The system's own bar: glass, and the content scrolls under its edge (spec 013).
+            content.safeAreaBar(edge: .bottom, spacing: 0) { inset }
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) { inset.background(.bar) }
+        }
+    }
+
+    @ViewBuilder private var inset: some View {
+        if isPresented {
+            bar
+                .padding(.horizontal, Space.l)
+                .padding(.vertical, Space.s)
+                .frame(maxWidth: .infinity)
+                .transition(.opacity)
         }
     }
 }

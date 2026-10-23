@@ -80,6 +80,15 @@ final class AccessibilityTests: XCTestCase {
                     return true
                 }
                 if issue.auditType == .textClipped, key.isEmpty { return true }
+                // The rows and footnotes scroll on under the pinned Review bar, where the glass
+                // shows them blurred (spec 013). The audit reads the screen as pixels and can still
+                // make out that text, so it reports text with no element, although each of them is
+                // an element of the list and VoiceOver reaches it. Only while the bar is there.
+                if issue.auditType == .elementDetection, key.isEmpty,
+                    app.buttons["results.reviewAll"].exists
+                {
+                    return true
+                }
             }
             print(
                 "AUDIT [\(screen)] \(issue.compactDescription) — \(element?.debugDescription.prefix(160) ?? "no element")"

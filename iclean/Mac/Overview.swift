@@ -89,7 +89,7 @@
             return Button(action: onReview) {
                 Text("Review ^[\(count) Item](inflect: true)…")
             }
-            .buttonStyle(.borderedProminent)
+            .prominentButtonStyle()
             .controlSize(.regular)
             .accessibilityLabel(spokenLabel)
             .accessibilityHint("Opens a summary. Nothing is removed until you confirm.")

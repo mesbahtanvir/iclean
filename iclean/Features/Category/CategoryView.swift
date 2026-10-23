@@ -272,7 +272,7 @@ private struct CategoryIntro: View {
                     // The label, not the tint: the tint would colour the bordered fill too.
                     .foregroundStyle(Palette.accentText)
                 }
-                .buttonStyle(.bordered)
+                .secondaryButtonStyle()
                 .padding(.horizontal, Space.l)
                 .padding(.top, Space.xs)
                 .accessibilityIdentifier("category.showNew")

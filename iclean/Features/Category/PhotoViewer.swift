@@ -479,7 +479,7 @@ struct PhotoViewer: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .buttonStyle(.bordered)
+        .secondaryButtonStyle()
         .controlSize(.large)
         .labelStyle(.titleAndIcon)
         #if os(macOS)
@@ -502,7 +502,7 @@ struct PhotoViewer: View {
             Label("Always Keep", systemImage: "checkmark.shield")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .secondaryButtonStyle()
         .controlSize(.large)
         .labelStyle(.titleAndIcon)
         #if os(macOS)

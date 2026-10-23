@@ -55,10 +55,17 @@ struct ResultsView: View {
 
     // MARK: Sections
 
+    /// The hero in a card of its own, with the storage bar under the figure once there is a
+    /// selection to split (spec 013). The bar is decoration, and the first thing to go when text is
+    /// large: the rows must stay clear of the pinned Review bar.
     private var heroSection: some View {
         Section {
-            HomeHero(summary: model.summary, isScanning: model.isScanning)
-                .quietRow(top: 0, bottom: Space.xs)
+            VStack(alignment: .leading, spacing: Space.m) {
+                HomeHero(summary: model.summary, isScanning: model.isScanning)
+                if model.summary.count > 0, !typeSize.isAccessibilitySize {
+                    StorageBar(perCategory: model.summary.perCategory)
+                }
+            }
         }
     }
 
@@ -247,7 +254,6 @@ struct CategoryRow: View {
 
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 28
 
     var body: some View {
         let tally = model.summary.perCategory[category]
@@ -280,11 +286,9 @@ struct CategoryRow: View {
         .accessibilityLabel(spokenLabel(tally: tally, detail: detail))
     }
 
+    /// The category's tile, in its colour (spec 013).
     private var icon: some View {
-        Image(systemName: category.systemImage)
-            .foregroundStyle(.secondary)
-            .frame(width: iconWidth)
-            .accessibilityHidden(true)
+        CategoryIcon(category: category)
     }
 
     private var title: some View {
