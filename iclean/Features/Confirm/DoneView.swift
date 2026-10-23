@@ -140,7 +140,7 @@ struct DoneView: View {
                     .frame(maxWidth: .infinity)
                 #endif
         }
-        .buttonStyle(.borderedProminent)
+        .prominentButtonStyle()
         #if os(iOS)
             .controlSize(.large)
         #else

@@ -43,14 +43,7 @@ struct AccessView: View {
         }
         #if os(iOS)
             // Pinned, so it is never under the home indicator or off the screen at large text.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                actionButton
-                .readableColumn(Layout.access)
-                .padding(.horizontal, Space.l)
-                .padding(.vertical, Space.s)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
-            }
+            .pinnedBar(isPresented: true) { actionButton.readableColumn(Layout.access) }
         #endif
     }
 
@@ -122,7 +115,7 @@ struct AccessView: View {
                 Text("Open \(Device.systemSettings)")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .prominentButtonStyle()
             .controlSize(.large)
             .actionShape(pinned: true)
             .accessibilityIdentifier("access.openSettings")
@@ -134,7 +127,7 @@ struct AccessView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .secondaryButtonStyle()
             .controlSize(.large)
             .actionShape(pinned: true)
             .disabled(true)
@@ -151,7 +144,7 @@ struct AccessView: View {
                 Text("Allow Access to Photos")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .prominentButtonStyle()
             .controlSize(.large)
             .actionShape(pinned: true)
             .accessibilityIdentifier("access.allow")

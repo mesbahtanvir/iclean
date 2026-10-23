@@ -406,7 +406,7 @@ struct CompareCard: View {
                     // The label, not the tint: a tint would colour the button's fill too.
                     Text("Keep This Copy").foregroundStyle(Palette.accentText)
                 }
-                .buttonStyle(.bordered)
+                .secondaryButtonStyle()
                 // Large is the 44 pt hit area; the status slot below is tall enough to hold it.
                 .controlSize(.large)
                 .accessibilityIdentifier("group.makeKeeper")

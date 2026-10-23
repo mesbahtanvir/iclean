@@ -89,10 +89,12 @@ final class HomeStatesTests: XCTestCase {
         let pause = app.buttons["scan.pause"]
         XCTAssertTrue(pause.waitForExistence(timeout: 10))
         XCTAssertEqual(pause.label, "Pause")
-        XCTAssertGreaterThanOrEqual(pause.frame.height, 44)
+        // Rounded: a frame at a third-of-a-point offset under the large title comes back as
+        // 43.99999999999994, which is 44.
+        XCTAssertGreaterThanOrEqual(pause.frame.height.rounded(), 44)
         let stop = app.buttons["scan.stop"]
-        XCTAssertGreaterThanOrEqual(stop.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(stop.frame.width.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(stop.frame.height.rounded(), 44)
         pause.tap()
         let resume = app.buttons["scan.resume"]
         XCTAssertTrue(resume.waitForExistence(timeout: 10))

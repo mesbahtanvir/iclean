@@ -97,7 +97,7 @@ struct HomeFirstRun: View {
             )
         ) {
             Button("Scan Library") { model.startScan() }
-                .buttonStyle(.borderedProminent)
+                .prominentButtonStyle()
                 .controlSize(.large)
                 .actionShape()
                 .accessibilityIdentifier("home.scan")
@@ -116,7 +116,7 @@ struct HomeInterruptedEmpty: View {
             message: Text("Resuming picks up where it stopped. Nothing is lost.")
         ) {
             Button("Resume Scan") { model.startScan() }
-                .buttonStyle(.borderedProminent)
+                .prominentButtonStyle()
                 .controlSize(.large)
                 .actionShape()
                 .accessibilityIdentifier("home.resume")
@@ -141,7 +141,7 @@ struct HomeNothingToShow: View {
                 // The label, not the tint: a tint would colour the button's fill too.
                 Text("Scan Again").foregroundStyle(Palette.accentText)
             }
-            .buttonStyle(.bordered)
+            .secondaryButtonStyle()
             .controlSize(.large)
             .actionShape()
             .accessibilityIdentifier("home.scan")
