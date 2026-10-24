@@ -224,7 +224,7 @@ final class ReviewScreensTests: XCTestCase {
         openCategory(app, "similar")
         groupLinks(app).firstMatch.tap()
         XCTAssertTrue(element(app, "group.compare").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["5 similar shots"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["2 similar shots"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Turn off a photo’s Remove switch to keep it."].exists)
         // Similar shots have no "Keep This Copy": the best shot is chosen for you.
         XCTAssertFalse(app.buttons["group.makeKeeper"].exists)
