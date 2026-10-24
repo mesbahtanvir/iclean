@@ -228,6 +228,9 @@ private struct HomeNoticesInset: ViewModifier {
 /// are shared, the saved data has a problem, some photos are only in iCloud. Never red, never a
 /// card; they always come last. The slot exists in every state.
 struct HomeNotices: View {
+    /// False as a list's footer, which is plain text (spec 014).
+    var showsIcon = true
+
     @Environment(AppModel.self) private var model
 
     /// Whether there is anything to show, so a list can skip an empty row.
@@ -240,7 +243,7 @@ struct HomeNotices: View {
             if model.access == .limited {
                 QuietNote(
                     "iclean can only see the photos you chose to share.",
-                    systemImage: "info.circle"
+                    systemImage: "info.circle", showsIcon: showsIcon
                 )
                 .accessibilityIdentifier("home.limitedAccess")
             }
@@ -250,13 +253,13 @@ struct HomeNotices: View {
                 case .volatile:
                     QuietNote(
                         "**Your choices won’t be saved this time.** iclean couldn’t open the place it keeps its data, so what you pick is forgotten when you quit. You can delete iclean’s data in Settings.",
-                        systemImage: "exclamationmark.triangle"
+                        systemImage: "exclamationmark.triangle", showsIcon: showsIcon
                     )
                     .accessibilityIdentifier("home.storeVolatile")
                 case .unreadable:
                     QuietNote(
                         "**Saved results couldn’t be read.** Your photos are safe. To start over, delete iclean’s data in Settings.",
-                        systemImage: "exclamationmark.triangle"
+                        systemImage: "exclamationmark.triangle", showsIcon: showsIcon
                     )
                     .accessibilityIdentifier("home.storeUnreadable")
                 case nil:
@@ -272,6 +275,8 @@ struct HomeNotices: View {
 /// phrasing, everywhere.
 struct ICloudFootnote: View {
     let count: Int
+    /// False as a list's footer, which is plain text (spec 014).
+    var showsIcon = true
 
     var body: some View {
         if count > 0 {
@@ -279,11 +284,11 @@ struct ICloudFootnote: View {
                 if count == 1 {
                     QuietNote(
                         "1 item is only in iCloud, so it wasn’t checked. iclean never downloads photos.",
-                        systemImage: "icloud")
+                        systemImage: "icloud", showsIcon: showsIcon)
                 } else {
                     QuietNote(
                         "\(count, format: .number) items are only in iCloud, so they weren’t checked. iclean never downloads photos.",
-                        systemImage: "icloud")
+                        systemImage: "icloud", showsIcon: showsIcon)
                 }
             }
             .accessibilityIdentifier("results.notScanned")

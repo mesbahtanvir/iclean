@@ -44,8 +44,8 @@ final class ReviewScreensTests: XCTestCase {
         let bar = app.buttons["category.removeSelected"]
         XCTAssertTrue(bar.waitForExistence(timeout: 5))
         waitForLabel(bar, "label CONTAINS 'Remove 3 Photos'")
-        // The second line says where it goes.
-        XCTAssertTrue(bar.label.contains("goes to Recently Deleted"), bar.label)
+        // One line; where they go is said on the Confirm sheet (spec 014).
+        XCTAssertFalse(bar.label.contains("goes to Recently Deleted"), bar.label)
         XCTAssertTrue(bar.isEnabled)
 
         // Every suggested item is selected, so the button offers to keep them all.

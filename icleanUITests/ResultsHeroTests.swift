@@ -91,9 +91,8 @@ final class ResultsHeroTests: XCTestCase {
         scan(app)
         XCTAssertTrue(reviewBar(app).waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["results.reviewAll"].isHittable, "A Button, in reach")
-        XCTAssertTrue(
-            app.descendants(matching: .any)["results.reviewNote"].exists,
-            "The reassurance sits with the bar")
+        // One button and nothing under it: the reassurance is on the Confirm sheet (spec 014).
+        XCTAssertFalse(app.descendants(matching: .any)["results.reviewNote"].exists)
 
         // Keep everything that was suggested: nothing is selected, so there is no Review bar at
         // all (hidden, not a disabled button), and the hero says so.

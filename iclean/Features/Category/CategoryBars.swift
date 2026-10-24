@@ -23,41 +23,24 @@ private struct Tally {
     }
 }
 
-/// "4.8 MB · goes to Recently Deleted": what the button below it will do, and where it goes.
-private func destination(_ tally: Tally) -> String {
-    let size = Format.bytes(tally.selectedBytes, estimate: tally.selectedIsEstimate)
-    return String(localized: "\(size) · goes to Recently Deleted")
-}
-
-/// The one filled control: "Remove 3 Photos" over the size and where it goes. With nothing selected
-/// it is the same button, disabled and plain, never a faded slab.
+/// The one filled control: "Remove 3 Photos", one line (spec 014: the size is in the summary line
+/// above the photos, and where they go is said on the Confirm sheet). With nothing selected it is
+/// the same button, disabled and plain, never a faded slab.
 struct CategoryRemoveBar: View {
     let category: CleanupCategory
     let action: () -> Void
 
     @Environment(AppModel.self) private var model
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let tally = Tally(model.summary, category)
         if tally.selected > 0 {
             Button(action: action) {
-                VStack(spacing: 2) {
-                    title(count: tally.selected)
-                        .font(.headline)
-                        .accessibilityIdentifier("category.removeSelected.title")
-                    // At accessibility sizes the second line moves into the scroll content, so
-                    // the pinned area stays one button tall.
-                    if !typeSize.isAccessibilitySize {
-                        Text(destination(tally))
-                            .font(.subheadline.weight(.medium))
-                            .accessibilityIdentifier("category.removeSelected.detail")
-                    }
-                }
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                // One element for the two lines, so the button is one thing to tap and to read.
-                .accessibilityElement(children: .combine)
+                title(count: tally.selected)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("category.removeSelected.title")
             }
             .prominentButtonStyle()
             .controlSize(.large)
@@ -156,23 +139,6 @@ struct CategoryRemoveBar: View {
     }
 #endif
 
-/// At accessibility sizes the bar's second line lives here, at the end of the scroll content.
-struct CategoryBarDetail: View {
-    let category: CleanupCategory
-
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        let tally = Tally(model.summary, category)
-        if tally.selected > 0 {
-            Text(destination(tally))
-                .font(Typography.note)
-                .foregroundStyle(Palette.quietText)
-                .padding(.horizontal, Space.l)
-        }
-    }
-}
-
 /// The toolbar button: "Keep All" once every suggested item is selected (tapping it deselects them),
 /// otherwise "Select Suggested", or "Select All Videos" on Large Videos. It never touches a keeper:
 /// only the items that are not kept are in play.
@@ -212,24 +178,15 @@ struct CategorySummaryLine: View {
     let isGrouped: Bool
 
     @Environment(AppModel.self) private var model
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let tally = model.summary.perCategory[category]
-        VStack(alignment: .leading, spacing: Space.xs) {
-            Self.text(
-                category: category, count: count, isGrouped: isGrouped,
-                size: tally.map {
-                    Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate)
-                })
-            if typeSize.isAccessibilitySize {
-                // The pinned bar is one short line here, so where the photos go is said at the top,
-                // where it is seen on arrival, and not only at the end of a long list.
-                Text(
-                    "Nothing is removed until you confirm. Removed items go to Recently Deleted in Photos."
-                )
+        Self.text(
+            category: category, count: count, isGrouped: isGrouped,
+            size: tally.map {
+                Format.bytes($0.removableBytes, estimate: $0.removableIsEstimate)
             }
-        }
+        )
         .font(Typography.note)
         .foregroundStyle(Palette.quietText)
         .padding(.horizontal, Space.l)
