@@ -19,26 +19,26 @@ final class LevelsFlowTests: XCTestCase {
         let app = launchApp()
         scan(app, expect: "results.category.similar")
         openCategory(app, "similar")
-        func selectedFrames() -> Int { (0..<5).filter { item(app, "burst\($0)").isSelected }.count }
+        func selectedFrames() -> Int { (0..<2).filter { item(app, "twin\($0)").isSelected }.count }
 
         let levels = app.descendants(matching: .any)["category.levels"]
         XCTAssertTrue(levels.waitForExistence(timeout: 10))
         let buttons = levels.buttons
         XCTAssertEqual(buttons.count, 3)
-        // "Same shot" is today's behaviour and the default: the burst is grouped, four of five selected.
+        // "Same shot" is today's behaviour and the default: the two shots are grouped, one selected.
         XCTAssertTrue(buttons.element(boundBy: 1).isSelected)
-        XCTAssertTrue(item(app, "burst0").waitForExistence(timeout: 10))
-        XCTAssertEqual(selectedFrames(), 4)
+        XCTAssertTrue(item(app, "twin0").waitForExistence(timeout: 10))
+        XCTAssertEqual(selectedFrames(), 1)
 
         // "Same scene" looks further and selects nothing for the person.
         buttons.element(boundBy: 2).tap()
         XCTAssertTrue(waitUntil { buttons.element(boundBy: 2).isSelected })
-        XCTAssertTrue(item(app, "burst0").waitForExistence(timeout: 10))
+        XCTAssertTrue(item(app, "twin0").waitForExistence(timeout: 10))
         XCTAssertTrue(waitUntil { selectedFrames() == 0 }, "selected: \(selectedFrames())")
 
         // Back to "Same shot": the suggestion returns.
         buttons.element(boundBy: 1).tap()
         XCTAssertTrue(waitUntil { buttons.element(boundBy: 1).isSelected })
-        XCTAssertTrue(waitUntil { selectedFrames() == 4 }, "selected: \(selectedFrames())")
+        XCTAssertTrue(waitUntil { selectedFrames() == 1 }, "selected: \(selectedFrames())")
     }
 }

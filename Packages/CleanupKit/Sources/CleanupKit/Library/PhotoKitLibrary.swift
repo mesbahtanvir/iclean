@@ -143,7 +143,7 @@
             let subtypes = asset.mediaSubtypes
             let kind: ItemKind =
                 if asset.mediaType == .video {
-                    .video
+                    subtypes.contains(.videoScreenRecording) ? .screenRecording : .video
                 } else if subtypes.contains(.photoScreenshot) {
                     .screenshot
                 } else if subtypes.contains(.photoLive) {
@@ -159,8 +159,19 @@
                 isFavorite: asset.isFavorite, hasAdjustments: asset.hasAdjustments,
                 isPortrait: subtypes.contains(.photoDepthEffect),
                 isLongExposure: LongExposure.isLongExposure(asset),
-                burstID: asset.burstIdentifier, albumNames: albums,
+                burstID: asset.burstIdentifier, burstPick: burstPick(of: asset),
+                representsBurst: asset.representsBurst,
+                isShared: asset.sourceType.contains(.typeCloudShared), albumNames: albums,
                 addedDate: Self.addedDate(of: asset), hasLocation: asset.location != nil)
+        }
+
+        /// What the person did with a burst frame in Photos (spec 015 FR-002). Nil outside a burst.
+        static func burstPick(of asset: PHAsset) -> BurstPick? {
+            guard asset.burstIdentifier != nil else { return nil }
+            let types = asset.burstSelectionTypes
+            if types.contains(.userPick) { return .userPick }
+            if types.contains(.autoPick) { return .autoPick }
+            return BurstPick.none
         }
 
         /// When the asset was added to the library, where the system says (iOS 26, macOS 26 and
@@ -364,6 +375,22 @@
             var total: Int64 = 0
             for resource in resources {
                 guard let bytes = await resourceSize(resource) else { return nil }
+                total += bytes
+            }
+            return total
+        }
+
+        public func localMotionByteSize(for assetID: String) async -> Int64? {
+            guard let asset = asset(assetID), asset.mediaSubtypes.contains(.photoLive) else {
+                return nil
+            }
+            let movies = PHAssetResource.assetResources(for: asset).filter {
+                $0.type == .pairedVideo || $0.type == .fullSizePairedVideo
+            }
+            guard !movies.isEmpty else { return nil }
+            var total: Int64 = 0
+            for movie in movies {
+                guard let bytes = await resourceSize(movie) else { return nil }
                 total += bytes
             }
             return total

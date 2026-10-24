@@ -152,13 +152,15 @@ enum Make {
         _ id: String, kind: ItemKind = .photo, date: Date = Date(timeIntervalSince1970: 0),
         width: Int = 4032, height: Int = 3024, favorite: Bool = false, edited: Bool = false,
         duration: Double? = nil, portrait: Bool = false, longExposure: Bool = false,
-        burst: String? = nil, albums: [String] = [], modified: Date? = nil
+        burst: String? = nil, pick: BurstPick? = nil, represents: Bool = false,
+        albums: [String] = [], modified: Date? = nil
     ) -> AssetMetadata {
         AssetMetadata(
             assetID: id, kind: kind, captureDate: date,
             modificationDate: modified ?? date, pixelWidth: width, pixelHeight: height,
             duration: duration, isFavorite: favorite, hasAdjustments: edited,
             isPortrait: portrait, isLongExposure: longExposure, burstID: burst,
+            burstPick: pick ?? (burst == nil ? nil : BurstPick.none), representsBurst: represents,
             albumNames: albums)
     }
 

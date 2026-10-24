@@ -17,6 +17,7 @@ public enum StandardPipeline {
     ) -> [any CategoryDetector] {
         var all: [any CategoryDetector] = [
             DuplicatePhotoDetector(parallelism: parallelism),
+            BurstDetector(),
             SimilarShotsDetector(parallelism: parallelism, levels: levels),
             BlurDetector(),
             UnimportantDetector(levels: levels),

@@ -107,7 +107,7 @@ import Testing
     @Test func theFreeDetectorListHasNoDuplicateVideos() {
         #expect(
             StandardPipeline.detectors().map(\.category)
-                == [.duplicates, .similar, .blurry, .unimportant, .screenshots, .largeVideos])
+                == [.duplicates, .bursts, .similar, .blurry, .unimportant, .screenshots, .largeVideos])
         #expect(
             StandardPipeline.detectors(.free).map(\.category).contains(.duplicateVideos) == false)
         #expect(ProFeatures.free.videoAnalysis == false)

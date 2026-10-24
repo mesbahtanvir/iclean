@@ -5,7 +5,7 @@ import Foundation
 /// number is never shown. `BaselineHostTests` pins the groups and kept copies the builder produces on the baseline library, so a
 /// behaviour change that forgets to bump this fails a test.
 public enum BuilderVersion {
-    public static let current = 1
+    public static let current = 2
 }
 
 /// Everything besides the store's revision that decides whether a saved snapshot may be shown.
@@ -54,6 +54,7 @@ extension BuilderKey {
             "\(UnimportantThresholds.tight)", "\(UnimportantThresholds.medium)",
             "\(UnimportantThresholds.wide)",
             "vid", "\(DuplicateVideoThresholds.duration)", "\(LargeVideosCategory.limit)",
+            "burst", "\(BurstThresholds.minimumFrames)",
             "date", "\(DateThresholds.sameMoment)", "\(DateThresholds.savedWindow)",
             "\(DateThresholds.preservedGap)", "\(DateThresholds.sharedStampCount)",
             "\(DateThresholds.farFromEarliest)", "\(DateThresholds.futureSlack)",
@@ -97,6 +98,13 @@ public struct ResultsSnapshot: Codable, Sendable {
         var faceQuality: Double?
         var byteSize: Int64?
         var isSizeEstimated: Bool
+        /// Spec 015; absent in snapshots saved before it.
+        var burstPick: BurstPick?
+        var representsBurst: Bool?
+        var isShared: Bool?
+        var emptiness: Double?
+        var isEmpty: Bool?
+        var motionByteSize: Int64?
     }
 
     public struct Group: Codable, Sendable {
@@ -187,6 +195,12 @@ extension ResultsSnapshot.Item {
         faceQuality = item.analysis?.faceQuality
         byteSize = item.byteSize
         isSizeEstimated = item.isSizeEstimated
+        burstPick = m.burstPick
+        representsBurst = m.representsBurst ? true : nil
+        isShared = m.isShared ? true : nil
+        emptiness = item.analysis?.emptiness
+        isEmpty = item.analysis?.isEmpty
+        motionByteSize = item.motionByteSize
     }
 
     var libraryItem: LibraryItem {
@@ -195,19 +209,23 @@ extension ResultsSnapshot.Item {
             modificationDate: modificationDate, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
             duration: duration, isFavorite: isFavorite, hasAdjustments: hasAdjustments,
             isPortrait: isPortrait, isLongExposure: isLongExposure, burstID: burstID,
-            albumNames: albumNames, addedDate: addedDate, hasLocation: hasLocation)
+            burstPick: burstPick, representsBurst: representsBurst ?? false,
+            isShared: isShared ?? false, albumNames: albumNames, addedDate: addedDate,
+            hasLocation: hasLocation)
         let source = AnalysisSource(rawValue: analysisSource) ?? .notScanned
         var analysis: Analysis?
         if let sharpness {
             analysis = Analysis(
                 dHash: 0, thumbprint: Data(), featurePrint: Data(), sharpness: sharpness,
-                aestheticsScore: aestheticsScore, faceQuality: faceQuality)
+                aestheticsScore: aestheticsScore, faceQuality: faceQuality, emptiness: emptiness,
+                isEmpty: isEmpty)
         }
         // `analyzedAt` is bookkeeping a slim item does not carry; a fixed value keeps a restore
         // and a slimmed build equal.
         return LibraryItem(
             metadata: metadata, analysisSource: source, analysis: analysis, byteSize: byteSize,
-            isSizeEstimated: isSizeEstimated, analyzedAt: Date(timeIntervalSince1970: 0))
+            motionByteSize: motionByteSize, isSizeEstimated: isSizeEstimated,
+            analyzedAt: Date(timeIntervalSince1970: 0))
     }
 }
 

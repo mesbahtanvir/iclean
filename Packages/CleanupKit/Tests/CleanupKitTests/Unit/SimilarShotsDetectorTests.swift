@@ -46,12 +46,14 @@ import Testing
         #expect(detector.detect(items: items).isEmpty)
     }
 
-    @Test func sameBurstAlwaysGroups() async throws {
+    /// Spec 015: frames of one burst are the Bursts category's; Similar no longer groups by burst.
+    @Test func sameBurstDoesNotGroupBySharedBurstAlone() async throws {
         let items = [
             try await shot("a", TestImages.scene(seed: 320), seconds: 0, burst: "B"),
             try await shot("b", TestImages.scene(seed: 321), seconds: 200, burst: "B"),
         ]
-        #expect(detector.detect(items: items).count == 1)
+        #expect(detector.detect(items: items).isEmpty)
+        #expect(BurstDetector().detect(items: items).count == 1)
     }
 
     @Test func itemsAlreadyInDuplicatesAreExcluded() async throws {

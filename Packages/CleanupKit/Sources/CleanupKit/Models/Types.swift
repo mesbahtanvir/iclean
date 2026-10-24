@@ -3,9 +3,29 @@ import Foundation
 /// What kind of library item this is.
 public enum ItemKind: String, Sendable, Codable, CaseIterable {
     case photo, screenshot, video, livePhoto
+    /// A video the system recorded of the screen (spec 015). Listed from metadata alone, like a
+    /// screenshot; a video for everything that opens frames.
+    case screenRecording
 
-    public var isVideo: Bool { self == .video }
-    public var isStillImage: Bool { self != .video }
+    public var isVideo: Bool { self == .video || self == .screenRecording }
+    public var isStillImage: Bool { !isVideo }
+}
+
+/// What the person did with a frame of a burst in the Photos app (spec 015 FR-002).
+public enum BurstPick: String, Sendable, Codable {
+    /// The person chose this frame in the burst picker.
+    case userPick
+    /// Photos chose it as the best frame.
+    case autoPick
+    case none
+}
+
+/// What listing an item in a category leads to (spec 015 FR-007).
+public enum CategoryAction: String, Sendable, Codable {
+    /// The selected items go to Recently Deleted.
+    case remove
+    /// The selected Live Photos are replaced by their stills; the originals go to Recently Deleted.
+    case trim
 }
 
 /// Where an item's analysis came from (spec FR-014).
@@ -41,14 +61,26 @@ public enum ScanKind: String, Sendable, Codable {
 /// Cleanup categories, in assignment order: an item is listed only in the first
 /// category that matches it.
 public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable {
-    case duplicates, similar, blurry, unimportant, screenshots, duplicateVideos, largeVideos
+    case duplicates, bursts, similar, blurry, dark, unimportant, screenshots, screenRecordings,
+        duplicateVideos, largeVideos
+    /// The one category that is not a removal (spec 015): an item may be here and in a removal
+    /// category at once.
+    case livePhotos
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
     }
 
-    /// Large Videos only informs; nothing in it starts selected (FR-010a).
-    public var preselects: Bool { self != .largeVideos && self != .unimportant }
+    public var action: CategoryAction { self == .livePhotos ? .trim : .remove }
+
+    /// Large Videos, Unimportant, Screen Recordings and Live Photos only inform; nothing in them
+    /// starts selected (001 FR-010a, 011 FR-004, 015).
+    public var preselects: Bool {
+        switch self {
+        case .largeVideos, .unimportant, .screenRecordings, .livePhotos: false
+        default: true
+        }
+    }
 }
 
 /// Metadata read from the photo library. No pixels.
@@ -65,6 +97,12 @@ public struct AssetMetadata: Sendable, Hashable {
     public var isPortrait: Bool
     public var isLongExposure: Bool
     public var burstID: String?
+    /// What the person did with this burst frame in Photos; nil for items stored before spec 015.
+    public var burstPick: BurstPick?
+    /// The frame Photos shows for the burst.
+    public var representsBurst: Bool
+    /// From a shared album (another person's, or shared with others); never changed in place.
+    public var isShared: Bool
     public var albumNames: [String]
     /// When the item was added to the Photos library (iOS 26 and later; nil before). A copy
     /// whose capture date equals this date was probably dated by when it was saved.
@@ -78,6 +116,7 @@ public struct AssetMetadata: Sendable, Hashable {
         modificationDate: Date? = nil, pixelWidth: Int, pixelHeight: Int,
         duration: Double? = nil, isFavorite: Bool = false, hasAdjustments: Bool = false,
         isPortrait: Bool = false, isLongExposure: Bool = false, burstID: String? = nil,
+        burstPick: BurstPick? = nil, representsBurst: Bool = false, isShared: Bool = false,
         albumNames: [String] = [], addedDate: Date? = nil, hasLocation: Bool? = nil
     ) {
         self.assetID = assetID
@@ -92,6 +131,9 @@ public struct AssetMetadata: Sendable, Hashable {
         self.isPortrait = isPortrait
         self.isLongExposure = isLongExposure
         self.burstID = burstID
+        self.burstPick = burstPick
+        self.representsBurst = representsBurst
+        self.isShared = isShared
         self.albumNames = albumNames
         self.addedDate = addedDate
         self.hasLocation = hasLocation
@@ -114,14 +156,19 @@ public struct Analysis: Sendable, Hashable {
     public var sharpness: Double
     public var aestheticsScore: Double?
     public var faceQuality: Double?
+    /// The share of the preview at the dark or bright extreme (spec 015 Dark); nil before the
+    /// photo was read for it.
+    public var emptiness: Double?
+    /// Whether the photo shows nothing: at the extremes with no structure (`Emptiness`).
+    public var isEmpty: Bool?
     /// Vision work the analyzer was told not to do because no detector can read it for this photo
     /// (spec 010). Distinct from a request that failed, which leaves an empty print and nothing here.
     public var skippedVision: VisionWork
 
     public init(
         dHash: UInt64, thumbprint: Data = Data(), featurePrint: Data, sharpness: Double,
-        aestheticsScore: Double? = nil, faceQuality: Double? = nil,
-        skippedVision: VisionWork = []
+        aestheticsScore: Double? = nil, faceQuality: Double? = nil, emptiness: Double? = nil,
+        isEmpty: Bool? = nil, skippedVision: VisionWork = []
     ) {
         self.dHash = dHash
         self.thumbprint = thumbprint
@@ -129,6 +176,8 @@ public struct Analysis: Sendable, Hashable {
         self.sharpness = sharpness
         self.aestheticsScore = aestheticsScore
         self.faceQuality = faceQuality
+        self.emptiness = emptiness
+        self.isEmpty = isEmpty
         self.skippedVision = skippedVision
     }
 }
@@ -149,6 +198,8 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
     public var analysisSource: AnalysisSource
     public var analysis: Analysis?
     public var byteSize: Int64?
+    /// The bytes of a Live Photo's movie, part of `byteSize` (spec 015); nil when unknown or none.
+    public var motionByteSize: Int64?
     public var isSizeEstimated: Bool
     public var analyzedAt: Date
     /// Set when the item was given up on after repeated failures (003 FR-008).
@@ -162,13 +213,14 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
     /// Analysis is always nil for items that were not scanned or are metadata only.
     public init(
         metadata: AssetMetadata, analysisSource: AnalysisSource, analysis: Analysis?,
-        byteSize: Int64? = nil, isSizeEstimated: Bool = false, analyzedAt: Date = .now,
-        scanFailure: ScanFailure? = nil, scanAttempts: Int = 0
+        byteSize: Int64? = nil, motionByteSize: Int64? = nil, isSizeEstimated: Bool = false,
+        analyzedAt: Date = .now, scanFailure: ScanFailure? = nil, scanAttempts: Int = 0
     ) {
         self.metadata = metadata
         self.analysisSource = analysisSource
         self.analysis = analysisSource.hasAnalysis ? analysis : nil
         self.byteSize = byteSize
+        self.motionByteSize = motionByteSize
         self.isSizeEstimated = isSizeEstimated
         self.analyzedAt = analyzedAt
         self.scanFailure = analysisSource == .notScanned ? scanFailure : nil
@@ -192,6 +244,9 @@ public struct LibraryItem: Sendable, Hashable, Identifiable {
 
     /// True when the size shown to the user is an estimate.
     public var sizeIsEstimate: Bool { byteSize == nil || isSizeEstimated }
+
+    /// What the still alone takes: the whole asset less its movie (spec 015 Live Photos).
+    public var stillByteSize: Int64 { max(0, effectiveByteSize - (motionByteSize ?? 0)) }
 }
 
 /// Progress through the library, so a scan can resume (data-model.md "ScanSession").

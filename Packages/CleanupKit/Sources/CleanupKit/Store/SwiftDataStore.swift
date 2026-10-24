@@ -626,6 +626,7 @@ public actor SwiftDataStore: Store {
                     }
                     record.byteSize = size.bytes
                     record.isSizeEstimated = size.isEstimated
+                    if let motion = size.motionBytes { record.motionByteSize = motion }
                 }
             }
         }
@@ -640,7 +641,8 @@ public actor SwiftDataStore: Store {
         for record in records {
             if let bytes = record.byteSize {
                 out[record.assetID] = MeasuredSize(
-                    bytes: bytes, isEstimated: record.isSizeEstimated)
+                    bytes: bytes, isEstimated: record.isSizeEstimated,
+                    motionBytes: record.motionByteSize)
             }
         }
         return out

@@ -58,9 +58,11 @@ struct GroupDetailView: View {
     /// "3 copies", "5 similar shots": the name of this group, not of its category.
     private static func title(_ group: ResultGroup) -> Text {
         let count = group.members.count
-        return group.type == .similarShots
-            ? Text("^[\(count) similar shot](inflect: true)")
-            : Text("^[\(count) copy](inflect: true)")
+        return switch group.type {
+        case .similarShots: Text("^[\(count) similar shot](inflect: true)")
+        case .burst: Text("^[\(count) burst frame](inflect: true)")
+        default: Text("^[\(count) copy](inflect: true)")
+        }
     }
 
     // MARK: Layout
@@ -116,7 +118,7 @@ struct GroupDetailView: View {
             scale: Double(displayScale), cap: 1024)
         // A favorite keeper has a second line; every card keeps the same slot height so the
         // Remove switches stay at one height.
-        let hasButton = group.type != .similarShots
+        let hasButton = !group.type.membersAreShots
         let slotHeight =
             group.hasFavoriteKeeper(in: model.results) ? tallSlot : (hasButton ? buttonSlot : slot)
         if stacked {
@@ -171,7 +173,7 @@ struct GroupDetailView: View {
     private func summary(_ group: ResultGroup, inset: Bool) -> some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             GroupSummaryLine(group: group)
-            if group.type == .similarShots {
+            if group.type.membersAreShots {
                 #if os(macOS)
                     // The Mac's control is a checkbox, not a switch.
                     Text("Uncheck a photo’s Remove box to keep it.")
@@ -426,7 +428,7 @@ struct CompareCard: View {
                     model.toggle(assetID)
                 })
         ) {
-            if group.type == .similarShots {
+            if group.type.membersAreShots {
                 Text("Remove this photo")
             } else {
                 Text("Remove this copy")
@@ -449,7 +451,7 @@ struct CompareCard: View {
         let n = index + 1
         let count = group.members.count
         let base =
-            group.type == .similarShots
+            group.type.membersAreShots
             ? String(localized: "Remove photo \(n) of \(count)")
             : String(localized: "Remove copy \(n) of \(count)")
         guard let date = item?.metadata.captureDate else { return base }

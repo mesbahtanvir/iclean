@@ -28,6 +28,9 @@ public protocol PhotoLibrary: Sendable {
     func stopPrefetching(_ assetIDs: [String], pixelSize: Int, fit: ThumbnailFit)
     /// Size of the item's files on the phone, or nil when not stored locally.
     func localByteSize(for assetID: String) async -> Int64?
+    /// The bytes of a Live Photo's movie on the device, nil for anything else or when it is not
+    /// on the device (spec 015). Never downloads.
+    func localMotionByteSize(for assetID: String) async -> Int64?
     /// A video ready to play, only when its file is on the phone. Nil for a video that is only in
     /// iCloud, for anything that is not a video, and for libraries that cannot play one. Never
     /// downloads (FR-014).
@@ -68,6 +71,7 @@ public struct PlayableVideo: @unchecked Sendable {
 extension PhotoLibrary {
     /// For libraries that cannot play a video (the demo library, tests): nothing to play.
     public func playerItem(for assetID: String) async -> PlayableVideo? { nil }
+    public func localMotionByteSize(for assetID: String) async -> Int64? { nil }
 
     /// For libraries with no faster path (the demo library, tests): the preview, once.
     public func thumbnails(for assetID: String, pixelSize: Int, fit: ThumbnailFit) -> AsyncStream<

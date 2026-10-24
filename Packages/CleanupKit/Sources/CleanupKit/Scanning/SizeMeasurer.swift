@@ -27,12 +27,16 @@ public actor SizeMeasurer {
             if let bytes = await library.localByteSize(for: item.assetID) {
                 item.byteSize = bytes
                 item.isSizeEstimated = false
+                if item.metadata.kind == .livePhoto {
+                    item.motionByteSize = await library.localMotionByteSize(for: item.assetID)
+                }
             } else {
                 item.byteSize = SizeEstimator.estimate(item.metadata)
                 item.isSizeEstimated = true
             }
             sizes[item.assetID] = MeasuredSize(
-                bytes: item.byteSize ?? 0, isEstimated: item.isSizeEstimated)
+                bytes: item.byteSize ?? 0, isEstimated: item.isSizeEstimated,
+                motionBytes: item.motionByteSize)
             updated.append(item)
         }
         try? await store.setSizes(sizes)

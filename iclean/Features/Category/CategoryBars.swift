@@ -302,10 +302,10 @@ struct GroupHeader: View {
 
     @ViewBuilder private var title: some View {
         let count = group.members.count
-        if group.type == .similarShots {
-            Text("^[\(count) similar shot](inflect: true)")
-        } else {
-            Text("^[\(count) copy](inflect: true)")
+        switch group.type {
+        case .similarShots: Text("^[\(count) similar shot](inflect: true)")
+        case .burst: Text("^[\(count) burst frame](inflect: true)")
+        default: Text("^[\(count) copy](inflect: true)")
         }
     }
 

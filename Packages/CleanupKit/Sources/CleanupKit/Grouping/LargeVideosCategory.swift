@@ -11,7 +11,7 @@ public struct LargeVideosCategory: CategoryDetector {
 
     public func detect(items: [LibraryItem]) -> [ResultGroup] {
         items
-            .filter { $0.metadata.kind == .video }
+            .filter { $0.metadata.kind.isVideo }
             .sorted { $0.effectiveByteSize > $1.effectiveByteSize }
             .prefix(Self.limit)
             .map { ResultGroup(type: .single, members: [$0.assetID]) }

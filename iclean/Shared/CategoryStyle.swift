@@ -9,12 +9,16 @@ extension CleanupCategory {
     var tint: Color {
         switch self {
         case .duplicates: .blue
+        case .bursts: .cyan
         case .similar: .indigo
         case .blurry: .orange
         case .unimportant: .gray
+        case .dark: .brown
         case .screenshots: .teal
+        case .screenRecordings: .mint
         case .duplicateVideos: .pink
         case .largeVideos: .purple
+        case .livePhotos: .yellow
         }
     }
 }

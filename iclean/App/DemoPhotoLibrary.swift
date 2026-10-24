@@ -61,15 +61,18 @@
             _ id: String, kind: ItemKind = .photo, image: CGImage?, minutes: Double,
             width: Int = 4032, height: Int = 3024, favorite: Bool = false, edited: Bool = false,
             portrait: Bool = false, duration: Double? = nil, burst: String? = nil,
-            albums: [String] = [], cloudOnly: Bool = false, size: Int64? = nil,
-            date explicitDate: Date? = nil, added: Date? = nil, location: Bool = false
+            burstPick: BurstPick? = nil, albums: [String] = [], cloudOnly: Bool = false,
+            size: Int64? = nil, date explicitDate: Date? = nil, added: Date? = nil,
+            location: Bool = false
         ) {
             let date = explicitDate ?? Date(timeIntervalSince1970: 1_700_000_000 + minutes * 60)
             let m = AssetMetadata(
                 assetID: id, kind: kind, captureDate: date, modificationDate: date,
                 pixelWidth: width, pixelHeight: height, duration: duration, isFavorite: favorite,
-                hasAdjustments: edited, isPortrait: portrait, burstID: burst, albumNames: albums,
-                addedDate: added, hasLocation: location)
+                hasAdjustments: edited, isPortrait: portrait, burstID: burst,
+                burstPick: burstPick ?? (burst == nil ? nil : BurstPick.none),
+                representsBurst: burstPick == .userPick, albumNames: albums, addedDate: added,
+                hasLocation: location)
             assets[id] = Asset(metadata: m, image: image, cloudOnly: cloudOnly, size: size)
             order.append(id)
         }
@@ -198,11 +201,24 @@
             add("blur2", image: DemoImages.blurred(DemoImages.scene(seed: 55)), minutes: 5000, size: 2_100_000)
             add("portrait", image: DemoImages.blurred(DemoImages.scene(seed: 66)), minutes: 6000, portrait: true, size: 2_500_000)
             add("sharp", image: DemoImages.scene(seed: 77), minutes: 7000, size: 3_100_000)
-            // A burst of similar shots.
+            // A burst of five frames; the person picked the third in Photos (spec 015).
             for i in 0..<5 {
                 add(
                     "burst\(i)", image: DemoImages.burstFrame(DemoImages.scene(seed: 88), index: i),
-                    minutes: 8000 + Double(i) / 60, burst: "B1", size: 2_400_000)
+                    minutes: 8000 + Double(i) / 60, burst: "B1",
+                    burstPick: i == 2 ? .userPick : BurstPick.none, size: 2_400_000)
+            }
+            // Two shots of one moment a few seconds apart, not a burst: Similar's own group.
+            let twin = DemoImages.scene(seed: 90)
+            add("twin0", image: twin, minutes: 8200, size: 2_600_000)
+            add(
+                "twin1", image: DemoImages.shifted(twin, by: 12), minutes: 8200 + 3.0 / 60,
+                size: 2_600_000)
+            // A second burst, three frames, one favourited.
+            for i in 0..<3 {
+                add(
+                    "burstb\(i)", image: DemoImages.burstFrame(DemoImages.scene(seed: 89), index: i),
+                    minutes: 8100 + Double(i) / 60, favorite: i == 1, burst: "B2", size: 2_300_000)
             }
             // Screenshots.
             for i in 0..<3 {

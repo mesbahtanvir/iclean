@@ -16,7 +16,7 @@ public struct DuplicateVideoDetector: CategoryDetector {
     public init(parallelism: Int = 1) { self.parallelism = max(1, parallelism) }
 
     public func detect(items: [LibraryItem]) -> [ResultGroup] {
-        let videos = items.filter { $0.metadata.kind == .video && $0.analysis != nil }
+        let videos = items.filter { $0.metadata.kind.isVideo && $0.analysis != nil }
         let groups = DuplicateGrouping.group(
             videos,
             extraCheck: { a, b in

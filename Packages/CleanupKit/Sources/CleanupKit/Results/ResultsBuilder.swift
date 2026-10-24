@@ -49,8 +49,16 @@ public struct CleanupResults: Sendable, Hashable {
         categories.first { $0.category == c }
     }
 
+    /// The removal category an item is listed in (spec 015: a trim category never answers here).
     public func category(of assetID: String) -> CleanupCategory? {
-        categories.first { $0.allMembers.contains(assetID) }?.category
+        categories.first { $0.category.action == .remove && $0.allMembers.contains(assetID) }?
+            .category
+    }
+
+    /// The trim category an item is listed in, if any (spec 015 Live Photos).
+    public func trimCategory(of assetID: String) -> CleanupCategory? {
+        categories.first { $0.category.action == .trim && $0.allMembers.contains(assetID) }?
+            .category
     }
 
     public func group(containing assetID: String) -> ResultGroup? {
@@ -60,11 +68,16 @@ public struct CleanupResults: Sendable, Hashable {
         return nil
     }
 
-    /// Count and bytes of the removable items in a category.
+    /// Count and bytes of the removable items in a category. For a trim category the bytes are the
+    /// movies that would go, not the whole assets (spec 015).
     public func totals(for c: CleanupCategory) -> (count: Int, bytes: Int64, isEstimate: Bool) {
         guard let result = category(c) else { return (0, 0, false) }
         let ids = result.removable
-        let bytes = ids.reduce(Int64(0)) { $0 + (items[$1]?.effectiveByteSize ?? 0) }
+        let bytes = ids.reduce(Int64(0)) { sum, id in
+            let item = items[id]
+            let bytes = c.action == .trim ? item?.motionByteSize : item?.effectiveByteSize
+            return sum + (bytes ?? 0)
+        }
         let estimate = ids.contains { items[$0]?.sizeIsEstimate ?? true }
         return (ids.count, bytes, estimate)
     }
@@ -76,7 +89,7 @@ public struct CleanupResults: Sendable, Hashable {
         var copy = self
         copy.categories = categories.compactMap { result in
             var r = result
-            r.groups = result.groups.compactMap { g in
+            r.groups = result.groups.compactMap { g -> ResultGroup? in
                 // A removal touches a few groups out of thousands: leave the others as they are
                 // (nothing is copied or rebuilt), so removing 15,000 photos stays a quick pass.
                 let touched = g.members.contains { assetIDs.contains($0) }
@@ -101,6 +114,8 @@ public struct CleanupResults: Sendable, Hashable {
                         g.dateNotes = KeeperRules.dateNotes(rest)
                     case .similarShots:
                         g.keepers = KeeperRules.similarKeepers(rest)
+                    case .burst:
+                        g.keepers = KeeperRules.burstKeepers(rest)
                     case .single:
                         break
                     }
@@ -145,9 +160,14 @@ public struct DefaultResultsBuilder: ResultsBuilder {
 
         var assigned: Set<String> = []
         var categories: [CategoryResult] = []
-        for detector in detectors {
+        // Removal categories first, each seeing what the earlier ones left; then the trim categories
+        // (spec 015), which see every item, since trimming a photo and removing it are different
+        // decisions and an asset may be listed for both.
+        let removals = detectors.filter { $0.category.action == .remove }
+        let ordered = removals + detectors.filter { $0.category.action == .trim }
+        for detector in ordered {
             let candidates = items.filter { item in
-                !assigned.contains(item.assetID)
+                (detector.category.action == .trim || !assigned.contains(item.assetID))
                     && (!detector.needsAnalysis || item.analysisSource.hasAnalysis)
             }
             var groups: [ResultGroup] = []
@@ -171,7 +191,9 @@ public struct DefaultResultsBuilder: ResultsBuilder {
                 detection.level != nil && detection.level != detector.category.defaultLevel
                 && detection.levels.contains { $0.photos > 0 }
             guard !groups.isEmpty || keepsEmpty else { continue }
-            groups.forEach { assigned.formUnion($0.members) }
+            if detector.category.action == .remove {
+                groups.forEach { assigned.formUnion($0.members) }
+            }
             categories.append(
                 CategoryResult(
                     category: detector.category, groups: groups, level: detection.level,
@@ -186,15 +208,17 @@ public struct DefaultResultsBuilder: ResultsBuilder {
 
         // Only what is listed is kept, and without fingerprints: the screens need nothing else,
         // and keeping every item of a large library with its fingerprints cost hundreds of MB.
-        // Face quality is read only to choose the keeper of a similar-shots group (also after a keeper
-        // is removed), so only those members keep it. A scan may leave it out of photos nothing can
+        // Face quality is read only to choose the keeper of a similar-shots or burst group (also after
+        // a keeper is removed), so only those members keep it. A scan may leave it out of photos nothing can
         // group (spec 010); dropping it from every other listed item makes a deferred scan's results
         // and a complete scan's results equal values.
         var shown: [String: LibraryItem] = [:]
         for c in categories {
             for id in c.allMembers {
                 var item = byID[id]?.withoutFingerprints
-                if c.category != .similar { item?.analysis?.faceQuality = nil }
+                if c.category != .similar, c.category != .bursts {
+                    item?.analysis?.faceQuality = nil
+                }
                 shown[id] = item
             }
         }
