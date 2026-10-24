@@ -2,8 +2,8 @@
 
 A fixed set of 73 small photos and videos with known expected results. Run it on any
 device or simulator to check that iclean finds the same duplicates, similar shots, blurry
-photos, screenshots and large videos there as everywhere else. It checks the free app, where
-videos are never analyzed; video analysis is a Pro feature, and a Pro baseline is not written.
+photos, screenshots and large videos there as everywhere else. Videos are never analyzed (004
+FR-004a, 016), so for videos it checks the size ranking and that no video was analyzed.
 
 Nothing is stored in the repository. Every asset is drawn from a recipe, so every device
 produces the same pixels, and the expected result for each asset is written next to its
@@ -20,7 +20,7 @@ recipe in `BaselineCatalogV4.swift`.
 | Blurry photos | 6 out-of-focus photos | All flagged |
 | Borderline blur | 2 camera-shake photos | Reported per device, never asserted |
 | Screenshots | 4 PNGs tagged as screenshots | Listed, where the system tags them |
-| Videos | 2 copies of one clip and 3 unrelated clips | Never analyzed in the free app; all five are listed under Large Videos by size, largest first, none pre-selected, and the copies are not grouped |
+| Videos | 2 copies of one clip and 3 unrelated clips | Never analyzed; all five are listed under Large Videos by size, largest first, none pre-selected, and the copies are not grouped |
 | Unrelated photos | 16 sharp, different photos | Never flagged by anything |
 
 The checks also cover that import keeps capture dates, pixel sizes, favorites, album

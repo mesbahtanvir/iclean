@@ -96,7 +96,7 @@ public struct CleanupResults: Sendable, Hashable {
                     // The keeper is gone: suggest the best of what is left, by the same rules.
                     let rest = g.members.compactMap { items[$0] }
                     switch g.type {
-                    case .duplicatePhotos, .duplicateVideos:
+                    case .duplicatePhotos:
                         g.keepers = KeeperRules.duplicateKeepers(rest)
                         g.dateNotes = KeeperRules.dateNotes(rest)
                     case .similarShots:

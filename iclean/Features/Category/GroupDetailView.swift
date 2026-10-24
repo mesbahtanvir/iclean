@@ -397,7 +397,7 @@ struct CompareCard: View {
                         .foregroundStyle(Palette.quietText)
                         .accessibilityIdentifier("group.keeperReason.\(assetID)")
                 }
-            } else if group.type == .duplicatePhotos || group.type == .duplicateVideos {
+            } else if group.type == .duplicatePhotos {
                 Button {
                     taps += 1
                     onTouch?()

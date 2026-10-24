@@ -87,7 +87,7 @@ match the current library.
 | Field | Type | Notes |
 |-------|------|-------|
 | `id` | String | Stable: hash of sorted member asset IDs |
-| `type` | enum `duplicatePhotos` / `similarShots` | `duplicateVideos` is Pro only since 2026-10-18: the free app does not analyze videos (see specs/004-phased-cleaning/spec.md FR-004a) |
+| `type` | enum `duplicatePhotos` / `similarShots` | `duplicateVideos` is Pro only since 2026-10-18: the free app does not analyze videos (see specs/004-phased-cleaning/spec.md FR-004a); removed 2026-10-24 with the Pro version (specs/016-free-photos-only/spec.md) |
 | `members` | [assetID] | ≥ 2 |
 | `keepers` | Set<assetID> | ≥ 1 unless the user selects all and confirms the warning (FR-016) |
 
@@ -95,7 +95,7 @@ match the current library.
 - Duplicate photos (FR-008): every favorite is a keeper; otherwise highest
   resolution and quality, tie → oldest `captureDate`. *Amended 2026-10-18 by specs/006-date-aware-keepers/spec.md: among copies with different dates the copy whose date is most probably the real capture date is kept (impossible dates lose first, then resolution, then dates and details that look less reliable, then the earliest date, then file size, then the oldest).* (The video rule is Pro only since
   2026-10-18: the free app does not analyze videos, see specs/004-phased-cleaning/spec.md
-  FR-004a.)
+  FR-004a; removed 2026-10-24 with the Pro version, specs/016-free-photos-only/spec.md.)
 - Similar shots: every favorite is a keeper; otherwise highest `sharpness`, tie-break on
   face capture quality (R4).
 
@@ -104,18 +104,19 @@ match the current library.
 `Duplicates`, `Similar`, `Blurry`, `Screenshots`, `Large Videos` (five in the free app).
 With Pro there are six: `Duplicate Videos` sits between `Screenshots` and `Large Videos`
 (Pro only since 2026-10-18: the free app does not analyze videos, see
-specs/004-phased-cleaning/spec.md FR-004a).
+specs/004-phased-cleaning/spec.md FR-004a). Since 2026-10-24 there is no Pro version and no
+`Duplicate Videos` category (specs/016-free-photos-only/spec.md).
 
 **Category assignment** (an item appears in only one; first match wins):
 `Duplicates → Similar → Blurry → Screenshots → Large Videos` (with Pro, Duplicate Videos
-sits between Screenshots and Large Videos). Large Videos applies to videos only and ranks
+sat between Screenshots and Large Videos; gone since 2026-10-24). Large Videos applies to videos only and ranks
 them by file size, with no analysis.
 
 **Flagging exclusions** (apply to every category): favorites, KeepMarks, items in shared
 albums, items with `analysisSource == .notScanned` (except Screenshots and Large Videos,
 which need only metadata). Items with `analysisSource == .metadataOnly` are videos and can
-appear only in Large Videos in the free app. With Pro, the next full scan analyzes them and
-they can then be grouped in Duplicate Videos.
+appear only in Large Videos. (Until 2026-10-24 a planned Pro version would have analyzed them
+on the next full scan; there is no Pro version, specs/016-free-photos-only/spec.md.)
 
 ### Selection (review state, kept in memory and saved with the session)
 

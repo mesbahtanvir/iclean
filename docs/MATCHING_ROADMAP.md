@@ -32,7 +32,7 @@ Read the "Critic review" section at the end before acting on any single number.
   - Link on feature print <0.1, or thumbprint ≥0.5 with feature print <0.15.
   - No sessions, no chain check, no size cap. Near-identical burst frames land in Duplicates first.
 - **Blur and keepers**: flag when sharpness <0.55 and aesthetics <0. The similar keeper is the sharpest frame, with face quality only inside a 0.02 tie.
-- **Results** are derived, never stored. `AppModel.reloadResults` loads about 5.4 KB of blobs per item (about 54 MB at 10k) and runs five detectors in the free app (six with Pro, which adds Duplicate Videos) on the main actor at launch, foreground and scan end. M4: 0.6-1.5 s to load, 0.3-2 s to build.
+- **Results** are derived, never stored. `AppModel.reloadResults` loads about 5.4 KB of blobs per item (about 54 MB at 10k) and runs five detectors (a planned Pro version with Duplicate Videos was dropped 2026-10-24, 016) on the main actor at launch, foreground and scan end. M4: 0.6-1.5 s to load, 0.3-2 s to build.
 - **quickCheck** refetches every PHAsset and album member. `PHPersistentChangeToken` and `PHCachingImageManager` are unused.
 - **Biggest costs** are unmeasured on device. On the Mac, non-Vision CPU is about 1.4 ms per photo and three Vision calls take about 12 ms, so analysis is Vision- and PhotoKit-bound.
 - **Accuracy** is 100%/0% on synthetic fixtures only, and no real-photo labels exist.
@@ -139,7 +139,7 @@ Slice B, a persisted match graph, stores edges as packed blobs per session (per-
 #### P13 Copy router and exact tiers
 Router first: a pair gate in `DuplicateGrouping.group` sends a confirmed match to Duplicates only if timestamps are equal, dimensions differ, or dt exceeds 120 s. Otherwise it goes to Similar, with the sharpest keeper. It needs only metadata. Block on aspect bucket, not exact `(width, height)`, which gave recall 0.125 on the synthetic set. Skip the 64 KB prefix tier. Instead fold SHA-256 into `SizeMeasurer`'s existing full read for an "identical file" label. Video keyframes only for pairs that pass the poster hash and duration. **Not in the free app since 2026-10-18:** the free app does not analyze videos, so it has no video keyframes or poster hashes; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
 - Gain (simulated): all 100 removable burst frames land in Similar (was 57). Strict Duplicates precision goes 73% → 100%. All 144 true-copy pairs are unchanged.
-- Effort: router S, digest S/M, video M (not in the free app).
+- Effort: router S, digest S/M, video M (not in the app).
 - Risks: same-dimension copies within 120 s are untested; hashing adds I/O; `dataSize` is iOS 27 only.
 - Verdicts: partly feasible; new (aspect and `hasAdjustments` gates exist); I3/E4.
 - Measure: strict precision with burst frames counted wrong, burst-in-Similar assertion raised from 50% to 95%, new 5/30/100 s same-size copy fixtures.
@@ -171,7 +171,7 @@ Then, behind real labels, add a `Sessionizer`: 10 min gap, about 1 km bucket, wi
 #### P02 Candidate-driven staged analysis
 Lite first.
 - Compute sharpness before aesthetics and run aesthetics inline only below the blur threshold. Don't defer it: `BlurDetector` treats nil as flagged, so deferral over-flags Blurry.
-- Skip feature prints for screenshots and videos (the free app does not analyze videos at all since 2026-10-18; video analysis is a Pro feature, one-time $2, not built yet).
+- Skip feature prints for screenshots and videos (the app does not analyze videos at all since 2026-10-18, and there is no paid version with video analysis, 016).
 - Run face quality lazily in a `GroupEnricher` (modelled on `SizeMeasurer`), only for similar-group members in the 0.02 tie band.
 
 Full, behind real calibration: an `AnalysisStages` mask and feature prints only for ambiguous pairs, with reject-only thumbprint bands (t<0.25). Don't adopt the t≥0.80 no-print accept: it removes the guard that exists because layout correlation matched different photos.
@@ -264,12 +264,12 @@ Chunk-boundary stalls (about 313 per 10k scan, each draining the group) need cro
 - P05 landmarks kernel.
 - P07 edited copies.
 - P12 pHash.
-- P13 video keyframes (not in the free app since 2026-10-18).
+- P13 video keyframes (not in the app since 2026-10-18).
 - P03.
 
 Measurement comes first because every per-stage cost above is an estimate, and the Mac numbers say Vision and PhotoKit, not pixel loops, dominate. Phased matching changes which signals are needed. Similar matching is already blocked by a 60 s window, so a photo with no neighbour in its window never needs a feature print, face score or aesthetics score. In the modelled library that is about 3,000 of 10,000 photos (an assumption, not a measurement). Duplicates stay time-agnostic, so only metadata and hash blocking apply there. Staging (P02) therefore beats squeezing every Vision call (P01). P01 ships only its cheap parts: the fused handler, kind gates and the luma plane. Wider sessions (P14) enlarge the set needing prints, so key the skip set on the 60 s floor and ship shaping before widening. Exact, no-schema wins go first because they force no re-analysis. The version stamp lands before anything that changes fingerprints, so users pay one rescan.
 
-## 4. Dropped, not in the free app, or already done
+## 4. Dropped, not in the app, or already done
 
 - IVF index and SQ8 (P07): brute-force sgemm takes about 0.33 s at 10k, and SQ8 error is about 10% of a 0.05 radius.
 - Feature-print radius for filtered or cropped copies (P07): not invariant, with medians of 0.20-0.58.
@@ -279,7 +279,7 @@ Measurement comes first because every per-stage cost above is an estimate, and t
 - The t≥0.80 accept-without-print shortcut (P02): it removes the feature-print agreement guard.
 - Exact `(width, height)` and `dataSize` perceptual blocking (P13): recall 0.125.
 - The 64 KB prefix-hash tier (P13): near-zero recall gain for real I/O.
-- Duplicate-video confirmation by poster hash and keyframes (P13): not in the free app since 2026-10-18, which does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
+- Duplicate-video confirmation by poster hash and keyframes (P13): not in the app since 2026-10-18, which does not analyze videos, and there is no paid version with video analysis (see specs/004-phased-cleaning/spec.md FR-004a and specs/016-free-photos-only/spec.md).
 - A hard `isUtility` exclusion and the document-segmentation section (P04): blur-recall risk, with the gate firing on 20-35% of photos.
 - Saliency-crop blur and an independent smudge rule (P03): deferred; see above.
 - The hot/cold record split and `propertiesToFetch` (P08 slice B): the gain is only 1.2-1.8x, and faulting is slower.

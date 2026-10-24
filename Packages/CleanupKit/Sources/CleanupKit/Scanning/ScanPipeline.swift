@@ -27,7 +27,6 @@ public actor ScanPipeline: Scanner {
     private let profile: ScanProfile
     private let progressEvery: Int
     private let policy: ScanRetryPolicy
-    private let features: ProFeatures
     /// Whether plans leave out the Vision work no detector can read (spec 010).
     private let deferVision: Bool
     private let pauseWaitLimit: Duration
@@ -103,7 +102,6 @@ public actor ScanPipeline: Scanner {
     ///     finished chunks may wait for the store, and the chunk size (1…64, the unit of durability).
     ///   - progressEvery: analyzed items between two progress events (002 R4).
     ///   - policy: retry, timeout and crash limits (003).
-    ///   - features: what Pro unlocks; free by default, so videos are not analyzed.
     ///   - deferVision: leave out the feature print and face quality of photos that no detector can
     ///     read them for, and analyze them later if that changes (spec 010). False is the scan of
     ///     spec 009, for comparison; the results are the same either way.
@@ -115,7 +113,7 @@ public actor ScanPipeline: Scanner {
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         profile: ScanProfile, progressEvery: Int = 10, policy: ScanRetryPolicy = .default,
-        features: ProFeatures = .free, deferVision: Bool = true,
+        deferVision: Bool = true,
         pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
@@ -132,7 +130,6 @@ public actor ScanPipeline: Scanner {
         var policy = policy
         policy.chunkSize = min(max(1, profile.chunkSize), ScanChunk.maxSize)
         self.policy = policy
-        self.features = features
         self.deferVision = deferVision
         self.pauseWaitLimit = pauseWaitLimit
         self.minProgressInterval = minProgressInterval
@@ -146,8 +143,8 @@ public actor ScanPipeline: Scanner {
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
-        policy: ScanRetryPolicy = .default, features: ProFeatures = .free,
-        deferVision: Bool = true, pauseWaitLimit: Duration = .seconds(2),
+        policy: ScanRetryPolicy = .default, deferVision: Bool = true,
+        pauseWaitLimit: Duration = .seconds(2),
         minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
@@ -156,7 +153,7 @@ public actor ScanPipeline: Scanner {
         self.init(
             library: library, store: store, analyzer: analyzer,
             profile: ScanProfile(name: "custom", concurrency: concurrency, chunkSize: chunkSize),
-            progressEvery: progressEvery, policy: policy, features: features,
+            progressEvery: progressEvery, policy: policy,
             deferVision: deferVision, pauseWaitLimit: pauseWaitLimit,
             minProgressInterval: minProgressInterval,
             thermalState: thermalState)
@@ -507,8 +504,7 @@ public actor ScanPipeline: Scanner {
         let library = await self.library.fetchAllItems()
         let stored = (try? await store.itemSummaries()) ?? []
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: kind, policy: policy, features: features,
-            deferVision: deferVision)
+            library: library, stored: stored, kind: kind, policy: policy, deferVision: deferVision)
         await apply(plan)
         var s: ScanSession
         if var previous {
@@ -563,7 +559,7 @@ public actor ScanPipeline: Scanner {
         // already gave up on.
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: .quickCheck, policy: policy,
-            features: features, deferVision: deferVision)
+            deferVision: deferVision)
         await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
@@ -734,7 +730,7 @@ public actor ScanPipeline: Scanner {
                 }
                 let outcome = await Self.analyze(
                     metadata[i]!, library: library, analyzer: analyzer, limit: limit,
-                    analyzeVideos: features.videoAnalysis, skipping: skips[i] ?? [])
+                    skipping: skips[i] ?? [])
                 chunk.inFlightIndex = nil
                 record(
                     i, outcome, chunk: &chunk, results: &results, failures: &failures,
@@ -774,14 +770,13 @@ public actor ScanPipeline: Scanner {
                     next += 1
                     inFlight += 1
                     let m = metadata[i]!
-                    let analyzeVideos = features.videoAnalysis
                     let skipped = skips[i] ?? []
                     group.addTask(priority: .userInitiated) { [library, analyzer] in
                         (
                             i,
                             await Self.analyze(
                                 m, library: library, analyzer: analyzer, limit: limit,
-                                analyzeVideos: analyzeVideos, skipping: skipped)
+                                skipping: skipped)
                         )
                     }
                     return true
@@ -1066,15 +1061,15 @@ public actor ScanPipeline: Scanner {
 
     /// One item: preview plus analysis, under the per-item time limit (003 FR-007).
     /// A failed analysis is retried by the chunk; a missing preview is a result.
-    /// Without Pro, videos are not analyzed (004 FR-004a): no frame is requested, and the item
-    /// is stored with its metadata only so Large Videos can rank it. The same holds for screenshots
-    /// in every edition: they are listed by kind, never grouped with photos (no detector reads
-    /// their analysis), so opening their preview would be wasted work.
+    /// Videos are not analyzed (004 FR-004a, 016): no frame is requested, and the item is stored
+    /// with its metadata only so Large Videos can rank it. The same holds for screenshots: they
+    /// are listed by kind, never grouped with photos (no detector reads their analysis), so
+    /// opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
-        analyzeVideos: Bool, skipping skipped: VisionWork = []
+        skipping skipped: VisionWork = []
     ) async -> ItemOutcome {
-        if m.kind == .screenshot || (m.kind.isVideo && !analyzeVideos) {
+        if m.kind == .screenshot || m.kind.isVideo {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
         }
         let outcome: Timeout.Outcome<ItemOutcome> = await Timeout.run(limit) {

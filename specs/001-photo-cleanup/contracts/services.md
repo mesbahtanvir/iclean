@@ -36,7 +36,8 @@ public enum PreviewResult: Sendable {
   specs/004-phased-cleaning/spec.md FR-004a).
 - With Pro (`ProFeatures.videoAnalysis`, off by default in every release build) a video is
   analyzed from its poster frame, and the next full scan analyzes videos the free app
-  stored as `.metadataOnly`; a quick check never starts that work.
+  stored as `.metadataOnly`; a quick check never starts that work. *Removed 2026-10-24: there
+  is no Pro version and no `ProFeatures`; videos are never analyzed (specs/016-free-photos-only/spec.md).*
 
 ## Analyzer — pure functions over a preview
 

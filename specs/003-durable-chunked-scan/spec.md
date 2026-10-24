@@ -242,8 +242,8 @@ the scan reports completion, and already-analyzed items are not redone.
 - "Could not be checked" items appear in the existing "not scanned" count; a separate list
   with reasons is a later addition if users ask for it.
 - Since 2026-10-18 the free app does not analyze videos (video analysis is a one-time $2
-  Pro feature, not built yet; see specs/004-phased-cleaning/spec.md FR-004a), so "every
-  item is analyzed" above means every photo in the free app. A video is marked "metadata
+  Pro feature, not built yet; see specs/004-phased-cleaning/spec.md FR-004a; since 2026-10-24
+  there is no Pro version, specs/016-free-photos-only/spec.md), so "every item is analyzed" above means every photo. A video is marked "metadata
   only", which is not "not scanned", is not counted there and is not retried.
 - The quick check on app open (001 FR-005a) uses the same pieces when it has more than one
   piece of work; for a handful of new photos it behaves as today.

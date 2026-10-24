@@ -295,7 +295,7 @@ enum ItemNoun {
     case photos, videos, items
 
     init(categories: some Collection<CleanupCategory>) {
-        let videos = categories.filter { $0 == .largeVideos || $0 == .duplicateVideos }.count
+        let videos = categories.filter { $0 == .largeVideos }.count
         if categories.isEmpty {
             self = .photos
         } else if videos == categories.count {

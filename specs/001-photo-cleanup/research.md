@@ -127,7 +127,8 @@ third-party runtime code.
     confirmed by dHash + feature print of the local poster-frame thumbnail
     (FR-004b). Keeper: favorite, else largest pixel size, else oldest. *Pro only since
     2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro
-    feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
+    feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a). Not built since
+    2026-10-24: there is no Pro version (specs/016-free-photos-only/spec.md).*
   - **Large videos**: top 50 by size (FR-004c), never pre-selected.
 - **Rationale**: Screenshots and Large Videos work from metadata alone, so cloud-only
   videos never need downloading. (The original rationale also covered local thumbnails,

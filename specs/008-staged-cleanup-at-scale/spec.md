@@ -117,7 +117,7 @@ equality and digest checks in the Validation section.
 
 ## Requirements *(mandatory)*
 
-- **FR-001**: The plan MUST store items that need no analysis (screenshots; videos without Pro) before
+- **FR-001**: The plan MUST store items that need no analysis (screenshots; videos without Pro, that is every video since 2026-10-24, 016) before
   the first chunk runs, and MUST report it through `ScanProgress.publishedRevision`. They stay in the
   job, so totals, chunks and 003's guarantees are unchanged.
 - **FR-002**: Photos MUST be planned newest first for every new job (stable for equal dates; undated
