@@ -24,6 +24,8 @@ struct HeroFigure: View {
             Text(overline)
                 .font(.headline)
                 .foregroundStyle(Palette.quietText)
+                // Its own height, so the audit sees it grow with the text size.
+                .fixedSize(horizontal: false, vertical: true)
             Text(value)
                 .heroFigureFont()
                 .lineLimit(1)
@@ -33,6 +35,7 @@ struct HeroFigure: View {
             Text(caption)
                 .font(.callout)
                 .foregroundStyle(Palette.quietText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -59,27 +62,38 @@ extension LabelStyle where Self == QuietLabelStyle {
 struct QuietNote: View {
     let text: Text
     let systemImage: String
+    /// False in a list's footer, which is plain text without glyphs (spec 014).
+    var showsIcon = true
 
-    init(_ text: Text, systemImage: String) {
+    init(_ text: Text, systemImage: String, showsIcon: Bool = true) {
         self.text = text
         self.systemImage = systemImage
+        self.showsIcon = showsIcon
     }
 
-    init(_ key: LocalizedStringKey, systemImage: String) {
-        self.init(Text(key), systemImage: systemImage)
+    init(_ key: LocalizedStringKey, systemImage: String, showsIcon: Bool = true) {
+        self.init(Text(key), systemImage: systemImage, showsIcon: showsIcon)
     }
 
     var body: some View {
-        Label {
-            text
-                .font(Typography.note)
-                .foregroundStyle(Palette.quietText)
-                .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: systemImage)
-                .font(Typography.note)
-                .foregroundStyle(.secondary)
+        if showsIcon {
+            Label {
+                note
+            } icon: {
+                Image(systemName: systemImage)
+                    .font(Typography.note)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            note
         }
+    }
+
+    private var note: some View {
+        text
+            .font(Typography.note)
+            .foregroundStyle(Palette.quietText)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

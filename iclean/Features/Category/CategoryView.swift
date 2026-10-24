@@ -369,9 +369,6 @@ private struct CategoryScroller: View {
                             Text("Nothing left to review here.")
                         }
                     }
-                    if typeSize.isAccessibilitySize, result != nil {
-                        CategoryBarDetail(category: category)
-                    }
                 }
                 .padding(.vertical, Space.l)
                 #if os(macOS)

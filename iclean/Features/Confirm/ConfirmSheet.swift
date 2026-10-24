@@ -187,7 +187,7 @@ struct ConfirmSheet: View {
             if big {
                 // The pinned area stays one button tall; what would sit under it scrolls instead.
                 if let error = model.removalError { errorNote(error) }
-                footnote(blocked: blocked)
+                if blocked { blockedNote }
             }
         }
         .padding(.horizontal, platformGutter)
@@ -198,7 +198,7 @@ struct ConfirmSheet: View {
                 VStack(spacing: Space.s) {
                     if !big, let error = model.removalError { errorNote(error) }
                     removeButton(loaded, blocked: blocked)
-                    if !big { footnote(blocked: blocked) }
+                    if !big, blocked { blockedNote }
                 }
             }
         #else
@@ -220,7 +220,7 @@ struct ConfirmSheet: View {
                         cancelButton
                         removeButton(loaded, blocked: blocked)
                     }
-                    if !big { footnote(blocked: blocked) }
+                    if !big, blocked { blockedNote }
                 }
                 .padding(Space.xl)
             }
@@ -285,27 +285,16 @@ struct ConfirmSheet: View {
         .accessibilityIdentifier("confirm.error")
     }
 
-    /// Under the button: what the system will ask next, or why the button is off.
-    private func footnote(blocked: Bool) -> some View {
-        Group {
-            if blocked {
-                Text("Turn on “Remove them all anyway” to continue.")
-            } else {
-                #if os(macOS)
-                    Text("Photos will ask you to confirm once more.")
-                #else
-                    Text(
-                        "You’ll be asked to confirm once more. The system message says “Delete”, but nothing is erased yet."
-                    )
-                #endif
-            }
-        }
-        .font(Typography.note)
-        .foregroundStyle(Palette.quietText)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .accessibilityIdentifier("confirm.footnote")
+    /// Under the button, only while it is off: why, and what turns it on. The system's own
+    /// confirmation that follows needs no announcement (spec 014).
+    private var blockedNote: some View {
+        Text("Turn on “Remove them all anyway” to continue.")
+            .font(Typography.note)
+            .foregroundStyle(Palette.quietText)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("confirm.footnote")
     }
 
     // MARK: Buttons

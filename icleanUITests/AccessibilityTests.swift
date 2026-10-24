@@ -21,12 +21,13 @@ final class AccessibilityTests: XCTestCase {
         // sits on a thumbnail, and at accessibility sizes the grid gets wider cells instead.
         "category.keeperBadge",
         // The pinned Review bar stops growing at accessibility1, so it stays a control at the
-        // largest sizes instead of covering a third of the screen (spec 012 4.3).
-        "results.reviewAll.title", "results.reviewAll.size",
+        // largest sizes instead of covering a third of the screen (spec 012 4.3). One line since
+        // spec 014, so the audit reports the button or its text.
+        "results.reviewAll", "results.reviewAll.title",
         // Every other pinned bar is capped the same way (`actionShape(pinned: true)`): the Category
-        // Remove bar (the audit reports its two texts), the Confirm and Done buttons and the Access
-        // button (it reports the buttons).
-        "category.removeSelected.title", "category.removeSelected.detail", "confirm.remove",
+        // Remove bar (one line, reported as the button or its text), the Confirm and Done buttons
+        // and the Access button (it reports the buttons).
+        "category.removeSelected", "category.removeSelected.title", "confirm.remove",
         "done.close", "access.allow", "access.openSettings",
     ]
 

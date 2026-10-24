@@ -199,7 +199,7 @@ final class HomeStatesTests: XCTestCase {
     /// section header (AccessibilityTests allows the same kind of system-capped text). The Review bar
     /// is capped at accessibility1 on purpose.
     private let systemCapped: Set<String> = [
-        "results.foundSoFar", "results.reviewAll.title", "results.reviewAll.size",
+        "results.foundSoFar", "results.reviewAll", "results.reviewAll.title",
     ]
 
     /// Fails on any issue, and says which element it is.

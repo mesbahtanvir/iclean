@@ -2,7 +2,8 @@ import CleanupKit
 import SwiftUI
 
 /// Home when there is something to show: the hero (how much can be freed), the scan status while a
-/// scan runs, the categories, and the one next step pinned at the bottom (spec 012 section 6.3).
+/// scan runs, the categories with the periphery as their footer, and the one next step pinned at
+/// the bottom (spec 012 section 6.3, spec 014). Scan Again is a tool in the bar, with the gear.
 ///
 /// Everything here reads the cached `model.summary`. Nothing reads the scan's progress (only the
 /// status card does), so a progress tick never re-evaluates the rows, and no photo file is read.
@@ -30,25 +31,29 @@ struct ResultsView: View {
             if !model.continueRoute.isEmpty { ContinueSection() }
             if model.pendingNewCount > 0 { showNewSection }
             if hasResults {
-                categorySection
-            } else if !model.isScanning && (model.isBuildingResults || model.isFinishing) {
-                // Never while the scan runs: with nothing found yet, the card is the only row and
-                // the results area stays silent.
-                updatingSection
+                categorySection(scannedLine: idle)
+            } else {
+                if !model.isScanning && (model.isBuildingResults || model.isFinishing) {
+                    // Never while the scan runs: with nothing found yet, the card is the only row
+                    // and the results area stays silent.
+                    updatingSection
+                }
+                noticesSection(scannedLine: idle)
             }
-            footerSection(
-                showsScanAgain: idle,
-                // At accessibility sizes the reassurance joins the list so the pinned bar stays one
-                // button tall.
-                showsReviewNote: hasSelection && typeSize.isAccessibilitySize)
         }
         #if os(iOS)
             .listStyle(.insetGrouped)
+            .toolbar {
+                // Scan Again is a tool, so it sits in the bar with the gear and not in the list
+                // (spec 014). Not while a scan runs or waits to be resumed: the card has those.
+                if idle {
+                    ToolbarItem(placement: .primaryAction) { ScanToolbarButton() }
+                }
+            }
         #endif
         .readableColumn()
         .pinnedBar(isPresented: hasSelection) {
-            ReviewBar(
-                summary: model.summary, showsNote: !typeSize.isAccessibilitySize, action: onReview)
+            ReviewBar(summary: model.summary, action: onReview)
         }
         .calmAnimation(value: hasSelection)
     }
@@ -79,7 +84,8 @@ struct ResultsView: View {
         Section { ShowNewItemsRow() }
     }
 
-    @ViewBuilder private var categorySection: some View {
+    /// The categories, with the periphery as the section's footer, the way a list says such things.
+    @ViewBuilder private func categorySection(scannedLine: Bool) -> some View {
         if model.isScanning {
             // These are the finds so far; the scan is still going (004 FR-009).
             Section {
@@ -87,9 +93,15 @@ struct ResultsView: View {
             } header: {
                 Text("Found so far")
                     .accessibilityIdentifier("results.foundSoFar")
+            } footer: {
+                footer(scannedLine: scannedLine)
             }
         } else {
-            Section { categoryRows }
+            Section {
+                categoryRows
+            } footer: {
+                footer(scannedLine: scannedLine)
+            }
         }
     }
 
@@ -112,17 +124,30 @@ struct ResultsView: View {
         }
     }
 
-    /// The periphery, last: what was not checked, when it was, and the notices.
-    @ViewBuilder private func footerSection(showsScanAgain: Bool, showsReviewNote: Bool)
-        -> some View
-    {
+    /// The periphery as plain footer text (spec 014): when the library was scanned, what was not
+    /// checked, and the notices. Nothing when there is nothing to say.
+    @ViewBuilder private func footer(scannedLine: Bool) -> some View {
         let notScanned = model.results.notScannedCount
-        if notScanned > 0 || showsScanAgain || !HomeNotices.isEmpty(model) || showsReviewNote {
+        let scanned = scannedLine && model.lastScanDate != nil
+        if scanned || notScanned > 0 || !HomeNotices.isEmpty(model) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                if scanned { ScannedAgoText() }
+                if notScanned > 0 { ICloudFootnote(count: notScanned, showsIcon: false) }
+                if !HomeNotices.isEmpty(model) { HomeNotices(showsIcon: false) }
+            }
+        }
+    }
+
+    /// With no rows yet (nothing found so far, or the results are being built) the footer stands
+    /// alone, so the notices have their slot in this state too.
+    @ViewBuilder private func noticesSection(scannedLine: Bool) -> some View {
+        let notScanned = model.results.notScannedCount
+        let scanned = scannedLine && model.lastScanDate != nil
+        if scanned || notScanned > 0 || !HomeNotices.isEmpty(model) {
             Section {
-                if notScanned > 0 { ICloudFootnote(count: notScanned).quietRow() }
-                if showsScanAgain { ScanAgainLine().quietRow() }
-                if !HomeNotices.isEmpty(model) { HomeNotices().quietRow() }
-                if showsReviewNote { ReviewNote().quietRow() }
+                EmptyView()
+            } footer: {
+                footer(scannedLine: scannedLine)
             }
         }
     }
@@ -204,9 +229,11 @@ struct HomeHero: View {
                 VStack(alignment: .leading, spacing: Space.xs) {
                     Text("Nothing selected yet")
                         .font(.title2.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Open a category to choose what to remove.")
                         .font(.callout)
                         .foregroundStyle(Palette.quietText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
@@ -235,12 +262,12 @@ struct HomeHero: View {
             ? String(
                 agreeing: AttributedString(
                     localized:
-                        "from ^[\(count) item](inflect: true) selected so far. You choose what goes."
+                        "from ^[\(count) item](inflect: true) selected so far."
                 ))
             : String(
                 agreeing: AttributedString(
                     localized:
-                        "from ^[\(count) selected item](inflect: true). You choose what goes."))
+                        "from ^[\(count) selected item](inflect: true)."))
     }
 }
 
@@ -417,8 +444,45 @@ struct ContinueReviewingRow: View {
 
 // MARK: Scan Again
 
-/// "Scanned 3 minutes ago" and the way to scan again, quietly. The text is drawn inside a timeline
-/// that ticks once a minute, so it stays right without redrawing every second.
+/// Scan Again, or Scan Library before a full scan has finished, as a tool in the bar next to the
+/// gear (spec 014). The same rule as the line below decides when it is offered.
+struct ScanToolbarButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Button {
+            model.startScan()
+        } label: {
+            if model.hasFinishedFullScan {
+                Label("Scan Again", systemImage: "arrow.clockwise")
+            } else {
+                Label("Scan Library", systemImage: "arrow.clockwise")
+            }
+        }
+        .accessibilityIdentifier("home.scan")
+    }
+}
+
+/// "Scanned 3 minutes ago" as footer text, drawn inside a timeline that ticks once a minute, so it
+/// stays right without redrawing every second.
+struct ScannedAgoText: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let date = model.lastScanDate {
+            TimelineView(.everyMinute) { context in
+                Text(Format.scanned(date, now: context.date))
+                    .font(Typography.note)
+                    .foregroundStyle(Palette.quietText)
+            }
+            .accessibilityIdentifier("home.lastScan")
+        }
+    }
+}
+
+/// "Scanned 3 minutes ago" and the way to scan again, quietly, in the Mac's sidebar footer. The text
+/// is drawn inside a timeline that ticks once a minute, so it stays right without redrawing every
+/// second.
 struct ScanAgainLine: View {
     /// Stacked even at normal sizes: the Mac sidebar is too narrow to hold both side by side.
     var stacked = false
