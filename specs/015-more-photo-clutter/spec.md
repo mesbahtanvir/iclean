@@ -28,15 +28,19 @@ mention is unchanged. Where it disagrees with 011 about burst frames, this one w
   frame can still land in Similar on its own merits (a near-identical photo outside the burst),
   but then only the frame Bursts kept, since first matching category wins.
 - Q: What does "Live Photo stills" remove? → A: The motion part only. The still stays, with the
-  same date, location, favourite flag, caption and albums, and is no longer a Live Photo afterwards.
+  same date, location and albums, and is no longer a Live Photo afterwards.
   This is a new action, "Keep Still Only", not a removal, and it is confirmed on the same summary
   sheet as removals, in its own section.
 - Q: The platform cannot drop a Live Photo's motion part in place (the Photos app's "Live off" is an
   edit that keeps the movie on disk). How is the still kept? → A: iclean writes a new photo from
-  the still, copies the capture date, location, caption and album memberships to it, and moves the
+  the still, copies the capture date, location and album memberships to it, and moves the
   original Live Photo to Recently Deleted, where it stays recoverable for at least 30 days like any
   removal. The still is a new photo in the library, so iclean treats the original as removed and
   the new photo as a photo it has already seen.
+- Q: What about the caption, and shared content? → A: (Plan, research R2.) Captions cannot be
+  read or written by an app, so a caption is not carried and a Live Photo with one cannot be told
+  apart; the sheet says so once. Items from shared albums are never listed; the iCloud Shared
+  Library cannot be told apart from the person's own library, so it is treated like it.
 - Q: Do screen recordings count as "video analysis", which the free app does not do (004
   FR-004a)? → A: No. Listing screen recordings reads only what the library says about the file
   (its kind, length and size), exactly as Large Videos does. No frame is opened. Screen recordings
@@ -96,7 +100,7 @@ action and needs its own words on the confirmation sheet.
 **Independent Test**: Load a library with 20 Live Photos of known still and motion sizes, one
 favourited, one long-exposure, one edited in Photos. Scan. Live Photos lists the 17 that qualify
 with the motion size each; after "Keep Still Only" on all of them, each is a plain photo with the
-same date, location, albums and caption, the favourite and the long exposure are untouched, and the
+same date, location and albums, the favourite and the long exposure are untouched, and the
 space reported equals the motion parts dropped.
 
 **Acceptance Scenarios**:
@@ -106,7 +110,7 @@ space reported equals the motion parts dropped.
 2. **Given** a long-exposure Live Photo, **When** the user scans, **Then** it is not listed: its
    motion part is what makes it a long exposure (001 FR-003a).
 3. **Given** a selected Live Photo, **When** the user confirms "Keep Still Only", **Then** a
-   plain photo with the same picture, date, location, caption and album memberships is in the
+   plain photo with the same picture, date, location and album memberships is in the
    library, and the original Live Photo is in Recently Deleted.
 4. **Given** the confirmation sheet with 3 duplicates to remove and 5 Live Photos to trim,
    **When** it opens, **Then** removals and "keep still only" are two separate sections, the
@@ -184,8 +188,8 @@ photos are not listed.
   nothing is downloaded).
 - A Live Photo trimmed while it is the keeper of a duplicate group: the new still becomes the
   group's keeper; the original goes to Recently Deleted with the rest.
-- A Live Photo in a shared album or in the iCloud Shared Library is never listed in Live Photos:
-  changing it would change it for others.
+- A Live Photo in a shared album is never listed in Live Photos: changing it would change it for
+  others. (The iCloud Shared Library cannot be told apart; see Clarifications.)
 - A Live Photo that is also a duplicate: Duplicates comes first; if it is the keeper of its group,
   it is also listed in Live Photos (the only case where one asset is in two categories, because the
   second is not a removal).
@@ -213,13 +217,13 @@ photos are not listed.
   no frame could be analyzed, the frame the library marks as the burst's representative; else the
   first by capture order. Every other frame starts selected, except kept frames.
 - **FR-003**: The scan MUST list, in a Live Photos category, every Live Photo whose motion part
-  can be dropped: not long exposure, not a favourite, not edited, not in a shared album or shared
-  library, and not already trimmed. The list is largest motion part first, none selected, and each
+  can be dropped: not long exposure, not a favourite, not edited, not from a shared album, and not
+  already trimmed. The list is largest motion part first, none selected, and each
   row shows the motion part's size. The category's summary line shows the total.
 - **FR-004**: The action on Live Photos MUST be "Keep Still Only". iclean MUST write a new plain
-  photo from the Live Photo's still, carrying its capture date, location, caption and album
-  memberships, and only then move the original Live Photo to Recently Deleted (001 FR-013). If
-  writing the still fails, the original MUST NOT be touched. Favourites are never listed (FR-003),
+  photo from the Live Photo's still, carrying its capture date, location and album
+  memberships (not the caption, which no app can read), and only then move the original Live
+  Photo to Recently Deleted (001 FR-013). If writing the still fails, the original MUST NOT be touched. Favourites are never listed (FR-003),
   so no favourite flag is copied. iclean MUST record the new photo as already seen so the next scan
   does not analyze it again as a stranger, and MUST treat the original as removed (007).
 - **FR-004a**: The confirmation sheet MUST show removals and "keep still only" as two sections, with
@@ -266,8 +270,8 @@ photos are not listed.
   the user's decisions per frame (007).
 - **Motion part**: the movie half of a Live Photo, with its size; dropping it is a trim, not a
   removal.
-- **Trim record**: which Live Photos iclean has trimmed, kept with the session so they are not
-  listed again.
+- **Trimmed still**: the new photo written from a Live Photo; it inherits the original's analysis
+  and size less the motion part, so it is never analyzed again and never listed as a Live Photo.
 - **Emptiness**: a per-photo measure of how much of the preview is at the dark or bright extreme
   with no structure; stored with the analysis like sharpness, so a rescan does not recompute it.
 
@@ -278,7 +282,7 @@ photos are not listed.
 - **SC-001**: On the baseline library (008), every burst with two or more frames appears as one
   group in Bursts, and no burst frame appears in Similar at the default level.
 - **SC-002**: On a library of 500 Live Photos, "Keep Still Only" on all of them frees at least 40%
-  of the space those photos took, and every photo keeps its date, location, albums and caption.
+  of the space those photos took, and every photo keeps its date, location and albums.
 - **SC-003**: A scan of a 30,000-item library takes no longer than before this entry, within 5%,
   on the Mac ScaleBench run (009); the new categories add no preview decodes.
 - **SC-004**: On the baseline library, Dark lists every seeded pocket shot and no photo a person
