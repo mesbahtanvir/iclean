@@ -122,7 +122,9 @@
                 layers.append((sheetImage, NSRect(origin: origin, size: sheet.frame.size)))
                 write(sheetImage, to: sibling(of: url, suffix: "-sheet\(index + 1)"))
             }
-            if let combined = composite(layers, size: main.frame.size) {
+            if sheets.isEmpty {
+                write(mainImage, to: url)
+            } else if let combined = composite(layers, size: main.frame.size) {
                 write(combined, to: url)
             }
 
@@ -133,9 +135,20 @@
             }
         }
 
-        /// One window as it draws itself, title bar and toolbar included. No screen capture: the
-        /// view hierarchy is asked to draw into a bitmap, so no permission is needed.
+        /// One window as the window server shows it, title bar, toolbar and Liquid Glass included.
+        /// On macOS 26 the views no longer draw themselves into a bitmap (`cacheDisplay` gives a
+        /// white picture), so the picture is asked of the window server, which an app may do for
+        /// its own windows without Screen Recording permission. Drawing the views is the fallback.
         private static func image(of window: NSWindow) -> NSBitmapImageRep? {
+            if window.windowNumber > 0,
+                let picture = OwnWindowCapture.image(of: CGWindowID(window.windowNumber)),
+                picture.width > 1, picture.height > 1
+            {
+                let rep = NSBitmapImageRep(cgImage: picture)
+                rep.size = window.frame.size
+                return rep
+            }
+            say("no window server picture of \(window.className); drawing its views instead")
             // The frame view holds the title bar and toolbar as well as the content.
             guard let view = window.contentView?.superview ?? window.contentView,
                 let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
@@ -158,11 +171,13 @@
                     bitsPerPixel: 0),
                 let context = NSGraphicsContext(bitmapImageRep: target)
             else { return nil }
-            target.size = size
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = context
+            // The context counts pixels; the rectangles are in points.
+            context.cgContext.scaleBy(x: scale, y: scale)
             for (layer, rect) in layers { layer.draw(in: rect) }
             NSGraphicsContext.restoreGraphicsState()
+            target.size = size
             return target
         }
 
@@ -183,6 +198,29 @@
             } catch {
                 say("write failed: \(error)")
             }
+        }
+    }
+
+    /// `CGWindowListCreateImage` is the one way for an app to picture its own windows without Screen
+    /// Recording permission (ScreenCaptureKit, its replacement, asks for the permission even then).
+    /// The macOS 15 SDK marks it obsolete, so it cannot be named in code, but the symbol is still in
+    /// CoreGraphics on macOS 26 and still answers for the caller's own windows, so it is looked up at
+    /// run time. Debug builds only; if the symbol ever goes, `image(of:)` falls back to drawing.
+    private enum OwnWindowCapture {
+        private typealias CreateImage =
+            @convention(c) (CGRect, UInt32, CGWindowID, UInt32) ->
+            Unmanaged<CGImage>?
+        /// kCGWindowListOptionIncludingWindow.
+        private static let includingWindow: UInt32 = 1 << 3
+        /// kCGWindowImageBoundsIgnoreFraming (no shadow) | kCGWindowImageBestResolution (Retina).
+        private static let imageOptions: UInt32 = 1 << 0 | 1 << 3
+
+        static func image(of window: CGWindowID) -> CGImage? {
+            guard let program = dlopen(nil, RTLD_LAZY),
+                let symbol = dlsym(program, "CGWindowListCreateImage")
+            else { return nil }
+            let create = unsafeBitCast(symbol, to: CreateImage.self)
+            return create(.null, includingWindow, window, imageOptions)?.takeRetainedValue()
         }
     }
 #endif

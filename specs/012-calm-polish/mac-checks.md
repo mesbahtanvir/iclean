@@ -7,7 +7,7 @@ names the same risks.
 
 ## Pictures without Screen Recording permission
 
-`WindowSnapshot` (debug builds only) makes the app draw its own windows into PNG files and quit. Build:
+`WindowSnapshot` (debug builds only) makes the app save its own windows as PNG files, as the window server shows them, and quit. Build:
 
 ```bash
 xcodebuild build -project iclean.xcodeproj -scheme iclean -destination 'platform=macOS' \
@@ -35,7 +35,9 @@ Then one command per picture. `-SnapshotTo` writes the main window with any shee
 | Settings, Your Data tab | `$APP $D -ShowScreen settingsData -WindowSize 820x640 -SnapshotAfter 3 -SnapshotTo /tmp/settings-data.png` |
 | How Removal Works | `$APP $D -ShowScreen help -WindowSize 820x540 -SnapshotAfter 3 -SnapshotTo /tmp/help.png` |
 
-`-DemoScenario clean`, `empty`, `denied`, `limited` and `large30k` give the other states.
+`-DemoScenario clean`, `empty`, `denied`, `limited` and `large30k` give the other states. The waits
+above suit a fast Mac: if the log says `sheets=0` for a sheet picture, or a results picture shows the
+scan still running, raise `-SnapshotAfter` (a Debug build scans the demo library slowly).
 
 ## By hand
 
