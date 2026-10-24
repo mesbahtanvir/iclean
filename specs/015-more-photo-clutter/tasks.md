@@ -62,9 +62,9 @@ totals and digests. Paths are from the repository root; `CK` is
 
 **Independent test**: `ScreenRecordingsCategoryTests`, `ScreenRecordingsFlowTests`, the baseline's seeded recordings land in Screen Recordings and in nothing else.
 
-- [ ] T029 [P] [US3] `CK/Grouping/ScreenRecordingsCategory.swift` (ScreenshotsCategory pattern): `kind == .screenRecording`, newest first, `needsAnalysis = false`; `CK/Results/StandardPipeline.swift`: after `ScreenshotsCategory`
-- [ ] T030 [P] [US3] `CKT/Unit/ScreenRecordingsCategoryTests.swift`: listing and order; a recording among the 50 largest is in Screen Recordings not Large Videos; nothing preselected; free app: `analysisSource == .metadataOnly` and no analyzer call (VideosAreNotAnalyzedTests pattern)
-- [ ] T031 [US3] `iclean/Shared/Formatting.swift`: title "Screen Recordings", glyph `record.circle`, caption "Screen recordings, newest first."; `CategoryStyle.swift`; `iclean/Features/Category/CategoryView.swift:35` uses the video list layout for `.screenRecordings` too; `iclean/Mac/MacCommands.swift:109` "Select All Videos" for it; `iclean/Shared/Components.swift:298` counts it as a video category
+- [X] T029 [P] [US3] `CK/Grouping/ScreenRecordingsCategory.swift` (ScreenshotsCategory pattern): `kind == .screenRecording`, newest first, `needsAnalysis = false`; `CK/Results/StandardPipeline.swift`: after `ScreenshotsCategory`
+- [X] T030 [P] [US3] `CKT/Unit/ScreenRecordingsCategoryTests.swift`: listing and order; a recording among the 50 largest is in Screen Recordings not Large Videos; nothing preselected; free app: `analysisSource == .metadataOnly` and no analyzer call (VideosAreNotAnalyzedTests pattern)
+- [X] T031 [US3] `iclean/Shared/Formatting.swift`: title "Screen Recordings", glyph `record.circle`, caption "Screen recordings, newest first."; `CategoryStyle.swift`; `iclean/Features/Category/CategoryView.swift:35` uses the video list layout for `.screenRecordings` too; `iclean/Mac/MacCommands.swift:109` "Select All Videos" for it; `iclean/Shared/Components.swift:298` counts it as a video category
 - [ ] T032 [US3] `iclean/App/DemoPhotoLibrary.swift`: three `.screenRecording` items; `icleanUITests/ScreenRecordingsFlowTests.swift`: three rows, none selected, length and size, remove one; `BaselineCatalogV5.swift`: two recordings (`BaselineKind.screenRecording`, written with the screen-recording subtype where PhotoKit allows, else listed as a host-only expectation) expected in `screenRecordings`
 
 ## Phase 6: User Story 4 — Dark and pocket shots (P4)

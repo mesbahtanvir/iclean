@@ -42,7 +42,7 @@ final class EdgeCaseTests: XCTestCase {
     }
 
     func testInterruptedScanResumesAfterRelaunch() {
-        // Four items per chunk, so the 28 demo items span several chunks and a kill after
+        // Four items per chunk, so the 31 demo items span several chunks and a kill after
         // a few seconds leaves some of them saved (003).
         var app = launchApp(
             scenario: "slow", extraArguments: ["-PersistStore", "-ResetStore", "-ChunkSize", "4"])
@@ -56,7 +56,7 @@ final class EdgeCaseTests: XCTestCase {
         resume.tap()
         // The first count shown after Resume is the saved one, not zero.
         let counter = app.staticTexts.matching(
-            NSPredicate(format: "label MATCHES %@", "\\d+ of 28 checked")
+            NSPredicate(format: "label MATCHES %@", "\\d+ of 31 checked")
         ).firstMatch
         XCTAssertTrue(counter.waitForExistence(timeout: 10))
         let resumedAt = Int(counter.label.split(separator: " ").first ?? "") ?? 0

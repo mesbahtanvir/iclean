@@ -158,7 +158,7 @@ struct SelectSuggestedButton: View {
         } label: {
             if all {
                 Text("Keep All")
-            } else if category == .largeVideos {
+            } else if category.listsVideos {
                 Text("Select All Videos")
             } else {
                 Text("Select Suggested")

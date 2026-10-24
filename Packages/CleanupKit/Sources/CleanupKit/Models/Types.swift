@@ -73,6 +73,12 @@ public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable
 
     public var action: CategoryAction { self == .livePhotos ? .trim : .remove }
 
+    /// Whether every item the category lists is a video. The screens then say "video" and lay the
+    /// items out as a list with length and size.
+    public var listsVideos: Bool {
+        self == .largeVideos || self == .duplicateVideos || self == .screenRecordings
+    }
+
     /// Large Videos, Unimportant, Screen Recordings and Live Photos only inform; nothing in them
     /// starts selected (001 FR-010a, 011 FR-004, 015).
     public var preselects: Bool {

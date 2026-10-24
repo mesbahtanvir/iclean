@@ -129,9 +129,9 @@ struct VideoRow: View {
         }
     }
 
-    /// "Video, 5 minutes, 900 MB, Mar 3, 2024".
+    /// "Video, 5 minutes, 900 MB, Mar 3, 2024", or "Screen Recording, …".
     private func spoken(_ item: CleanupKit.LibraryItem?) -> String {
-        var parts = [ItemKind.video.spokenName]
+        var parts = [(item?.metadata.kind ?? .video).spokenName]
         if let length = item?.metadata.duration { parts.append(Format.durationSpoken(length)) }
         parts.append(
             Format.bytes(item?.effectiveByteSize ?? 0, estimate: item?.sizeIsEstimate ?? true))

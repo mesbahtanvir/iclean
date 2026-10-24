@@ -22,6 +22,7 @@ public enum StandardPipeline {
             BlurDetector(),
             UnimportantDetector(levels: levels),
             ScreenshotsCategory(),
+            ScreenRecordingsCategory(),
         ]
         if features.videoAnalysis { all.append(DuplicateVideoDetector(parallelism: parallelism)) }
         all.append(LargeVideosCategory())

@@ -226,6 +226,13 @@
                     "shot\(i)", kind: .screenshot, image: DemoImages.stripes(seed: UInt64(100 + i)),
                     minutes: 9000 + Double(i) * 100, width: 1206, height: 2622, size: 400_000)
             }
+            // Three screen recordings (spec 015): listed from metadata, newest first, none selected.
+            for i in 0..<3 {
+                add(
+                    "rec\(i)", kind: .screenRecording, image: DemoImages.stripes(seed: UInt64(120 + i)),
+                    minutes: 9500 + Double(i) * 100, width: 1206, height: 2622,
+                    duration: 8 + Double(i) * 20, size: 15_000_000 + Int64(i) * 20_000_000)
+            }
             // Two copies of one clip and a large video. Free: no video is analyzed, so all three
             // are listed by size. Pro (-ProVideoAnalysis): the two copies are grouped.
             let v = DemoImages.scene(seed: 99)
