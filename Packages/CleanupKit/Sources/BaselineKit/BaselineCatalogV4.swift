@@ -3,9 +3,9 @@ import Foundation
 /// Version 4 of the baseline library: 73 small assets that cover every category, the keeper
 /// rules, the false-positive controls, capture dates, favorites, albums and locations.
 ///
-/// Version 2 dropped the duplicate videos of version 1: the free app does not analyze videos
-/// (video analysis is a Pro feature), so videos are only listed by size and two copies of one
-/// clip must not be grouped. Version 3 added copies that differ in their dates, location or a
+/// Version 2 dropped the duplicate videos of version 1: the app does not analyze videos (004
+/// FR-004a, 016), so videos are only listed by size and two copies of one clip must not be
+/// grouped. Version 3 added copies that differ in their dates, location or a
 /// default date, to prove the date-aware keeper rule (the copy with the most probable capture
 /// date is kept) on every device. Version 4 made the later-dated copy of dup-G the larger file,
 /// so that the old size rule and the date rule disagree and only the date rule keeps the right copy.

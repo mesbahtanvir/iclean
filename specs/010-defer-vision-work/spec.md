@@ -37,7 +37,7 @@ time would go.
 `SimilarShotsDetector` receives only photos and live photos with an analysis, and any earlier category can take
 photos away from it, never add one. So a photo's print is read only if another **photo or live photo with a
 capture date** is within 60 s of it, and its face quality only if that is so or it has a `burstID`. Videos
-(Pro) and screenshots never reach `SimilarShotsDetector`. Call this the photo's **Vision demand**:
+(not analyzed at all since 2026-10-24, 016) and screenshots never reach `SimilarShotsDetector`. Call this the photo's **Vision demand**:
 
 - `featurePrint` is demanded when another photo/live photo of the library lies within 60 s (`timeIntervalSince <= window`, as the detector tests it; a photo without a capture date has none);
 - `faceQuality` is demanded in that case, or when the photo has a `burstID`;
@@ -179,6 +179,8 @@ it, on both profiles) and the digests in the validation log.
    has the same Neural Engine work per photo and less other capacity. Not measured on a phone.
 6. **Videos (Pro).** No detector reads a video's feature print (`DuplicateVideoDetector` uses hash,
    miniature and duration), so a video in a Pro scan skips it too. The free app does not analyze videos.
+   *Since 2026-10-24 there is no Pro version and no `DuplicateVideoDetector`; no video is analyzed
+   (specs/016-free-photos-only/spec.md).*
 7. **Not done.** A photo whose only neighbours are frames of its own burst could skip its print too (pairs of
    one burst are not compared); bursts are rare and the rule would then depend on a second relation, so the
    photo keeps its print. The repair re-analyzes a photo whole although its hash, miniature and sharpness come

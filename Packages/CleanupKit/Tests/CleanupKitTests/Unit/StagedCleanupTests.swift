@@ -42,18 +42,15 @@ import Testing
         #expect(plan.toAnalyze.map(\.assetID) == ["new", "tie1", "tie2", "old"])
     }
 
-    @Test func screenshotsAndFreeVideosAreQuickWinsButProVideosAreNot() {
+    @Test func screenshotsAndVideosAreQuickWins() {
         let library = [
             Make.meta("p"), Make.meta("s", kind: .screenshot),
             Make.meta("v", kind: .video, duration: 30),
         ]
-        let free = ScanPlanner.plan(library: library, stored: [], kind: .full, policy: .default)
-        #expect(Set(free.quickWins.map(\.assetID)) == ["s", "v"])
-        let pro = ScanPlanner.plan(
-            library: library, stored: [], kind: .full, policy: .default, features: .pro)
-        #expect(Set(pro.quickWins.map(\.assetID)) == ["s"])
+        let plan = ScanPlanner.plan(library: library, stored: [], kind: .full, policy: .default)
+        #expect(Set(plan.quickWins.map(\.assetID)) == ["s", "v"])
         // Quick wins stay in the job, so counts and chunks are unchanged.
-        #expect(free.toAnalyze.count == 3)
+        #expect(plan.toAnalyze.count == 3)
     }
 
     @Test func aMetadataChangeIsRefreshedWithoutTouchingTheAnalysis() async throws {

@@ -4,7 +4,7 @@
 
 - A **Cleanup plan** list above the category rows with four rows: Quick wins, Photos, Similar
   shots, Best-shot refinement. In the free app there is no Duplicate Videos row or category (a
-  Pro feature, FR-004a); Large Videos is listed by file size under Quick wins.
+  Pro feature, FR-004a; no Pro version since 2026-10-24, 016); Large Videos is listed by file size under Quick wins.
 - Each row shows one state: Waiting, Running with "checked N of M" and a time range, Paused
   with a reason, Done with what was found, or Not run with "Run now".
 - The primary button reads Start cleaning, Review N items, or Continue finding more.

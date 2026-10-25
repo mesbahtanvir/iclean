@@ -234,7 +234,9 @@ and assert that only unchecked work runs and the final results equal a one-shot 
   or compared, and there is no Duplicate Videos category. Large Videos stays, because it ranks
   videos by file size and needs no analysis. Video analysis and the Duplicate Videos category
   are a Pro feature (a one-time $2 purchase) that is not part of this feature's work and is not
-  built (Decision 7). This amends 001 FR-004b and the video half of FR-008.
+  built (Decision 7). This amends 001 FR-004b and the video half of FR-008. *Amended
+  2026-10-24: there is no Pro version; videos are not analyzed in any edition, and Decision 7 is
+  moot (see specs/016-free-photos-only/spec.md).*
 - **FR-005**: Photos MUST be processed newest first, in blocks. The first block MUST be small
   (about 500 photos) so that the first results appear within about 30 seconds on a typical
   phone, and later blocks MUST grow to a size set by the device.
@@ -365,8 +367,8 @@ Times marked "reference phone" are for a phone of the class the first spec targe
 - Everything in 001 to 003 about privacy, confirmation, and durability applies unchanged.
 - In the free app, videos are outside analysis. The Duplicate Videos category, the video
   poster-frame analysis, and the video keeper rule are Pro only (a one-time $2 purchase, not
-  built; see FR-004a), and Large Videos works from file sizes alone. In the free app, stores
-  that already hold video analysis keep it unused.
+  built; see FR-004a; no Pro version since 2026-10-24, specs/016-free-photos-only/spec.md), and Large
+  Videos works from file sizes alone. Stores that already hold video analysis keep it unused.
 
 ## Decisions for you
 
@@ -390,3 +392,5 @@ Each has a default the plan follows unless you say otherwise.
    no connection of its own. Default: build nothing until you approve that reading or amend
    the constitution. The Mac sandbox and the no-network test plan must then treat the system's
    purchase traffic as not the app's.
+   *Superseded 2026-10-24: iclean is free, with no Pro version and no purchase; nothing in items
+   6 and 7 is built (specs/016-free-photos-only/spec.md).*

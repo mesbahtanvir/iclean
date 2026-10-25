@@ -84,8 +84,8 @@ Expected:
 - **Duplicate Videos** (Pro only): the duplicate video pair is one group; higher quality
   is kept. *Pro only since 2026-10-18: the free app does not analyze videos, so it has no
   Duplicate Videos category; video analysis is a one-time $2 Pro feature, not built yet (see
-  specs/004-phased-cleaning/spec.md FR-004a). To check this item, launch a debug build with
-  `-ProVideoAnalysis`.*
+  specs/004-phased-cleaning/spec.md FR-004a). Since 2026-10-24 there is no Pro version and no
+  `-ProVideoAnalysis` argument; this item is not checked (specs/016-free-photos-only/spec.md).*
 - **Large Videos**: up to 50 videos, largest first, none selected.
 - An item never appears in two categories.
 

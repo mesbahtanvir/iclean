@@ -117,7 +117,7 @@ locations). Only a run on each platform shows that it arrives and is read correc
   are unknown, not "none". The first scan after the update refreshes every stored item's metadata, in
   slices of 500, without analyzing anything again.
 - Edited versions of a photo are never grouped with the original (001), so edits never compete on date.
-- Videos: copies of videos are only grouped with Pro (see spec 004 FR-004a); the same rule would apply.
+- Videos: copies of videos are only grouped with Pro (see spec 004 FR-004a); the same rule would apply. (No Pro version since 2026-10-24, 016: videos are never grouped.)
 - All copies doubtful for the same reason (for example every copy dated 1970): the rule falls back to
   resolution, file size and the oldest, as before; different default dates are not ranked against each other.
 - Burst frames and the copies of one photo that share a second are not a bulk import.

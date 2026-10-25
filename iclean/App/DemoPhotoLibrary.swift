@@ -210,8 +210,8 @@
                     "shot\(i)", kind: .screenshot, image: DemoImages.stripes(seed: UInt64(100 + i)),
                     minutes: 9000 + Double(i) * 100, width: 1206, height: 2622, size: 400_000)
             }
-            // Two copies of one clip and a large video. Free: no video is analyzed, so all three
-            // are listed by size. Pro (-ProVideoAnalysis): the two copies are grouped.
+            // Two copies of one clip and a large video. No video is analyzed (004 FR-004a, 016),
+            // so all three are listed by size.
             let v = DemoImages.scene(seed: 99)
             add("vid-hd", kind: .video, image: v, minutes: 10000, width: 1920, height: 1080, duration: 12, size: 24_000_000)
             add("vid-sd", kind: .video, image: DemoImages.resized(v, 0.5), minutes: 10100, width: 1280, height: 720, duration: 12.2, size: 9_000_000)

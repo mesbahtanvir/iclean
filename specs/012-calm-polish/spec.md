@@ -14,7 +14,7 @@ Data and Network check (constitution): this change touches no stored data except
 An independent critic checked this spec against the code and found the points below. Each is decided here so no builder has to guess.
 
 ### 0.1 Facts the spec got wrong
-- **Duplicate Videos keep the group layout.** Only Large Videos is a list (CategoryView uses `listLayout` for `.largeVideos` alone). Duplicate Videos stay grouped sections with Compare and Keep This Copy (DuplicateVideosFlowTests depends on it). Section 6.6 and the Mac Table apply to **Large Videos only**.
+- **Duplicate Videos keep the group layout.** Only Large Videos is a list (CategoryView uses `listLayout` for `.largeVideos` alone). Duplicate Videos stay grouped sections with Compare and Keep This Copy (DuplicateVideosFlowTests depends on it). Section 6.6 and the Mac Table apply to **Large Videos only**. *Duplicate Videos and `DuplicateVideosFlowTests` were removed 2026-10-24 with the Pro version (specs/016-free-photos-only/spec.md); 6.6 is about Large Videos alone.*
 - **"Finished a full scan" is its own fact.** `lastScanDate` is the newest session of any kind (a quick check on every foreground, a Stop) and cannot decide "Nothing to clean up". Add `LaunchState.lastFullScanCompletedAt` (newest session with kind `.full` and state `.completed`) and `AppModel.hasFinishedFullScan`; "Scanned … ago" uses it too.
 - **`libraryItemCount` is the store's item count**, re-read after a scan completes (`Store.itemCount()`), never `progress.total` (a rescan of an unchanged library reports 0 or a handful of new items).
 - **The `.failed` launch phase** gets its own branch ahead of first run: only the "Saved results couldn't be read" notice and the Settings gear. Never "Nothing to clean up".
@@ -245,7 +245,7 @@ Captions:
 - Similar Shots: "Several shots of the same moment. We keep the best one and select the rest for removal."
 - Blurry Photos: "Photos that look out of focus or shaken. All are selected for removal. Deselect any you want to keep."
 - Screenshots: "All your screenshots, newest first. All are selected for removal. Deselect any you want to keep."
-- Duplicate Videos: "Copies of the same video. We keep one of each and select the rest for removal."
+- Duplicate Videos: "Copies of the same video. We keep one of each and select the rest for removal." *(Removed 2026-10-24 with the Pro version, 016.)*
 - Large Videos: "Your biggest videos, largest first. Nothing is selected for you."
 
 Cell grammar (the whole verdict language):

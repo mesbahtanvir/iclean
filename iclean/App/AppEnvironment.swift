@@ -11,8 +11,6 @@ struct AppEnvironment: Sendable {
     let resultsLoader: ResultsLoader
     let remover: Remover
     let sizeMeasurer: SizeMeasurer
-    /// What Pro unlocks for this run. Free for everyone until the purchase exists.
-    let features: ProFeatures
     /// How far Similar Shots and Unimportant look (spec 011). Shared with the detectors, which read it
     /// whenever results are built.
     let levels: ResultLevels
@@ -35,21 +33,20 @@ struct AppEnvironment: Sendable {
     }
 
     static func make(
-        library: PhotoLibrary, store: Store, features: ProFeatures = LaunchArguments.features,
-        levels: ResultLevels = ResultLevels()
+        library: PhotoLibrary, store: Store, levels: ResultLevels = ResultLevels()
     ) -> AppEnvironment {
-        let builder = DefaultResultsBuilder(detectors: Detectors.all(features, levels: levels))
+        let builder = DefaultResultsBuilder(detectors: Detectors.all(levels: levels))
         return AppEnvironment(
             library: library, store: store,
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
-                profile: LaunchArguments.scanProfile, features: features,
+                profile: LaunchArguments.scanProfile,
                 deferVision: LaunchArguments.deferVision, minProgressInterval: .milliseconds(250)),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
             sizeMeasurer: SizeMeasurer(library: library, store: store),
-            features: features, levels: levels)
+            levels: levels)
     }
 
     #if DEBUG
@@ -136,16 +133,6 @@ enum LaunchArguments {
             }
         #endif
         return true
-    }
-
-    /// What Pro unlocks. Always free in a release build: the one-time Pro purchase is not
-    /// built yet, and this is the single place it will plug into. DEBUG only:
-    /// `-ProVideoAnalysis` turns video analysis on, so the Pro path can be tested.
-    static var features: ProFeatures {
-        #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-ProVideoAnalysis") { return .pro }
-        #endif
-        return .free
     }
 
     static var demoScenario: String {

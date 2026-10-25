@@ -329,7 +329,7 @@ if !skipResults {
     let slim = DefaultResultsBuilder(detectors: detectors)
         .buildResults(items: inputs.items, keepMarks: inputs.keepMarks).slimmed()
     report("buildResults + slimmed", start, sampler)
-    let key = BuilderKey(detectors: detectors.map(\.category), features: .free, access: .full)
+    let key = BuilderKey(detectors: detectors.map(\.category), access: .full)
     sampler.reset()
     start = ContinuousClock.now
     let sealed = try StateCodec.seal(

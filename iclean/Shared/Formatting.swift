@@ -77,7 +77,6 @@ extension CleanupCategory {
         case .blurry: String(localized: "Blurry Photos")
         case .unimportant: String(localized: "Unimportant")
         case .screenshots: String(localized: "Screenshots")
-        case .duplicateVideos: String(localized: "Duplicate Videos")
         case .largeVideos: String(localized: "Large Videos")
         }
     }
@@ -89,7 +88,6 @@ extension CleanupCategory {
         case .blurry: "camera.filters"
         case .unimportant: "photo.badge.minus"
         case .screenshots: "camera.viewfinder"
-        case .duplicateVideos: "film.stack"
         case .largeVideos: "film"
         }
     }
@@ -120,11 +118,6 @@ extension CleanupCategory {
             String(
                 localized:
                     "All your screenshots, newest first. All are selected for removal. Deselect any you want to keep."
-            )
-        case .duplicateVideos:
-            String(
-                localized:
-                    "Copies of the same video. We keep one of each and select the rest for removal."
             )
         case .largeVideos:
             String(localized: "Your biggest videos, largest first. Nothing is selected for you.")

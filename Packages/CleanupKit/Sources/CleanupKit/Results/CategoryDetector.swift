@@ -1,7 +1,7 @@
 import Foundation
 
 public enum GroupType: String, Sendable, Codable {
-    case duplicatePhotos, similarShots, duplicateVideos
+    case duplicatePhotos, similarShots
     /// A single flagged item (blurry, screenshot, large video).
     case single
 }

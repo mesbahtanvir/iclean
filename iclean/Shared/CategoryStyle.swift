@@ -13,7 +13,6 @@ extension CleanupCategory {
         case .blurry: .orange
         case .unimportant: .gray
         case .screenshots: .teal
-        case .duplicateVideos: .pink
         case .largeVideos: .purple
         }
     }

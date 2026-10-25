@@ -184,6 +184,7 @@ that needs both accuracy suites at both sizes first.
   give the same control without a vocabulary the user has to learn.
 - **A video-copies step** (poster-frame hash for videos with a duration twin, in proposal A):
   Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a
-  one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a).
-  Large Videos stays in the free app because it reads file sizes, not pixels.
+  one-time $2 Pro feature, not built yet (see specs/004-phased-cleaning/spec.md FR-004a). Not
+  built since 2026-10-24: there is no Pro version (specs/016-free-photos-only/spec.md). Large Videos stays
+  because it reads file sizes, not pixels.
 - **tvOS and watchOS**: see spec 005.

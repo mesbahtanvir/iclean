@@ -19,7 +19,7 @@ public enum BaselineRunner {
         // Its own store, in memory: nothing here touches the app's saved results.
         let store = try SwiftDataStore.inMemory()
         let scanner = ScanPipeline(
-            library: subset, store: store, analyzer: StandardPipeline.analyzer, features: .free)
+            library: subset, store: store, analyzer: StandardPipeline.analyzer)
 
         let clock = ContinuousClock()
         let scanStart = clock.now
@@ -32,7 +32,7 @@ public enum BaselineRunner {
         items = try await store.items()
 
         let buildStart = clock.now
-        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors(.free))
+        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors())
             .buildResults(items: items, keepMarks: [])
         let resultsSeconds = seconds(clock.now - buildStart)
 

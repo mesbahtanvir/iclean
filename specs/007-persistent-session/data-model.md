@@ -55,7 +55,7 @@ Header:
 |-------|-------|
 | `builderVersion` | `BuilderVersion.current`, a constant a person raises when detectors, thresholds, `KeeperRules` or `DateCredibility` change. A golden-output test over the baseline library fails if output changes without a raise |
 | `detectors` | the categories enabled (the detector set) |
-| `videoAnalysis` | the Pro flag (`ProFeatures`) |
+| `videoAnalysis` | the Pro flag (`ProFeatures`); removed 2026-10-24 with the Pro version (016). A saved key that still carries it is read without it, and the changed `thresholds` string rebuilds those results once |
 | `access` | library access level (`full` or `limited`) |
 | `timeZone`, `calendar` | identifiers; midnight and placeholder checks and shared-timestamp counts depend on them (006) |
 | `thresholds` (optional) | a string of the threshold constants the detectors, keeper rules and date rules read, so editing one invalidates by itself |

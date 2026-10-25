@@ -9,7 +9,8 @@
 > `commit_journal` table. A removal runs an immutable plan checked against the library when the
 > confirm sheet opens, and results are rebuilt afterwards, instead of being recovered from a
 > journal. See `specs/007-persistent-session/` and `specs/008-staged-cleanup-at-scale/`. The
-> text below is the original design and is kept for its reasoning.
+> text below is the original design and is kept for its reasoning. Section 4, the paywall,
+> describes nothing that ships: iclean is free, with no purchase (specs/016-free-photos-only/spec.md).
 
 ---
 

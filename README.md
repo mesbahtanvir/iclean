@@ -1,9 +1,9 @@
 # iclean
 
 An iPhone app that cleans up your photo library: duplicate photos, similar shots,
-blurry photos, screenshots and large videos. The free app does not analyze videos (video
-analysis is a Pro feature, a one-time $2 purchase, not built yet); large videos are ranked
-by file size. Free up iCloud space and declutter the Photos app.
+blurry photos, screenshots and large videos. iclean is free, with no paid features. It does
+not analyze videos; large videos are ranked by file size. Free up iCloud space and declutter
+the Photos app.
 
 A scan keeps running after you leave the app (iOS 26 and later), with its progress in
 the Dynamic Island and on the Lock Screen. Stopping it there never loses work: open
@@ -15,7 +15,8 @@ confirmation.
 Everything stays on your iPhone. iclean never connects to the internet, needs no
 account, and collects nothing. It reads only previews already on the phone and never
 downloads photos from iCloud. Removed items go to **Recently Deleted** in the Photos app,
-where you can restore them. See the [constitution](.specify/memory/constitution.md).
+where you can restore them. The source code is public, so anyone can read what the app does
+with their photos. See the [constitution](.specify/memory/constitution.md).
 
 ## Build
 

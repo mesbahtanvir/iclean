@@ -16,10 +16,9 @@ public enum AnalysisSource: String, Sendable, Codable {
     case cloudPreview
     /// No usable preview on the phone; the item was not analyzed.
     case notScanned
-    /// Not analyzed on purpose: in the free app videos are listed by file size only and no
-    /// frame of a video is opened (video analysis is a Pro feature, `ProFeatures`). Unlike
-    /// `notScanned` this is not a failure and is not counted as "not scanned". It is not
-    /// retried either, until Pro is on and a full scan picks the video up (`ScanPlanner`).
+    /// Not analyzed on purpose: videos are listed by file size only, and no frame of a video is
+    /// ever opened (004 FR-004a, 016). Unlike `notScanned` this is not a failure, is not counted
+    /// as "not scanned" and is never retried.
     case metadataOnly
 
     /// Whether items from this source can carry an analysis.
@@ -41,7 +40,7 @@ public enum ScanKind: String, Sendable, Codable {
 /// Cleanup categories, in assignment order: an item is listed only in the first
 /// category that matches it.
 public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable {
-    case duplicates, similar, blurry, unimportant, screenshots, duplicateVideos, largeVideos
+    case duplicates, similar, blurry, unimportant, screenshots, largeVideos
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
