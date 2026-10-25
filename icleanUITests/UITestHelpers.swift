@@ -24,9 +24,11 @@ extension XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         // With eight categories the last rows sit under the pinned Review bar (where a tap lands on
         // the bar, not the row) until the list scrolls.
+        // The tap below lands near the top of the row, so only that part must be clear of the bar
+        // (at accessibility sizes a row can be taller than the space above the bar).
         let bar = app.buttons["results.reviewAll"]
         var tries = 0
-        while bar.exists, row.frame.maxY > bar.frame.minY, tries < 4 {
+        while bar.exists, row.frame.minY + 48 > bar.frame.minY, tries < 4 {
             app.swipeUp()
             tries += 1
         }
