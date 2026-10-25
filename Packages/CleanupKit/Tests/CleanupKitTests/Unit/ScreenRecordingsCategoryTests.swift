@@ -69,7 +69,7 @@ import Testing
             size: 30_000_000)
         let store = try InMemoryStore.make()
         let scanner = ScanPipeline(
-            library: lib, store: store, analyzer: StubAnalyzer(), chunkSize: 2, features: .free)
+            library: lib, store: store, analyzer: StubAnalyzer(), chunkSize: 2)
         for await _ in await scanner.startFullScan() {}
         #expect(Set(lib.previewRequests) == ["p"])
         let rec = try await store.items().first { $0.assetID == "rec" }

@@ -252,7 +252,7 @@ import Testing
             library: lib, store: store, analyzer: StubAnalyzer(),
             profile: ScanProfile(
                 name: "lanes", concurrency: 8, lanes: 4, chunkSize: 8, writeBehind: 4),
-            progressEvery: 1, policy: fast)
+            progressEvery: 1, policy: fast, pauseWaitLimit: .seconds(20))
         var pauses = 0
         var last: ScanProgress?
         for await p in await scanner.startFullScan() {
@@ -260,6 +260,10 @@ import Testing
             if p.state == .running, p.processed >= 20 * (pauses + 1), pauses < 3 {
                 pauses += 1
                 await scanner.pause(reason: .user)
+                // The store is only quiet once the pause is acknowledged. Past the wait limit a write
+                // can still land between the two reads below, which a CI runner running the whole
+                // suite at once showed (the 2 s default ran out and the chunks came out ahead).
+                #expect(await scanner.pauseAcknowledgements == pauses, "pause \(pauses) was saved")
                 let session = try #require(try await store.currentSession())
                 // The stored counters are those of the stored chunks: nothing counted twice or ahead,
                 // and never more than the items the store holds.

@@ -306,7 +306,9 @@ photos are not listed.
   guessing from dimensions or names.
 - Emptiness is computed from the same preview as sharpness and stored with it; the thresholds are
   tuned on the baseline library and fixtures, with the Night mode and candle cases seeded.
-- The Pro purchase (004) is unchanged: nothing in this entry is Pro.
+- Nothing in this entry analyzes a video. (Written against the Pro idea of 004; since
+  2026-10-24 there is no Pro version at all, see specs/016-free-photos-only, and "the free app"
+  above simply means the app.)
 - Data & Network: the scan reads burst identifiers, picked flags, Live Photo and screen-recording
   kinds and resource sizes from the library, and a per-photo emptiness score from the preview
   already decoded. All of it is stored in the local results store beside the existing analysis;

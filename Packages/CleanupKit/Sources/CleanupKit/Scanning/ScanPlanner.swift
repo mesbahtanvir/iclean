@@ -9,7 +9,7 @@ struct ScanPlan: Sendable {
     var refreshed: [AssetMetadata]
     /// Items to analyze, newest first.
     var toAnalyze: [AssetMetadata]
-    /// Items that need no analysis to be listed: screenshots, and videos in the free app. They are
+    /// Items that need no analysis to be listed: screenshots and videos. They are
     /// stored at once, so Screenshots and Large Videos can be reviewed before any photo is opened
     /// (spec 008, quick wins). They stay in `toAnalyze`, so counts and chunks are unchanged.
     var quickWins: [AssetMetadata]
@@ -27,7 +27,7 @@ enum ScanPlanner {
     ///   spec 009 did: every photo gets all of it.
     static func plan(
         library: [AssetMetadata], stored: [StoredItemSummary], kind: ScanKind,
-        policy: ScanRetryPolicy, features: ProFeatures = .free, deferVision: Bool = true
+        policy: ScanRetryPolicy, deferVision: Bool = true
     ) -> ScanPlan {
         let storedByID = Dictionary(
             stored.map { ($0.assetID, $0) }, uniquingKeysWith: { a, _ in a })
@@ -51,14 +51,6 @@ enum ScanPlanner {
                 toAnalyze.append(m)
                 continue
             }
-            // Videos stored without analysis (the free app) are analyzed once Pro is on, on a
-            // full scan the user starts. A quick check never starts that work (001 FR-005a).
-            if kind == .full, features.videoAnalysis, m.kind.isVideo,
-                existing.analysisSource == .metadataOnly
-            {
-                toAnalyze.append(m)
-                continue
-            }
             // A photo stored without Vision work that the library now demands: a photo arrived within
             // a minute of it, its date or burst changed (spec 010). Judged on the library as it is
             // now, never on whether this photo's own metadata changed. A quick check repairs too: the
@@ -75,7 +67,7 @@ enum ScanPlanner {
         let ordered = newestFirst(toAnalyze)
         var skipVision: [String: VisionWork] = [:]
         if let demand {
-            for m in ordered where !needsNoAnalysis(m, features: features) {
+            for m in ordered where !needsNoAnalysis(m) {
                 let skipped = demand.skipped(for: m)
                 if !skipped.isEmpty { skipVision[m.assetID] = skipped }
             }
@@ -83,14 +75,14 @@ enum ScanPlanner {
         return ScanPlan(
             gone: Set(storedByID.keys).subtracting(currentIDs), refreshed: refreshed,
             toAnalyze: ordered,
-            quickWins: ordered.filter { needsNoAnalysis($0, features: features) },
+            quickWins: ordered.filter { needsNoAnalysis($0) },
             repairs: newestFirst(repairs), skipVision: skipVision)
     }
 
     /// Whether an item is listed from its metadata alone (spec 008 FR-003): screenshots are
-    /// never grouped with photos, and the free app does not analyze videos (004 FR-004a).
-    static func needsNoAnalysis(_ m: AssetMetadata, features: ProFeatures) -> Bool {
-        m.kind == .screenshot || (m.kind.isVideo && !features.videoAnalysis)
+    /// never grouped with photos, and videos are never analyzed (004 FR-004a, 016).
+    static func needsNoAnalysis(_ m: AssetMetadata) -> Bool {
+        m.kind == .screenshot || m.kind.isVideo
     }
 
     /// Newest first, so the photos the person is likeliest to care about are checked, and

@@ -15,7 +15,6 @@ public struct BuilderKey: Codable, Equatable, Sendable {
     /// results by itself, whether or not anyone remembers to bump `BuilderVersion`.
     public var thresholds: String
     public var detectors: [String]
-    public var videoAnalysis: Bool
     public var access: String
     public var timeZone: String
     public var calendar: String
@@ -23,13 +22,12 @@ public struct BuilderKey: Codable, Equatable, Sendable {
     public var levels: String?
 
     public init(
-        detectors: [CleanupCategory], features: ProFeatures, access: LibraryAccess,
+        detectors: [CleanupCategory], access: LibraryAccess,
         calendar: Calendar = .current, levels: ResultLevels? = nil
     ) {
         builderVersion = BuilderVersion.current
         thresholds = Self.currentThresholds
         self.detectors = detectors.map(\.rawValue)
-        videoAnalysis = features.videoAnalysis
         self.access = access.rawValue
         timeZone = calendar.timeZone.identifier
         self.calendar = "\(calendar.identifier)"
@@ -53,7 +51,7 @@ extension BuilderKey {
             "\(UnimportantThresholds.noLocationPoints)", "\(UnimportantThresholds.lowAestheticsPoints)",
             "\(UnimportantThresholds.tight)", "\(UnimportantThresholds.medium)",
             "\(UnimportantThresholds.wide)",
-            "vid", "\(DuplicateVideoThresholds.duration)", "\(LargeVideosCategory.limit)",
+            "vid", "\(LargeVideosCategory.limit)",
             "burst", "\(BurstThresholds.minimumFrames)",
             "date", "\(DateThresholds.sameMoment)", "\(DateThresholds.savedWindow)",
             "\(DateThresholds.preservedGap)", "\(DateThresholds.sharedStampCount)",
@@ -235,7 +233,7 @@ extension CleanupResults {
     public func slimmed() -> CleanupResults {
         ResultsSnapshot(
             results: self,
-            builderKey: BuilderKey(detectors: [], features: .free, access: .full),
+            builderKey: BuilderKey(detectors: [], access: .full),
             itemCount: 0, keepMarkCount: 0
         ).results()
     }

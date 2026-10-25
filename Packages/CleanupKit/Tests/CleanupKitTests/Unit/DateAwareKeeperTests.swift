@@ -503,7 +503,7 @@ import Testing
         for i in 0..<4 {
             items.append(try await analyzed("other\(i)", date: stamp, imageSeed: UInt64(900 + i)))
         }
-        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors(.free))
+        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors())
             .buildResults(items: items, keepMarks: [])
         let group = results.category(.duplicates)?.groups.first
         #expect(group?.keepers == ["unique-copy"])

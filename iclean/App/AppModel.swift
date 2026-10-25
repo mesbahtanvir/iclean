@@ -536,8 +536,7 @@ final class AppModel {
 
     private func builderKey() -> BuilderKey {
         BuilderKey(
-            detectors: Detectors.all(environment.features).map(\.category),
-            features: environment.features, access: access, levels: environment.levels)
+            detectors: Detectors.all().map(\.category), access: access, levels: environment.levels)
     }
 
     /// The person chose how far a category looks (spec 011): Similar Shots from almost identical to the same

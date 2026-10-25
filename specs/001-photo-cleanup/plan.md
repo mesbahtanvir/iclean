@@ -10,7 +10,8 @@ An iPhone app that scans the Photos library on the device and offers five cleanu
 categories in the free app: duplicate photos, similar shots, blurry photos, screenshots, and
 large videos. (A sixth category, duplicate videos, is Pro only since 2026-10-18: the free
 app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet, see
-specs/004-phased-cleaning/spec.md FR-004a.) Removal always goes through one
+specs/004-phased-cleaning/spec.md FR-004a. Since 2026-10-24 there is no Pro version at all, see
+specs/016-free-photos-only/spec.md.) Removal always goes through one
 summary sheet and then to Recently Deleted. Built natively in Swift/SwiftUI. Analysis uses
 only Apple's on-device frameworks: PhotoKit for library access with network access always
 off, Vision feature prints for duplicates and similarity, and Laplacian sharpness plus

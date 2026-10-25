@@ -36,10 +36,9 @@ public enum AnalysisSource: String, Sendable, Codable {
     case cloudPreview
     /// No usable preview on the phone; the item was not analyzed.
     case notScanned
-    /// Not analyzed on purpose: in the free app videos are listed by file size only and no
-    /// frame of a video is opened (video analysis is a Pro feature, `ProFeatures`). Unlike
-    /// `notScanned` this is not a failure and is not counted as "not scanned". It is not
-    /// retried either, until Pro is on and a full scan picks the video up (`ScanPlanner`).
+    /// Not analyzed on purpose: videos are listed by file size only, and no frame of a video is
+    /// ever opened (004 FR-004a, 016). Unlike `notScanned` this is not a failure, is not counted
+    /// as "not scanned" and is never retried.
     case metadataOnly
 
     /// Whether items from this source can carry an analysis.
@@ -62,7 +61,7 @@ public enum ScanKind: String, Sendable, Codable {
 /// category that matches it.
 public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable {
     case duplicates, bursts, similar, blurry, dark, unimportant, screenshots, screenRecordings,
-        duplicateVideos, largeVideos
+        largeVideos
     /// The one category that is not a removal (spec 015): an item may be here and in a removal
     /// category at once.
     case livePhotos
@@ -76,7 +75,7 @@ public enum CleanupCategory: String, Sendable, Codable, CaseIterable, Comparable
     /// Whether every item the category lists is a video. The screens then say "video" and lay the
     /// items out as a list with length and size.
     public var listsVideos: Bool {
-        self == .largeVideos || self == .duplicateVideos || self == .screenRecordings
+        self == .largeVideos || self == .screenRecordings
     }
 
     /// Large Videos, Unimportant, Screen Recordings and Live Photos only inform; nothing in them

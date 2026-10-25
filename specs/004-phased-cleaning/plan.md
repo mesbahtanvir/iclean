@@ -13,7 +13,7 @@ computing hash, thumbprint, and sharpness from the one 512 px preview the pipeli
 fetches, plus the feature print for photos that have a time neighbour when the device can
 afford it. Step 3 is that feature-print work, deferred on weak devices. Step 4 refines picks
 lazily. In the free app videos are never analyzed; video analysis is a Pro feature (one-time $2,
-not built yet; spec FR-004a).
+not built yet; spec FR-004a; since 2026-10-24 there is no Pro version, specs/016-free-photos-only/spec.md).
 
 Results are published at every block boundary as a snapshot built by the same builder as
 today, so the final results equal a one-shot scan by construction. A continuity rule carries

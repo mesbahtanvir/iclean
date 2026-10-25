@@ -1,7 +1,7 @@
 import Foundation
 
 public enum GroupType: String, Sendable, Codable {
-    case duplicatePhotos, similarShots, duplicateVideos
+    case duplicatePhotos, similarShots
     /// The frames of one burst (spec 015).
     case burst
     /// A single flagged item (blurry, screenshot, large video).

@@ -4,7 +4,7 @@ import Testing
 @testable import CleanupKit
 
 @Suite struct ResultsSnapshotTests {
-    let key = BuilderKey(detectors: [.duplicates, .similar], features: .free, access: .full)
+    let key = BuilderKey(detectors: [.duplicates, .similar], access: .full)
 
     /// Results with a duplicate group, a similar group, a blurry single and a large video.
     func results() -> CleanupResults {
@@ -138,20 +138,15 @@ import Testing
 
     @Test func aSnapshotFromAnotherBuilderIsRejectedForEachPartOfTheKey() throws {
         let e = try envelope(results())
-        let free = BuilderKey(detectors: [.duplicates, .similar], features: .free, access: .full)
-        #expect(
-            restore(
-                e,
-                key: BuilderKey(detectors: [.duplicates, .similar], features: .pro, access: .full))
-                == .rejected(.builder))
+        let free = BuilderKey(detectors: [.duplicates, .similar], access: .full)
         #expect(
             restore(
                 e,
                 key: BuilderKey(
-                    detectors: [.duplicates, .similar], features: .free, access: .limited))
+                    detectors: [.duplicates, .similar], access: .limited))
                 == .rejected(.builder))
         #expect(
-            restore(e, key: BuilderKey(detectors: [.duplicates], features: .free, access: .full))
+            restore(e, key: BuilderKey(detectors: [.duplicates], access: .full))
                 == .rejected(.builder))
         var tz = Calendar(identifier: .gregorian)
         tz.timeZone = TimeZone(identifier: "Pacific/Auckland")!
@@ -160,12 +155,12 @@ import Testing
         let a = try envelope(
             results(),
             key: BuilderKey(
-                detectors: [.duplicates, .similar], features: .free, access: .full, calendar: tz))
+                detectors: [.duplicates, .similar], access: .full, calendar: tz))
         #expect(
             restore(
                 a,
                 key: BuilderKey(
-                    detectors: [.duplicates, .similar], features: .free, access: .full,
+                    detectors: [.duplicates, .similar], access: .full,
                     calendar: other)) == .rejected(.builder))
         var changed = free
         changed.builderVersion += 1

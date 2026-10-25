@@ -177,7 +177,8 @@ visionOS simulator, then `scripts/compare-baseline-reports.py` over the reports.
   window.
 - **FR-004**: iclean MUST NOT be offered for Apple TV, Apple Watch, or Intel Macs.
 - **FR-005**: One product listing SHOULD cover iPhone, iPad, Mac, and Vision Pro (one
-  identifier, one purchase), if the distribution plan allows.
+  identifier, one purchase), if the distribution plan allows. (Amended 2026-10-24: there is no
+  purchase; iclean is free, specs/016-free-photos-only/spec.md.)
 
 **Library, privacy, and removal**
 

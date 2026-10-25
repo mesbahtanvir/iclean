@@ -273,18 +273,17 @@ import Testing
         #expect(try await store.items().filter { $0.analysis != nil }.count == 9)
     }
 
-    @Test func hungPreviewTimesOutInsteadOfStallingTheScan() async throws {
+    @Test(.timeLimit(.minutes(2)))
+    func hungPreviewTimesOutInsteadOfStallingTheScan() async throws {
         let lib = library(count: 6)
         lib.hangIDs = ["p2"]
         let store = try InMemoryStore.make()
         let scanner = ScanPipeline(
             library: lib, store: store, analyzer: StubAnalyzer(), chunkSize: 3, policy: fast)
-        let clock = ContinuousClock()
-        let start = clock.now
+        // Without the per-item limit this never finishes, and the time limit above then fails the test.
+        // A bound on elapsed time was tried (10 s, then 40 s) and failed on a shared CI runner that
+        // took 48 s for what takes 0.3 s alone, so it says nothing the completed scan does not.
         let events = await drain(await scanner.startFullScan())
-        // Without the per-item limit this never finishes; the bound leaves room for load (a CI runner with a
-        // few virtual cores running the whole suite at once took 10 to 15 s over what takes 0.3 s alone).
-        #expect(clock.now - start < .seconds(40))
         #expect(events.last?.state == .completed)
         let hung = try await store.items().first { $0.assetID == "p2" }
         #expect(hung?.scanFailure == .timeout)

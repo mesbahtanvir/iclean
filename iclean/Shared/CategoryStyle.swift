@@ -16,7 +16,6 @@ extension CleanupCategory {
         case .dark: .brown
         case .screenshots: .teal
         case .screenRecordings: .mint
-        case .duplicateVideos: .pink
         case .largeVideos: .purple
         case .livePhotos: .yellow
         }

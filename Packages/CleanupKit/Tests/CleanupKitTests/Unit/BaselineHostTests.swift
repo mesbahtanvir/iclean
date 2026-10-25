@@ -77,12 +77,12 @@ import Testing
         let subset = SubsetPhotoLibrary(base: library, allowed: Set(catalog.assets.map(\.id)))
         let store = try SwiftDataStore.inMemory()
         let scanner = ScanPipeline(
-            library: subset, store: store, analyzer: StandardPipeline.analyzer, features: .free)
+            library: subset, store: store, analyzer: StandardPipeline.analyzer)
         for await _ in await scanner.startFullScan() {}
         var items = try await store.items()
         _ = await SizeMeasurer(library: subset, store: store).measure(items)
         items = try await store.items()
-        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors(.free))
+        let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors())
             .buildResults(items: items, keepMarks: [])
 
         var lines: [String] = []

@@ -11,7 +11,9 @@
 **Scope note**: Clarification expanded v1 to also cover screenshots, duplicate videos,
 and large videos (Stories 4–6). Duplicate videos (Story 5) are Pro only since 2026-10-18:
 the free app does not analyze videos; video analysis is a one-time $2 Pro feature (the
-purchase is not built yet, see specs/004-phased-cleaning/spec.md FR-004a).
+purchase is not built yet, see specs/004-phased-cleaning/spec.md FR-004a). Since 2026-10-24 there
+is no Pro version: iclean is free, videos stay un-analyzed for everyone, and Story 5 is not built
+(see specs/016-free-photos-only/spec.md).
 
 ## Clarifications
 
@@ -27,11 +29,11 @@ purchase is not built yet, see specs/004-phased-cleaning/spec.md FR-004a).
 - Q: How should removal be confirmed? → A: One summary sheet, broken down by category, confirmed with one tap.
 - Q: Which duplicate copy should be suggested as the keeper? → A: Best quality first; if tied, the oldest.
 - Q: Should photos that are blurry on purpose be left out of blur detection? → A: Skip portrait-mode and long-exposure photos; still check night and motion shots.
-- Q: Which extra kinds of clutter should v1 handle? → A: Screenshots, duplicate videos, and large videos. (Duplicate videos are Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a.)
+- Q: Which extra kinds of clutter should v1 handle? → A: Screenshots, duplicate videos, and large videos. (Duplicate videos are Pro only since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a. Not built since 2026-10-24: there is no Pro version, see specs/016-free-photos-only/spec.md.)
 - Q: Which devices should v1 support? → A: iPhone only.
 - Q: Which screenshots should be shown, and should they start selected? → A: All screenshots, pre-selected.
 - Q: Which videos should Large Videos show, and should they start selected? → A: The 50 largest videos, none pre-selected.
-- Q: How will iclean make money? → A: v1 is fully free; pricing is decided later. (Amended 2026-10-18: video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a.)
+- Q: How will iclean make money? → A: v1 is fully free; pricing is decided later. (Amended 2026-10-18: video analysis is a one-time $2 Pro feature, not built yet, see specs/004-phased-cleaning/spec.md FR-004a. Amended 2026-10-24: iclean is free, with no paid features, and the source is public; see specs/016-free-photos-only/spec.md.)
 - Q: Which languages and accessibility support should v1 have? → A: English only, with full accessibility support.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -143,7 +145,8 @@ the result.
 **Pro only since 2026-10-18**: the free app does not analyze videos, so it does not detect
 duplicate videos; video analysis is a one-time $2 Pro feature (the purchase is not built
 yet, see specs/004-phased-cleaning/spec.md FR-004a). The text below describes the
-behavior with Pro.
+behavior with Pro. **Not built since 2026-10-24**: there is no Pro version (see specs/016-free-photos-only/spec.md);
+this story is kept for the record.
 
 The user has the same video saved more than once. iclean groups duplicate videos like
 duplicate photos, suggests a keeper, and removes the rest after confirmation.
@@ -241,7 +244,8 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 - **FR-004b**: System MUST detect duplicate videos (the same video at any size, quality,
   or format) and group them like duplicate photos (Story 5). *Pro only since 2026-10-18:
   the free app does not analyze videos; video analysis is a one-time $2 Pro feature, not
-  built yet (see specs/004-phased-cleaning/spec.md FR-004a).*
+  built yet (see specs/004-phased-cleaning/spec.md FR-004a). Not built since 2026-10-24: there
+  is no Pro version, see specs/016-free-photos-only/spec.md.*
 - **FR-004c**: System MUST list the 50 largest videos in a Large Videos category,
   largest first, with size and length. None start selected (Story 6).
 - **FR-005**: System MUST show scan progress and allow the user to pause, stop, and
@@ -356,7 +360,8 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
   similar shots, screenshots, and large videos. Story 5 (duplicate videos) is Pro only
   since 2026-10-18: the free app does not analyze videos; video analysis is a one-time $2
   Pro feature (the purchase is not built yet, see specs/004-phased-cleaning/spec.md
-  FR-004a). Documents and other file types are out of scope.
+  FR-004a). Since 2026-10-24 there is no Pro version and Story 5 is not built (specs/016-free-photos-only/spec.md).
+  Documents and other file types are out of scope.
 - Every removal is reviewed by the user; there is no automatic or scheduled deletion.
 - The user can recover removed photos only through the Photos app's "Recently Deleted"
   area for as long as the Photos app keeps them there; iclean keeps no backups.
@@ -365,7 +370,8 @@ confirm they are ordered by size with correct sizes shown, and remove a chosen o
 - Shared albums and photos shared with the user by others are out of scope for removal.
 - v1 is fully free with no paid features or limits. Pricing is decided later. (Amended
   2026-10-18: video analysis is a one-time $2 Pro feature, not built yet, see
-  specs/004-phased-cleaning/spec.md FR-004a.)
+  specs/004-phased-cleaning/spec.md FR-004a. Amended 2026-10-24: free again, with no paid
+  features; see specs/016-free-photos-only/spec.md.)
 - Accounts and sign-in are out of scope; the app needs no account
   (Constitution Principle I).
 - v1 is in English only; all text is ready for translation later.

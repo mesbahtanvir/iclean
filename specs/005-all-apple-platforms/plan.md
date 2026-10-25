@@ -236,7 +236,7 @@ Stages S2 and later use 004's run profile when it exists and a fixed profile unt
   header-verifiable and needs hardware checks.
 - Video file sizes under the Mac sandbox: `requestAVAsset` file URLs may not be readable, which
   degrades Large Videos to estimates. Checked in S0; only that list is affected, since videos are
-  not analyzed in the free app (video analysis is a Pro feature).
+  not analyzed in the free app (video analysis is a Pro feature; no Pro version since 2026-10-24, 016).
 - Vision feature-print revisions and preview decoding differ by OS version and platform. The
   duplicate thresholds were calibrated on an iPhone. The baseline library and the accuracy suites
   must run on Mac and visionOS, and the revision is recorded per item (004 data model).

@@ -80,7 +80,6 @@ extension CleanupCategory {
         case .dark: String(localized: "Dark Photos")
         case .screenshots: String(localized: "Screenshots")
         case .screenRecordings: String(localized: "Screen Recordings")
-        case .duplicateVideos: String(localized: "Duplicate Videos")
         case .largeVideos: String(localized: "Large Videos")
         case .livePhotos: String(localized: "Live Photos")
         }
@@ -96,7 +95,6 @@ extension CleanupCategory {
         case .dark: "moon.zzz"
         case .screenshots: "camera.viewfinder"
         case .screenRecordings: "record.circle"
-        case .duplicateVideos: "film.stack"
         case .largeVideos: "film"
         case .livePhotos: "livephoto"
         }
@@ -137,11 +135,6 @@ extension CleanupCategory {
             String(
                 localized:
                     "All your screenshots, newest first. All are selected for removal. Deselect any you want to keep."
-            )
-        case .duplicateVideos:
-            String(
-                localized:
-                    "Copies of the same video. We keep one of each and select the rest for removal."
             )
         case .largeVideos:
             String(localized: "Your biggest videos, largest first. Nothing is selected for you.")

@@ -466,7 +466,7 @@ import Testing
             shaky("c", sharpness: 0.9, at: 90_000),
         ]
         let results = builder(levels: ResultLevels()).buildResults(items: items, keepMarks: [])
-        let key = BuilderKey(detectors: [.unimportant], features: .free, access: .full)
+        let key = BuilderKey(detectors: [.unimportant], access: .full)
         let sealed = try StateCodec.seal(
             ResultsSnapshot(results: results, builderKey: key, itemCount: 3, keepMarkCount: 0))
         let restored = try StateCodec.open(sealed, as: ResultsSnapshot.self).results()
@@ -481,11 +481,11 @@ import Testing
 
     @Test func theLevelsAreAPartOfTheBuilderKey() {
         let a = BuilderKey(
-            detectors: [.similar], features: .free, access: .full, levels: ResultLevels())
+            detectors: [.similar], access: .full, levels: ResultLevels())
         let b = BuilderKey(
-            detectors: [.similar], features: .free, access: .full,
+            detectors: [.similar], access: .full,
             levels: ResultLevels([.similar: .wide]))
-        let c = BuilderKey(detectors: [.similar], features: .free, access: .full)
+        let c = BuilderKey(detectors: [.similar], access: .full)
         #expect(a != b)
         #expect(a == c, "no levels means the defaults")
         #expect(ResultLevels().key == "similar=2,unimportant=2")
