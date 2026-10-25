@@ -140,6 +140,37 @@ public enum KeeperRules {
         return [best.assetID]
     }
 
+    /// Bursts (spec 015 FR-002): every frame the person picked in Photos; else every favourite;
+    /// else, when some frame has a face, the sharpest among the frames whose face quality is within
+    /// 0.02 of the best; else the sharpest; else, when no frame was analyzed, the frame Photos
+    /// shows; else the first by capture order. Kept frames are added by the builder, as everywhere.
+    public static func burstKeepers(_ frames: [LibraryItem]) -> Set<String> {
+        let picked = frames.filter { $0.metadata.burstPick == .userPick }
+        if !picked.isEmpty { return Set(picked.map(\.assetID)) }
+        let favorites = frames.filter { $0.metadata.isFavorite }
+        if !favorites.isEmpty { return Set(favorites.map(\.assetID)) }
+        let analyzed = frames.filter { $0.analysis != nil }
+        if !analyzed.isEmpty {
+            let faced = analyzed.filter { $0.analysis?.faceQuality != nil }
+            if let bestFace = faced.compactMap({ $0.analysis?.faceQuality }).max() {
+                let near = faced.filter { ($0.analysis?.faceQuality ?? -1) >= bestFace - 0.02 }
+                if let best = near.min(by: sharpestOrder) { return [best.assetID] }
+            }
+            if let best = analyzed.min(by: sharpestOrder) { return [best.assetID] }
+        }
+        if let shown = frames.first(where: { $0.metadata.representsBurst }) {
+            return [shown.assetID]
+        }
+        return ordered(frames, keepers: []).first.map { [$0] } ?? []
+    }
+
+    /// Sharpest first; the identifier breaks ties.
+    static func sharpestOrder(_ a: LibraryItem, _ b: LibraryItem) -> Bool {
+        let sa = a.analysis?.sharpness ?? 0
+        let sb = b.analysis?.sharpness ?? 0
+        return sa != sb ? sa > sb : a.assetID < b.assetID
+    }
+
     static func similarOrder(_ a: LibraryItem, _ b: LibraryItem) -> Bool {
         let sa = a.analysis?.sharpness ?? 0
         let sb = b.analysis?.sharpness ?? 0

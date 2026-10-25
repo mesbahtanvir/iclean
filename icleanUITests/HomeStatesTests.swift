@@ -160,16 +160,19 @@ final class HomeStatesTests: XCTestCase {
         XCTAssertTrue(close.waitForExistence(timeout: 10))
         close.tap()
 
-        // Large Videos is never preselected: choose them too, and remove those.
-        openCategory(app, "largeVideos")
-        let all = app.buttons["category.selectAll"]
-        XCTAssertTrue(all.waitForExistence(timeout: 5))
-        all.tap()
-        confirmRemoval(app)
-        let closeAgain = app.buttons["done.close"]
-        XCTAssertTrue(closeAgain.waitForExistence(timeout: 10))
-        // Nothing is left in Large Videos, so closing the receipt goes back to Home by itself.
-        closeAgain.tap()
+        // Screen Recordings and Large Videos are never preselected: choose them too, and remove
+        // those. Nothing is left in the category afterwards, so closing the receipt goes back to
+        // Home by itself.
+        for category in ["screenRecordings", "largeVideos"] {
+            openCategory(app, category)
+            let all = app.buttons["category.selectAll"]
+            XCTAssertTrue(all.waitForExistence(timeout: 5))
+            all.tap()
+            confirmRemoval(app)
+            let closeAgain = app.buttons["done.close"]
+            XCTAssertTrue(closeAgain.waitForExistence(timeout: 10))
+            closeAgain.tap()
+        }
 
         XCTAssertTrue(anything(app, "results.empty").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["All cleaned up"].exists)

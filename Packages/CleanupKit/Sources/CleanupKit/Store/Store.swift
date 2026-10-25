@@ -168,9 +168,12 @@ public struct StoredItemSummary: Sendable, Hashable {
 public struct MeasuredSize: Sendable, Hashable {
     public var bytes: Int64
     public var isEstimated: Bool
+    /// The bytes of a Live Photo's movie, within `bytes` (spec 015); nil when unknown or none.
+    public var motionBytes: Int64?
 
-    public init(bytes: Int64, isEstimated: Bool) {
+    public init(bytes: Int64, isEstimated: Bool, motionBytes: Int64? = nil) {
         self.bytes = bytes
         self.isEstimated = isEstimated
+        self.motionBytes = motionBytes
     }
 }

@@ -417,12 +417,13 @@ import Testing
             photo("a", 0, skipped: .featurePrint), photo("b", 10, skipped: []),
         ])
         #expect(skipped.isEmpty)
-        // Frames of one burst group without any print, as always.
+        // Frames of one burst are the Bursts category's (spec 015), with or without a print.
         var x = photo("x", 0, skipped: .all)
         x.metadata.burstID = "B"
         var y = photo("y", 3_000, skipped: .all)
         y.metadata.burstID = "B"
-        #expect(detector.detect(items: [x, y]).count == 1)
+        #expect(detector.detect(items: [x, y]).isEmpty)
+        #expect(BurstDetector().detect(items: [x, y]).count == 1)
     }
 
     @Test func resultsKeepFaceQualityOnlyWhereAKeeperIsChosenFromIt() {
@@ -435,7 +436,7 @@ import Testing
                 thumbprint: Thumbprint.compute(TestImages.scene(seed: seed, width: 96, height: 72)),
                 sharpness: 0.8, face: face)
         }
-        // A burst pair (a similar group) and a blurry photo that has a face score.
+        // A burst pair (a Bursts group since spec 015) and a blurry photo that has a face score.
         var blurry = photo("blurry", 50_000, face: 0.4, seed: 3)
         blurry.analysis?.sharpness = 0.01
         let items = [
@@ -444,7 +445,7 @@ import Testing
         ]
         let results = DefaultResultsBuilder(detectors: StandardPipeline.detectors())
             .buildResults(items: items, keepMarks: [])
-        #expect(results.category(.similar) != nil)
+        #expect(results.category(.bursts) != nil)
         #expect(results.items["s1"]?.analysis?.faceQuality == 0.2)
         #expect(results.items["s2"]?.analysis?.faceQuality == 0.9)
         #expect(results.category(.blurry) != nil)

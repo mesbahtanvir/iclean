@@ -30,6 +30,7 @@ extension ItemKind {
         case .screenshot: String(localized: "Screenshot")
         case .livePhoto: String(localized: "Live Photo")
         case .video: String(localized: "Video")
+        case .screenRecording: String(localized: "Screen Recording")
         }
     }
 }

@@ -39,6 +39,14 @@ final class LibraryItemRecord {
     // Spec 010: the Vision work left out of the analysis on purpose (`VisionWork.rawValue`). Optional,
     // and nil for stores written before, which skipped nothing.
     var visionSkippedRaw: Int?
+    // Spec 015: optional so stores written before open unchanged. The descriptive ones fill on the
+    // next metadata refresh; emptiness fills when the photo is read again.
+    var burstPickRaw: String?
+    var representsBurst: Bool?
+    var isShared: Bool?
+    var motionByteSize: Int64?
+    var emptiness: Double?
+    var isEmpty: Bool?
 
     init(_ item: LibraryItem) {
         assetID = item.assetID
@@ -71,6 +79,9 @@ final class LibraryItemRecord {
         isPortrait = m.isPortrait
         isLongExposure = m.isLongExposure
         burstID = m.burstID
+        burstPickRaw = m.burstPick?.rawValue
+        representsBurst = m.representsBurst
+        isShared = m.isShared
         albumNames = m.albumNames
         addedDate = m.addedDate
         hasLocation = m.hasLocation
@@ -83,8 +94,11 @@ final class LibraryItemRecord {
         sharpness = a?.sharpness
         aestheticsScore = a?.aestheticsScore
         faceQuality = a?.faceQuality
+        emptiness = a?.emptiness
+        isEmpty = a?.isEmpty
         visionSkippedRaw = a.flatMap { $0.skippedVision.isEmpty ? nil : $0.skippedVision.rawValue }
         byteSize = item.byteSize
+        motionByteSize = item.motionByteSize
         isSizeEstimated = item.isSizeEstimated
         analyzedAt = item.analyzedAt
         scanFailureRaw = item.scanFailure?.rawValue
@@ -97,7 +111,8 @@ final class LibraryItemRecord {
             \.assetID, \.kindRaw, \.captureDate, \.modificationDate, \.pixelWidth, \.pixelHeight,
             \.duration, \.isFavorite, \.hasAdjustments, \.isPortrait, \.isLongExposure, \.burstID,
             \.albumNames, \.analysisSourceRaw, \.scanAttempts, \.addedDate, \.hasLocation,
-            \.visionSkippedRaw,
+            \.visionSkippedRaw, \.burstPickRaw, \.representsBurst, \.isShared, \.emptiness,
+            \.isEmpty,
         ]
     }
 
@@ -105,7 +120,7 @@ final class LibraryItemRecord {
     static var withoutFeaturePrintKeyPaths: [PartialKeyPath<LibraryItemRecord>] {
         summaryKeyPaths + [
             \.dHashBits, \.thumbprint, \.sharpness, \.aestheticsScore, \.faceQuality, \.byteSize,
-            \.isSizeEstimated, \.analyzedAt, \.scanFailureRaw,
+            \.motionByteSize, \.isSizeEstimated, \.analyzedAt, \.scanFailureRaw,
         ]
     }
 
@@ -115,8 +130,10 @@ final class LibraryItemRecord {
             captureDate: captureDate, modificationDate: modificationDate,
             pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration,
             isFavorite: isFavorite, hasAdjustments: hasAdjustments, isPortrait: isPortrait,
-            isLongExposure: isLongExposure, burstID: burstID, albumNames: albumNames,
-            addedDate: addedDate, hasLocation: hasLocation)
+            isLongExposure: isLongExposure, burstID: burstID,
+            burstPick: burstPickRaw.flatMap(BurstPick.init(rawValue:)),
+            representsBurst: representsBurst ?? false, isShared: isShared ?? false,
+            albumNames: albumNames, addedDate: addedDate, hasLocation: hasLocation)
     }
 
     /// Reads no fingerprint, so the blobs stay out of memory.
@@ -135,14 +152,15 @@ final class LibraryItemRecord {
             analysis = Analysis(
                 dHash: UInt64(bitPattern: dHashBits), thumbprint: thumbprint ?? Data(),
                 featurePrint: Data(), sharpness: sharpness, aestheticsScore: aestheticsScore,
-                faceQuality: faceQuality, skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
+                faceQuality: faceQuality, emptiness: emptiness, isEmpty: isEmpty,
+                skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
             )
         }
         return LibraryItem(
             metadata: metadata,
             analysisSource: AnalysisSource(rawValue: analysisSourceRaw) ?? .notScanned,
-            analysis: analysis, byteSize: byteSize, isSizeEstimated: isSizeEstimated,
-            analyzedAt: analyzedAt,
+            analysis: analysis, byteSize: byteSize, motionByteSize: motionByteSize,
+            isSizeEstimated: isSizeEstimated, analyzedAt: analyzedAt,
             scanFailure: scanFailureRaw.flatMap(ScanFailure.init(rawValue:)),
             scanAttempts: scanAttempts ?? 0)
     }
@@ -160,6 +178,9 @@ final class LibraryItemRecord {
         isPortrait = m.isPortrait
         isLongExposure = m.isLongExposure
         burstID = m.burstID
+        burstPickRaw = m.burstPick?.rawValue
+        representsBurst = m.representsBurst
+        isShared = m.isShared
         albumNames = m.albumNames
         addedDate = m.addedDate
         hasLocation = m.hasLocation
@@ -174,7 +195,8 @@ final class LibraryItemRecord {
             || isFavorite != m.isFavorite || hasAdjustments != m.hasAdjustments
             || isPortrait != m.isPortrait || isLongExposure != m.isLongExposure
             || burstID != m.burstID || albumNames != m.albumNames || addedDate != m.addedDate
-            || hasLocation != m.hasLocation
+            || hasLocation != m.hasLocation || burstPickRaw != m.burstPick?.rawValue
+            || (representsBurst ?? false) != m.representsBurst || (isShared ?? false) != m.isShared
     }
 
     /// Whether writing `item` over this record would change anything results are built from.
@@ -184,11 +206,12 @@ final class LibraryItemRecord {
         if metadataDiffers(from: item.metadata) { return true }
         if analysisSourceRaw != item.analysisSource.rawValue { return true }
         if byteSize != item.byteSize || isSizeEstimated != item.isSizeEstimated { return true }
+        if motionByteSize != item.motionByteSize { return true }
         let a = item.analysisSource.hasAnalysis ? item.analysis : nil
         if dHashBits != a.map({ Int64(bitPattern: $0.dHash) }) { return true }
         if thumbprint != a?.thumbprint || featurePrint != a?.featurePrint { return true }
         if sharpness != a?.sharpness || aestheticsScore != a?.aestheticsScore
-            || faceQuality != a?.faceQuality
+            || faceQuality != a?.faceQuality || emptiness != a?.emptiness || isEmpty != a?.isEmpty
         {
             return true
         }
@@ -196,27 +219,21 @@ final class LibraryItemRecord {
     }
 
     var item: LibraryItem {
-        let metadata = AssetMetadata(
-            assetID: assetID, kind: ItemKind(rawValue: kindRaw) ?? .photo,
-            captureDate: captureDate, modificationDate: modificationDate,
-            pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration,
-            isFavorite: isFavorite, hasAdjustments: hasAdjustments, isPortrait: isPortrait,
-            isLongExposure: isLongExposure, burstID: burstID, albumNames: albumNames,
-            addedDate: addedDate, hasLocation: hasLocation)
         var analysis: Analysis?
         if let dHashBits, let featurePrint, let sharpness {
             analysis = Analysis(
                 dHash: UInt64(bitPattern: dHashBits), thumbprint: thumbprint ?? Data(),
                 featurePrint: featurePrint,
                 sharpness: sharpness, aestheticsScore: aestheticsScore,
-                faceQuality: faceQuality, skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
+                faceQuality: faceQuality, emptiness: emptiness, isEmpty: isEmpty,
+                skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0)
             )
         }
         return LibraryItem(
             metadata: metadata,
             analysisSource: AnalysisSource(rawValue: analysisSourceRaw) ?? .notScanned,
-            analysis: analysis, byteSize: byteSize, isSizeEstimated: isSizeEstimated,
-            analyzedAt: analyzedAt,
+            analysis: analysis, byteSize: byteSize, motionByteSize: motionByteSize,
+            isSizeEstimated: isSizeEstimated, analyzedAt: analyzedAt,
             scanFailure: scanFailureRaw.flatMap(ScanFailure.init(rawValue:)),
             scanAttempts: scanAttempts ?? 0)
     }

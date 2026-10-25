@@ -8,7 +8,8 @@ public enum BaselineKind: String, Codable, Sendable {
 /// The result category an asset is expected to land in. `none` marks a control: an asset
 /// that must not be flagged by anything.
 public enum BaselineCategory: String, Codable, Sendable {
-    case duplicates, similar, blurry, screenshots, largeVideos, none
+    case duplicates, bursts, similar, blurry, dark, screenshots, screenRecordings, largeVideos,
+        livePhotos, none
 }
 
 /// How to draw one asset, deterministically: a base image, then edits, then a file format.

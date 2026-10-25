@@ -2,8 +2,14 @@ import Foundation
 
 public enum GroupType: String, Sendable, Codable {
     case duplicatePhotos, similarShots
+    /// The frames of one burst (spec 015).
+    case burst
     /// A single flagged item (blurry, screenshot, large video).
     case single
+
+    /// Whether the members are different shots of one moment (similar shots, burst frames) rather
+    /// than copies of one photo. The screens say "photo" or "frame" for these, never "copy".
+    public var membersAreShots: Bool { self == .similarShots || self == .burst }
 }
 
 public enum Confidence: String, Sendable, Codable {

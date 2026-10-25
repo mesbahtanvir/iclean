@@ -108,6 +108,6 @@ import Testing
             """)
     }
 
-    static let pinnedVersion = 1
+    static let pinnedVersion = 2
     static let pinnedFingerprint = "d147a997dda94d41"
 }

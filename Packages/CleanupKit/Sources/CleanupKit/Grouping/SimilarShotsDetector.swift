@@ -87,19 +87,11 @@ public struct SimilarShotsDetector: CategoryDetector {
             }
             edges = found
         }
-        // Burst frames always belong together, even if more than a minute apart (but a burst is no
-        // proof that two frames are almost identical).
-        var bursts: [(Int, Int)] = []
-        var byBurst: [String: Int] = [:]
-        for (i, p) in photos.enumerated() {
-            guard let burst = p.metadata.burstID else { continue }
-            if let first = byBurst[burst] { bursts.append((first, i)) } else { byBurst[burst] = i }
-        }
-
+        // Frames of one burst are the Bursts category's (spec 015); here a burst frame is a photo
+        // like any other, grouped only by what its prints say.
         func sets(at level: ResultLevel) -> [[Int]] {
             var uf = UnionFind(count: photos.count)
             for e in edges where e.level <= level { uf.union(e.i, e.j) }
-            if level >= .medium { for (a, b) in bursts { uf.union(a, b) } }
             return uf.groups()
         }
         let summaries = ResultLevel.allCases.map { level -> LevelSummary in
@@ -132,14 +124,12 @@ public struct SimilarShotsDetector: CategoryDetector {
         _ a: LibraryItem, _ b: LibraryItem, featurePrintDistance known: Double?,
         prints: FeaturePrintCache?
     ) -> ResultLevel? {
-        let sameBurst = a.metadata.burstID != nil && a.metadata.burstID == b.metadata.burstID
         // A print left out on purpose (spec 010) belongs to a photo that had no neighbour when it was
         // analyzed. Reaching one here means a neighbour arrived since and the photo has not been analyzed
         // again yet; comparing miniatures alone would group photos that merely share a layout, so such a
-        // pair waits for the repair. Frames of one burst group without any print, as always.
-        if !sameBurst,
-            a.analysis?.skippedVision.contains(.featurePrint) == true
-                || b.analysis?.skippedVision.contains(.featurePrint) == true
+        // pair waits for the repair.
+        if a.analysis?.skippedVision.contains(.featurePrint) == true
+            || b.analysis?.skippedVision.contains(.featurePrint) == true
         {
             return nil
         }
@@ -158,7 +148,7 @@ public struct SimilarShotsDetector: CategoryDetector {
             if fp < SimilarThresholds.tightFeaturePrint && t() >= SimilarThresholds.tightThumbprint {
                 return .tight
             }
-            if sameBurst || fp < SimilarThresholds.featurePrint
+            if fp < SimilarThresholds.featurePrint
                 || (fp < SimilarThresholds.featurePrintAgreement && t() >= SimilarThresholds.thumbprint)
             {
                 return .medium
@@ -169,7 +159,7 @@ public struct SimilarShotsDetector: CategoryDetector {
             return nil
         }
         if t() >= SimilarThresholds.tightThumbprintWithoutPrint { return .tight }
-        if sameBurst || t() >= SimilarThresholds.thumbprint { return .medium }
+        if t() >= SimilarThresholds.thumbprint { return .medium }
         return t() >= SimilarThresholds.wideThumbprintWithoutPrint ? .wide : nil
     }
 
@@ -223,14 +213,11 @@ public struct SimilarShotsDetector: CategoryDetector {
     }
 
     func isSameMoment(_ a: LibraryItem, _ b: LibraryItem, prints: FeaturePrintCache) -> Bool {
-        // Frames of one burst need no comparison, so no feature print is decoded for them.
-        if let burst = a.metadata.burstID, burst == b.metadata.burstID { return true }
-        return isSameMoment(a, b, featurePrintDistance: prints.distance(a, b))
+        isSameMoment(a, b, featurePrintDistance: prints.distance(a, b))
     }
 
     /// `featurePrintDistance` is `.infinity` when Vision was unavailable for either photo.
     func isSameMoment(_ a: LibraryItem, _ b: LibraryItem, featurePrintDistance fp: Double) -> Bool {
-        if let burst = a.metadata.burstID, burst == b.metadata.burstID { return true }
         // A print left out on purpose (spec 010) belongs to a photo that had no neighbour when it was
         // analyzed. Reaching one here means a neighbour arrived since and the photo has not been
         // analyzed again yet. Comparing thumbprints alone would group photos that merely share a

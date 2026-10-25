@@ -106,7 +106,7 @@
                 category == nil
                 ? model.summary.count
                 : (category.flatMap { model.summary.perCategory[$0]?.selected } ?? 0)
-            Button(category == .largeVideos ? "Select All Videos" : "Select Suggested") {
+            Button(category?.listsVideos == true ? "Select All Videos" : "Select Suggested") {
                 // Never a keeper: only the photos suggested for removal are in play.
                 model.setSelected(removable(), true)
             }

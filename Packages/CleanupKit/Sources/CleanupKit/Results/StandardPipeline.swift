@@ -16,10 +16,12 @@ public enum StandardPipeline {
     ) -> [any CategoryDetector] {
         [
             DuplicatePhotoDetector(parallelism: parallelism),
+            BurstDetector(),
             SimilarShotsDetector(parallelism: parallelism, levels: levels),
             BlurDetector(),
             UnimportantDetector(levels: levels),
             ScreenshotsCategory(),
+            ScreenRecordingsCategory(),
             LargeVideosCategory(),
         ]
     }

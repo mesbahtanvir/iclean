@@ -73,22 +73,30 @@ extension CleanupCategory {
     var title: String {
         switch self {
         case .duplicates: String(localized: "Duplicates")
+        case .bursts: String(localized: "Bursts")
         case .similar: String(localized: "Similar Shots")
         case .blurry: String(localized: "Blurry Photos")
         case .unimportant: String(localized: "Unimportant")
+        case .dark: String(localized: "Dark Photos")
         case .screenshots: String(localized: "Screenshots")
+        case .screenRecordings: String(localized: "Screen Recordings")
         case .largeVideos: String(localized: "Large Videos")
+        case .livePhotos: String(localized: "Live Photos")
         }
     }
 
     var systemImage: String {
         switch self {
         case .duplicates: "square.on.square"
+        case .bursts: "square.stack.3d.up"
         case .similar: "square.stack.3d.down.right"
         case .blurry: "camera.filters"
         case .unimportant: "photo.badge.minus"
+        case .dark: "moon.zzz"
         case .screenshots: "camera.viewfinder"
+        case .screenRecordings: "record.circle"
         case .largeVideos: "film"
+        case .livePhotos: "livephoto"
         }
     }
 
@@ -99,11 +107,20 @@ extension CleanupCategory {
                 localized:
                     "Copies of the same photo. We keep one of each and select the rest for removal."
             )
+        case .bursts:
+            String(localized: "Several frames of one moment. Keep the best, remove the rest.")
         case .similar:
             String(
                 localized:
                     "Several shots of the same moment. We keep the best one and select the rest for removal."
             )
+        case .dark:
+            String(localized: "Photos with nothing in them: pocket shots and lens caps.")
+        case .screenRecordings:
+            String(localized: "Screen recordings, newest first.")
+        case .livePhotos:
+            String(
+                localized: "Live Photos whose motion you never play. Keep the still, drop the movie.")
         case .blurry:
             String(
                 localized:

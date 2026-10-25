@@ -22,6 +22,16 @@ extension XCTestCase {
     func openCategory(_ app: XCUIApplication, _ name: String) {
         let row = app.descendants(matching: .any)["results.category.\(name)"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // With eight categories the last rows sit under the pinned Review bar (where a tap lands on
+        // the bar, not the row) until the list scrolls.
+        // The tap below lands near the top of the row, so only that part must be clear of the bar
+        // (at accessibility sizes a row can be taller than the space above the bar).
+        let bar = app.buttons["results.reviewAll"]
+        var tries = 0
+        while bar.exists, row.frame.minY + 48 > bar.frame.minY, tries < 4 {
+            app.swipeUp()
+            tries += 1
+        }
         // At large text sizes the row is tall and its middle can be under the pinned Review bar,
         // which may not be laid out yet; the top of the row is clear of it at any size.
         if row.frame.height > 150 {

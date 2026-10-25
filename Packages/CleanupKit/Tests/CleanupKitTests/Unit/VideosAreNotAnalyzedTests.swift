@@ -101,9 +101,13 @@ import Testing
         let detectors = StandardPipeline.detectors()
         #expect(
             detectors.map(\.category)
-                == [.duplicates, .similar, .blurry, .unimportant, .screenshots, .largeVideos])
-        // Large Videos reads sizes, never pixels: it is the one detector that lists videos.
-        #expect(detectors.filter { $0.category == .largeVideos }.allSatisfy { !$0.needsAnalysis })
+                == [
+                    .duplicates, .bursts, .similar, .blurry, .unimportant, .screenshots,
+                    .screenRecordings, .largeVideos,
+                ])
+        // Large Videos and Screen Recordings read metadata, never pixels: the detectors that
+        // list videos.
+        #expect(detectors.filter { $0.category.listsVideos }.allSatisfy { !$0.needsAnalysis })
     }
 
     @Test func oldStoredVideoAnalysisIsNotUsedToGroupVideos() {

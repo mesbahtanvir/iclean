@@ -96,7 +96,7 @@ final class ResultsHeroTests: XCTestCase {
 
         // Keep everything that was suggested: nothing is selected, so there is no Review bar at
         // all (hidden, not a disabled button), and the hero says so.
-        for category in ["duplicates", "similar", "blurry", "screenshots"] {
+        for category in ["duplicates", "bursts", "similar", "blurry", "screenshots"] {
             openCategory(app, category)
             let all = app.buttons["category.selectAll"]
             XCTAssertTrue(all.waitForExistence(timeout: 5))

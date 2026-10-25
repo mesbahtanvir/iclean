@@ -32,7 +32,7 @@ struct CategoryView: View {
         // A flatMap over every group: 30,000 of them in a flat category.
         let members = memo.members(of: result, version: model.resultsVersion)
         let layout: CategoryLayout =
-            category == .largeVideos
+            category.listsVideos && result?.groups.first?.type == .single
             ? .videoList : (result?.groups.first?.type == .single ? .flatGrid : .groups)
         mainContent(result, members: members, layout: layout)
             .environment(prefetcher)
