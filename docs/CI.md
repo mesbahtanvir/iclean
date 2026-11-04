@@ -1,0 +1,105 @@
+# Continuous integration
+
+Every pull request runs five workflows. They test the same app in different ways: the sources, the
+files around them, the compiled app, the app driven like a person, and the engine pushed past what a
+quick run does. Each says what it found in its **job summary** (the page of a run) and keeps what it
+made as an **artifact**.
+
+| Workflow | Runs on | Starts when | Answers |
+|---|---|---|---|
+| `repo-checks.yml` | Linux, under a minute | every push and pull request | Are the workflows, scripts, documents, specs and data files sound? Does the no-network check still catch what it is there to catch? |
+| `ci.yml` | macOS | every push and pull request | Do the CleanupKit tests pass? Is the code free of networking APIs? (Lint is reported, not enforced.) |
+| `app.yml` | macOS | the app, the project or CleanupKit's sources change | Does the app build for iPhone and Mac, Debug and Release? Does the built app keep its promises? Do the app target's unit tests pass? |
+| `ui-tests.yml` | macOS | the same, and nightly | Do the UI tests pass, run on four simulators at once? Does the full flow make zero network requests? What does every screen look like? |
+| `package-deep.yml` | macOS | CleanupKit changes, and nightly | Does the engine hold under an optimized build, the sanitizers, repetition, a strict compiler, every platform, and the real analyzer? |
+
+## What each one checks
+
+### Repo checks (Linux)
+
+- **Workflows**: `actionlint` (syntax, expressions, and ShellCheck on every `run:` script), then
+  `scripts/check-workflows.py`: least-privilege `permissions`, a `timeout-minutes` on every job, a
+  `concurrency` group, every action pinned to a tag or commit, `retention-days` on every artifact, no
+  event text (a title, a branch name) pasted into a script, and every script or path a workflow names
+  exists.
+- **Scripts**: ShellCheck on `scripts/*.sh`; the unit tests of the scripts themselves
+  (`scripts/tests`); the UI test plan; the no-network check and its canary
+  (`scripts/test-no-network-guard.sh`, which plants each forbidden token and entitlement in a copy of
+  the sources and requires the check to fail on every one).
+- **Documents, specs and files**: every Markdown link resolves; every `specs/` folder is numbered and
+  has a spec and a well-formed task list; every JSON file, test plan, string catalog and property list
+  parses; every test a test plan names exists; the privacy manifest tracks and collects nothing; no
+  test is switched off without a reason or commented out; no key, token or signing team is committed;
+  no build output or oversized file is committed; no merge conflict markers.
+
+### App
+
+- **Build** iPhone Debug, iPhone Release, Mac Debug and Mac Release, with the warnings counted in the
+  job summary.
+- **The built app keeps its promises** (`scripts/check-built-app.py`): the bundle id, the Photos text
+  that says nothing leaves the device, no App Transport Security exceptions, the iPhone's background
+  mode for a scan that continues, the Mac's minimum system version, a privacy manifest in the bundle,
+  no networking framework linked, no networking API named in the binary, and in Release none of the
+  tooling that is only compiled into Debug.
+- **Unit tests** of the app target (`icleanTests`) on a simulator, with the result summarized
+  (`scripts/xcresult-summary.py`) and the coverage of the app target.
+
+### UI tests
+
+- The app is built once for testing; **four shards** run the UI test classes at once
+  (`scripts/ui-test-shards.py` puts every class into exactly one shard, so a class that is added runs
+  without anyone editing a workflow).
+- **No network**: the `NoNetwork` test plan runs the full flow with a tripwire on every URL load.
+- **Screenshots**: `ScreenshotTour` saves a PNG of every screen in light, dark, large text and the
+  largest text (two looks on a pull request, four nightly). Download them from the run's artifacts.
+- **Environments**: the main flows again with the simulator in dark mode and at the largest text size
+  (informational until they have been read).
+
+### Package deep tests
+
+- **Coverage** and a **test report** (counts, failures, skips, the slowest tests).
+- **Optimized build**: the tests in release mode.
+- **Sanitizers**: the thread and the address sanitizer (informational until a report has been read).
+- **Repeat**: the suites that use concurrency, run over and over in parallel and one at a time.
+- **Accuracy**: the accuracy suites, with what they measured.
+- **Platforms**: the package compiles for macOS, iOS and visionOS.
+- **Warnings**: a build with warnings as errors (informational until the count is zero).
+- **One pass against tiered**: the same synthetic library scanned both ways with the real analyzer
+  (`ScaleBench --real-scan`); the results digest and the analysis digest must be equal
+  (spec 017: a tiered scan finds exactly what a one-pass scan finds).
+
+## Run the same checks yourself
+
+```bash
+python3 -m unittest discover -s scripts/tests      # the scripts' own tests
+python3 scripts/check-workflows.py                 # needs PyYAML
+python3 scripts/check-doc-links.py
+python3 scripts/check-spec-folders.py
+python3 scripts/check-repo-files.py
+scripts/test-no-network-guard.sh
+python3 scripts/ui-test-shards.py --table          # which test class runs in which shard
+python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
+```
+
+`actionlint` and `shellcheck` are on PyPI (`pip install actionlint-py shellcheck-py`).
+
+## Adding a test
+
+- A Swift Testing or XCTest case in CleanupKit runs in `ci.yml` and every job of `package-deep.yml`.
+- A test in `icleanTests` runs in `app.yml`.
+- A UI test class in `icleanUITests` runs in a shard of `ui-tests.yml` by itself. A class that must not
+  (it needs another plan or an environment variable) goes in `EXCLUDED` in
+  `scripts/ui-test-shards.py` with the reason, and the plan fails if an excluded class is renamed or
+  deleted without it.
+- A script in `scripts/` gets a test in `scripts/tests/test_scripts.py` that shows it fails on what it
+  is there to catch, not only that it passes on the tree as it is.
+
+## What is not checked, and why
+
+- **A real photo library and a real device.** CI uses the demo library (`-UITesting`). The baseline
+  library check (`scripts/run-baseline.sh`) and the Mac checks in `specs/012-calm-polish/mac-checks.md`
+  need a Mac with Photos or a phone.
+- **Performance on a phone.** A CI machine is a virtual one: timings are reported, never gated. The
+  scroll-performance test is a measurement and runs on request (`SCROLL_PERF=1`).
+- **Xcode 27.** The README asks for Xcode 27; the runner has an earlier Xcode, so code that needs the
+  iOS 27 SDK is compiled only where the compiler is new enough (`ScanContinuation.swift`).

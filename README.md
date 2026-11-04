@@ -88,6 +88,18 @@ scripts/check-no-network.sh
 xcodebuild test -scheme iclean -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -testPlan NoNetwork
 ```
 
+Checks that need no Swift compiler (workflows, scripts, links, specs, data files):
+
+```bash
+python3 -m unittest discover -s scripts/tests
+python3 scripts/check-repo-files.py
+```
+
+Every pull request runs five GitHub Actions workflows: repo checks, the CleanupKit tests, the app built
+for iPhone and Mac with its unit tests, the UI tests in shards with screenshots, and the deep package
+tests (coverage, sanitizers, repetition, accuracy, one-pass against tiered). What each checks, and how
+to run the same checks yourself, is in `docs/CI.md`.
+
 To try the app with test photos in a simulator's Photos library:
 
 ```bash
@@ -98,7 +110,9 @@ scripts/seed-simulator.sh "iPhone 17 Pro"
 
 - `iclean/` — SwiftUI app (screens and wiring)
 - `Packages/CleanupKit/` — all logic: library access, analysis, grouping, removal
+- `icleanTests/` — unit tests of the app target
 - `icleanUITests/` — UI tests
+- `scripts/` — checks and tools the workflows run (`docs/CI.md`)
 - `Fixtures/` — labeled test photos (see `Fixtures/README.md`)
 - `specs/001-photo-cleanup/` — spec, plan, research and tasks (Spec Kit)
 - `specs/002-background-scan-progress/` — scan progress outside the app (Spec Kit)
