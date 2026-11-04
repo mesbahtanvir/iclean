@@ -5,6 +5,10 @@ public protocol Scanner: Sendable {
     /// Full scan: analyzes every item that is new or changed since it was last analyzed.
     /// Continues an unfinished job if one exists.
     func startFullScan() async -> AsyncStream<ScanProgress>
+    /// Runs only the deep tier of a tiered scan: the Vision work still owed to photos that a photo
+    /// check stored without it, whatever made it wait (spec 017 FR-010). A scanner that does not tier
+    /// has no deep tier apart from the scan itself, which is what the default does.
+    func startDeepScan() async -> AsyncStream<ScanProgress>
     /// Quick check for new or changed items, run on app open (FR-005a).
     func quickCheck() async -> ScanProgress
     /// Pauses losslessly: when this returns, everything processed so far is saved
@@ -12,6 +16,10 @@ public protocol Scanner: Sendable {
     func pause(reason: ScanPauseReason) async
     func resume() async
     func stop() async
+}
+
+extension Scanner {
+    public func startDeepScan() async -> AsyncStream<ScanProgress> { await startFullScan() }
 }
 
 /// Runs a scan as a durable job of small chunks (003): each chunk is leased, run, and
@@ -29,6 +37,12 @@ public actor ScanPipeline: Scanner {
     private let policy: ScanRetryPolicy
     /// Whether plans leave out the Vision work no detector can read (spec 010).
     private let deferVision: Bool
+    /// Whether a full scan runs as a photo check followed by a deep check (spec 017). False is the
+    /// one-pass scan of specs 008 to 016, which every earlier test and benchmark still means.
+    private let tiered: Bool
+    /// Why the deep check must wait, asked when the photo check ends; nil for no reason. Without one
+    /// the pipeline asks Low Power Mode.
+    private let deepWait: (@Sendable () -> DeepWait?)?
     private let pauseWaitLimit: Duration
     private let minProgressInterval: Duration
     private let thermalState: @Sendable () -> ProcessInfo.ThermalState
@@ -66,6 +80,10 @@ public actor ScanPipeline: Scanner {
     /// Moves up whenever the stored results changed enough to be worth showing: quick wins
     /// stored, a block of photos finished (spec 008). The app rebuilds its results when it moves.
     private var publishedRevision = 0
+    /// Photos still owed Vision work as of the last plan, and why the deep check is not starting by
+    /// itself (spec 017). Reported with every progress event.
+    private var deepRemaining = 0
+    private var deepWaiting: DeepWait?
     private var nextBlockEdge = ScanBlocks.first
     /// What the store holds for the running job. `pause()` writes this, never the
     /// in-memory counters, which run ahead of the saved results while a chunk is in
@@ -105,6 +123,11 @@ public actor ScanPipeline: Scanner {
     ///   - deferVision: leave out the feature print and face quality of photos that no detector can
     ///     read them for, and analyze them later if that changes (spec 010). False is the scan of
     ///     spec 009, for comparison; the results are the same either way.
+    ///   - tiered: run a full scan as a photo check (no Vision work) and then a deep check (the Vision
+    ///     work that is owed), two durable jobs of one run (spec 017). The results are the same as
+    ///     those of a one-pass scan once both have run.
+    ///   - deepWait: why the deep check should not start by itself, if it should not (spec 017
+    ///     FR-010); nil asks Low Power Mode.
     ///   - pauseWaitLimit: the longest `pause()` waits for the run loop to save and
     ///     acknowledge; tests raise it so a slow machine cannot hit it.
     ///   - minProgressInterval: at most one progress event per interval while items finish.
@@ -113,7 +136,8 @@ public actor ScanPipeline: Scanner {
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         profile: ScanProfile, progressEvery: Int = 10, policy: ScanRetryPolicy = .default,
-        deferVision: Bool = true,
+        deferVision: Bool = true, tiered: Bool = false,
+        deepWait: (@Sendable () -> DeepWait?)? = nil,
         pauseWaitLimit: Duration = .seconds(2), minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
             ProcessInfo.processInfo.thermalState
@@ -131,6 +155,8 @@ public actor ScanPipeline: Scanner {
         policy.chunkSize = min(max(1, profile.chunkSize), ScanChunk.maxSize)
         self.policy = policy
         self.deferVision = deferVision
+        self.tiered = tiered
+        self.deepWait = deepWait
         self.pauseWaitLimit = pauseWaitLimit
         self.minProgressInterval = minProgressInterval
         self.thermalState = thermalState
@@ -143,7 +169,8 @@ public actor ScanPipeline: Scanner {
     public init(
         library: PhotoLibrary, store: Store, analyzer: Analyzer = DefaultAnalyzer(),
         concurrency: Int = 4, chunkSize: Int = 32, progressEvery: Int = 10,
-        policy: ScanRetryPolicy = .default, deferVision: Bool = true,
+        policy: ScanRetryPolicy = .default, deferVision: Bool = true, tiered: Bool = false,
+        deepWait: (@Sendable () -> DeepWait?)? = nil,
         pauseWaitLimit: Duration = .seconds(2),
         minProgressInterval: Duration = .zero,
         thermalState: @escaping @Sendable () -> ProcessInfo.ThermalState = {
@@ -154,7 +181,8 @@ public actor ScanPipeline: Scanner {
             library: library, store: store, analyzer: analyzer,
             profile: ScanProfile(name: "custom", concurrency: concurrency, chunkSize: chunkSize),
             progressEvery: progressEvery, policy: policy,
-            deferVision: deferVision, pauseWaitLimit: pauseWaitLimit,
+            deferVision: deferVision, tiered: tiered, deepWait: deepWait,
+            pauseWaitLimit: pauseWaitLimit,
             minProgressInterval: minProgressInterval,
             thermalState: thermalState)
     }
@@ -162,6 +190,14 @@ public actor ScanPipeline: Scanner {
     // MARK: Scanner
 
     public func startFullScan() async -> AsyncStream<ScanProgress> {
+        await start(deepOnly: false)
+    }
+
+    public func startDeepScan() async -> AsyncStream<ScanProgress> {
+        await start(deepOnly: true)
+    }
+
+    private func start(deepOnly: Bool) async -> AsyncStream<ScanProgress> {
         let (stream, continuation) = AsyncStream<ScanProgress>.makeStream()
         guard task == nil else {
             continuation.finish()
@@ -172,7 +208,7 @@ public actor ScanPipeline: Scanner {
         pausedAndSaved = false
         stopRequested = false
         task = Task { [weak self] in
-            _ = await self?.run(kind: .full) { continuation.yield($0) }
+            _ = await self?.run(kind: .full, deepOnly: deepOnly) { continuation.yield($0) }
             // Free the run slot before the stream ends, so a scan started right after the
             // last event is not refused.
             await self?.clearTask()
@@ -300,13 +336,18 @@ public actor ScanPipeline: Scanner {
 
     // MARK: Run
 
+    /// Runs a scan: one job, or in a tiered full scan a photo check and then a deep check (spec 017).
+    /// The jobs are separate and durable; no final event is sent between them.
     @discardableResult
-    private func run(kind: ScanKind, progress: @escaping @Sendable (ScanProgress) -> Void) async
-        -> ScanProgress
-    {
+    private func run(
+        kind: ScanKind, deepOnly: Bool = false,
+        progress: @escaping @Sendable (ScanProgress) -> Void
+    ) async -> ScanProgress {
         sinceProgress = 0
         lastProgressAt = nil
         publishedRevision = 0
+        deepRemaining = 0
+        deepWaiting = nil
         storedSession = nil
         jobStart = nil
         storedLeased = [:]
@@ -321,7 +362,27 @@ public actor ScanPipeline: Scanner {
         activeChunks = 0
         progressSink = progress
         runKind = kind
-        guard await loadJob(kind: kind) else { return await finish(progress: progress) }
+        let scope = firstScope(kind: kind, deepOnly: deepOnly)
+        guard await loadJob(kind: kind, scope: scope) else {
+            return await finish(progress: progress)
+        }
+        repeat {
+            await runJob(kind: kind, progress: progress)
+        } while await beginDeepTier()
+        return await finish(progress: progress)
+    }
+
+    /// What the first job of a run is for. Without tiers every job is a one-pass job (`all`).
+    private func firstScope(kind: ScanKind, deepOnly: Bool) -> PlanScope {
+        guard tiered else { return .all }
+        if kind == .quickCheck { return .changes }
+        return deepOnly ? .deep : .photos
+    }
+
+    /// Runs the loaded job until its chunks are done, it is paused and stopped, or the scan is stopped.
+    private func runJob(kind: ScanKind, progress: @escaping @Sendable (ScanProgress) -> Void)
+        async
+    {
         nextBlockEdge = ScanBlocks.edge(after: session?.processedItems ?? 0)
         progress(snapshot())
         var caughtUp = false
@@ -353,7 +414,73 @@ public actor ScanPipeline: Scanner {
         }
         await drainWrites()
         await saveUnsaved(progress: progress)
-        return await finish(progress: progress)
+    }
+
+    // MARK: Tiers
+
+    /// The photo check ran to the end: plans the deep check as the next job of the same run, or says why
+    /// it does not (spec 017 FR-009, FR-010). Returns whether a deep job is now the running one.
+    ///
+    /// The photo job ends `completed` and its chunks go with it, then the deep job is stored. A death
+    /// between the two writes leaves a finished photo check and no job, which is exactly the state of a
+    /// deep check that waits: nothing to recover, and the person can start it.
+    private func beginDeepTier() async -> Bool {
+        guard tiered, runKind == .full, !stopRequested, unsaved.isEmpty,
+            session?.tier == .photos
+        else { return false }
+        let library = await self.library.fetchAllItems()
+        let stored = (try? await store.itemSummaries()) ?? []
+        // Planned as a quick check is: a photo that could not be opened was the photo check's to retry.
+        let plan = ScanPlanner.plan(
+            library: library, stored: stored, kind: .quickCheck, policy: policy,
+            deferVision: true, scope: .deep)
+        deepRemaining = plan.toAnalyze.count
+        guard !plan.toAnalyze.isEmpty else { return false }
+        if let reason = deepWaitReason() {
+            deepWaiting = reason
+            return false
+        }
+        deepWaiting = nil
+        await endJobWithoutEvent()
+        await apply(plan)
+        let s = ScanSession(
+            kind: .full, state: .running, totalItems: plan.toAnalyze.count, tier: .deep)
+        let new = ScanPlanner.chunks(
+            jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize,
+            skipVision: plan.skipVision)
+        if (try? await store.createJob(s, chunks: new)) != nil { storedSession = s }
+        session = s
+        jobStart = s
+        chunks = new
+        // A catch-up belongs to a job resumed from the store; this one was planned a moment ago.
+        needsCatchUp = false
+        // The photo check's last results are final: show them before the deep check starts.
+        publishedRevision += 1
+        return true
+    }
+
+    /// Why the deep check must wait now, if it must.
+    private func deepWaitReason() -> DeepWait? {
+        if let custom = deepWait { return custom() }
+        return lowPowerMode() ? .lowPowerMode : nil
+    }
+
+    /// Ends the running job as completed and forgets it, without the final event `finish` sends, so
+    /// that the next job of the run follows it on the same stream. Everything the job did is stored
+    /// by now (`runJob` drained the writes), and saving an ended session removes its chunks.
+    private func endJobWithoutEvent() async {
+        guard var done = session else { return }
+        done.state = .completed
+        done.finishedAt = .now
+        session = done
+        try? await store.saveSession(done)
+        chunks = []
+        unsaved = []
+        unsavedChunks = []
+        owedTally = Tally()
+        storedSession = nil
+        jobStart = nil
+        storedLeased = [:]
     }
 
     // MARK: Lanes
@@ -438,12 +565,12 @@ public actor ScanPipeline: Scanner {
 
     /// Loads the unfinished job, adopts one from an older app version, or plans a new
     /// one. Returns false when there is nothing to run.
-    private func loadJob(kind: ScanKind) async -> Bool {
+    private func loadJob(kind: ScanKind, scope: PlanScope) async -> Bool {
         if let previous = try? await store.currentSession(), previous.isActive {
             let stored = (try? await store.chunks(job: previous.id)) ?? []
             if stored.isEmpty {
                 // Started by an app version without chunks: keep its count (003 FR-014).
-                return await plan(kind: .full, adopting: previous)
+                return await plan(kind: .full, scope: .all, adopting: previous)
             }
             let reclaimed = ScanReclaim.reclaim(
                 stored, session: previous, owner: incarnation, policy: policy)
@@ -497,14 +624,20 @@ public actor ScanPipeline: Scanner {
             needsCatchUp = true
             return true
         }
-        return await plan(kind: kind, adopting: nil)
+        return await plan(kind: kind, scope: scope, adopting: nil)
     }
 
-    private func plan(kind: ScanKind, adopting previous: ScanSession?) async -> Bool {
+    private func plan(kind: ScanKind, scope: PlanScope, adopting previous: ScanSession?) async
+        -> Bool
+    {
         let library = await self.library.fetchAllItems()
         let stored = (try? await store.itemSummaries()) ?? []
+        // The deep check plans as a quick check does: a photo that could not be opened was the photo
+        // check's to retry, not its.
         let plan = ScanPlanner.plan(
-            library: library, stored: stored, kind: kind, policy: policy, deferVision: deferVision)
+            library: library, stored: stored, kind: scope == .deep ? .quickCheck : kind,
+            policy: policy, deferVision: deferVision, scope: scope)
+        deepRemaining = plan.deepOwed.count
         await apply(plan)
         var s: ScanSession
         if var previous {
@@ -514,7 +647,9 @@ public actor ScanPipeline: Scanner {
             previous.totalItems = previous.processedItems + plan.toAnalyze.count
             s = previous
         } else {
-            s = ScanSession(kind: kind, state: .running, totalItems: plan.toAnalyze.count)
+            s = ScanSession(
+                kind: kind, state: .running, totalItems: plan.toAnalyze.count,
+                tier: Self.tier(of: scope))
         }
         let new = ScanPlanner.chunks(
             jobID: s.id, assetIDs: plan.toAnalyze.map(\.assetID), size: policy.chunkSize,
@@ -526,9 +661,20 @@ public actor ScanPipeline: Scanner {
         return true
     }
 
+    /// The tier a job planned for `scope` belongs to; a one-pass job belongs to none.
+    private static func tier(of scope: PlanScope) -> ScanTier? {
+        switch scope {
+        case .photos: .photos
+        case .deep: .deep
+        case .all, .changes: nil
+        }
+    }
+
     /// Writes what a plan decided besides the analysis itself: items that left the library are
     /// forgotten, changed metadata is refreshed, and items that need no analysis are stored right
-    /// away so they can be listed before any photo is opened (spec 008 quick wins).
+    /// away so they can be listed before any photo is opened (spec 008 quick wins). Burst frames of a
+    /// photo check are stored the same way (spec 017): their group is known from the library, and
+    /// they stay in the job to be analyzed.
     private func apply(_ plan: ScanPlan) async {
         try? await store.deleteItems(plan.gone)
         // In slices, so a library whose every item changed at once (the first scan after an update
@@ -544,7 +690,14 @@ public actor ScanPipeline: Scanner {
             try? await store.upsert(
                 slice.map { LibraryItem(metadata: $0, analysisSource: .metadataOnly, analysis: nil) })
         }
-        if !plan.gone.isEmpty || !plan.refreshed.isEmpty || !plan.quickWins.isEmpty {
+        for start in stride(from: 0, to: plan.listedEarly.count, by: 500) {
+            let slice = plan.listedEarly[start..<min(start + 500, plan.listedEarly.count)]
+            try? await store.upsert(
+                slice.map { LibraryItem(metadata: $0, analysisSource: .metadataOnly, analysis: nil) })
+        }
+        if !plan.gone.isEmpty || !plan.refreshed.isEmpty || !plan.quickWins.isEmpty
+            || !plan.listedEarly.isEmpty
+        {
             publishedRevision += 1
         }
     }
@@ -556,10 +709,18 @@ public actor ScanPipeline: Scanner {
         let library = await self.library.fetchAllItems()
         let stored = (try? await store.itemSummaries()) ?? []
         // A quick-check diff: only new or changed items, never a retry of items this job
-        // already gave up on.
+        // already gave up on. A job of a tiered scan catches up in its own tier, so a photo check
+        // never gets Vision work and a deep check never stops to look for another kind of work.
+        let scope: PlanScope
+        switch session?.tier {
+        case .photos?: scope = .photos
+        case .deep?: scope = .deep
+        default: scope = tiered ? .changes : .all
+        }
         let plan = ScanPlanner.plan(
             library: library, stored: stored, kind: .quickCheck, policy: policy,
-            deferVision: deferVision)
+            deferVision: deferVision, scope: scope)
+        deepRemaining = plan.deepOwed.count
         await apply(plan)
         // Items still waiting in an unfinished chunk are covered. Items in finished chunks
         // that changed since are not, and must be analyzed again.
@@ -594,6 +755,11 @@ public actor ScanPipeline: Scanner {
             }
             final.finishedAt = .now
             session = final
+            // A deep job that ends early still owes the photos it did not reach (spec 017).
+            if final.tier == .deep {
+                deepRemaining =
+                    final.state == .completed ? 0 : max(0, final.totalItems - final.processedItems)
+            }
             // Saving an ended session also removes its chunks, in one transaction.
             try? await store.saveSession(final)
         }
@@ -713,6 +879,9 @@ public actor ScanPipeline: Scanner {
         // The Vision work the plan left out, by work index (spec 010), captured the same way.
         let skips: [Int: VisionWork] = Dictionary(
             uniqueKeysWithValues: work.map { ($0, chunk.skippedVision(at: $0)) })
+        // A photo check asks the analyzer for exactly nothing, so it cannot add the face pass of an
+        // Unimportant candidate on its own (spec 017 FR-005).
+        let exact = session?.tier == .photos
 
         if chunk.isolate {
             // After a crash: one item at a time. The item is saved as in flight before it
@@ -730,7 +899,7 @@ public actor ScanPipeline: Scanner {
                 }
                 let outcome = await Self.analyze(
                     metadata[i]!, library: library, analyzer: analyzer, limit: limit,
-                    skipping: skips[i] ?? [])
+                    skipping: skips[i] ?? [], exact: exact)
                 chunk.inFlightIndex = nil
                 record(
                     i, outcome, chunk: &chunk, results: &results, failures: &failures,
@@ -776,7 +945,7 @@ public actor ScanPipeline: Scanner {
                             i,
                             await Self.analyze(
                                 m, library: library, analyzer: analyzer, limit: limit,
-                                skipping: skipped)
+                                skipping: skipped, exact: exact)
                         )
                     }
                     return true
@@ -1047,7 +1216,8 @@ public actor ScanPipeline: Scanner {
             processed: s.processedItems, total: s.totalItems, notScanned: s.notScannedCount,
             state: paused ? .paused : s.state, isThermalPaused: !paused && isTooHot,
             pauseReason: paused ? pauseReason : nil, failed: s.failedItems,
-            publishedRevision: publishedRevision)
+            publishedRevision: publishedRevision, tier: s.tier, deepRemaining: deepRemaining,
+            deepWait: deepWaiting)
     }
 
     private func emit(_ event: ScanProgress, _ progress: @Sendable (ScanProgress) -> Void) {
@@ -1067,11 +1237,17 @@ public actor ScanPipeline: Scanner {
     /// opening their preview would be wasted work.
     private static func analyze(
         _ m: AssetMetadata, library: PhotoLibrary, analyzer: Analyzer, limit: Duration,
-        skipping skipped: VisionWork = []
+        skipping skipped: VisionWork = [], exact: Bool = false
     ) async -> ItemOutcome {
         if m.kind == .screenshot || m.kind.isVideo {
             return .item(LibraryItem(metadata: m, analysisSource: .metadataOnly, analysis: nil))
         }
+        // What the analyzer is asked for: the work the plan kept, and in a photo check the word that
+        // it may add nothing.
+        let request: VisionWork =
+            exact
+            ? VisionWork.all.subtracting(skipped).union(.exact)
+            : VisionWork.all.subtracting(skipped)
         let outcome: Timeout.Outcome<ItemOutcome> = await Timeout.run(limit) {
             guard !Task.isCancelled else { return .failed(.transient) }
             let preview = await library.preview(for: m.assetID, maxPixels: previewSize)
@@ -1079,8 +1255,7 @@ public actor ScanPipeline: Scanner {
                 return .item(LibraryItem(metadata: m, analysisSource: .notScanned, analysis: nil))
             }
             do {
-                let analysis = try await analyzer.analyze(
-                    image, metadata: m, vision: VisionWork.all.subtracting(skipped))
+                let analysis = try await analyzer.analyze(image, metadata: m, vision: request)
                 return .item(
                     LibraryItem(metadata: m, analysisSource: preview.source, analysis: analysis))
             } catch {

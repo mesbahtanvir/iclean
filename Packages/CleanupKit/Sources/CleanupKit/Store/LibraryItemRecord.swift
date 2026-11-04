@@ -142,7 +142,7 @@ final class LibraryItemRecord {
             metadata: metadata,
             analysisSource: AnalysisSource(rawValue: analysisSourceRaw) ?? .notScanned,
             scanAttempts: scanAttempts ?? 0,
-            skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0))
+            skippedVision: VisionWork(rawValue: visionSkippedRaw ?? 0), sharpness: sharpness)
     }
 
     /// The item without its feature print (`featurePrint` is empty). Reads no feature print.

@@ -56,8 +56,14 @@ public struct DefaultAnalyzer: Analyzer {
         let aesthetics = mayBeBlurry ? await Aesthetics.score(image) : nil
         // The Unimportant list (spec 011) reads the face pass of soft photos that nothing else asks it
         // for, and softness is only known now, so the pass is decided here. The flag records the outcome.
+        // A request marked `exact` (the photo check of a tiered scan, spec 017) gets only what it names:
+        // the deep check asks for that pass later, from the sharpness this one stores.
         var done = vision
-        if UnimportantDetector.isCandidate(metadata, sharpness: sharpness) { done.insert(.faceQuality) }
+        if !vision.contains(.exact),
+            UnimportantDetector.isCandidate(metadata, sharpness: sharpness)
+        {
+            done.insert(.faceQuality)
+        }
         let faces = isPhoto && done.contains(.faceQuality) ? await FaceQuality.score(image) : nil
         return Analysis(
             dHash: hash, thumbprint: Thumbprint.compute(image), featurePrint: print,

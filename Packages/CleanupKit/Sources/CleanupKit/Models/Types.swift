@@ -275,13 +275,16 @@ public struct ScanSession: Sendable, Hashable, Identifiable {
     /// Times this job was resumed after the app died; a catch-up for library changes
     /// runs when it is above zero (003 FR-011).
     public var interruptedCount: Int
+    /// Which tier of a tiered scan this job is (spec 017); nil for a one-pass job, which is every job
+    /// an earlier build wrote.
+    public var tier: ScanTier?
 
     public init(
         id: UUID = UUID(), kind: ScanKind, state: ScanState, startedAt: Date = .now,
         finishedAt: Date? = nil, totalItems: Int = 0, processedItems: Int = 0,
         notScannedCount: Int = 0, lastProcessedAssetID: String? = nil,
         baseProcessed: Int = 0, failedItems: Int = 0, crashCount: Int = 0,
-        interruptedCount: Int = 0
+        interruptedCount: Int = 0, tier: ScanTier? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -296,6 +299,7 @@ public struct ScanSession: Sendable, Hashable, Identifiable {
         self.interruptedCount = interruptedCount
         self.notScannedCount = notScannedCount
         self.lastProcessedAssetID = lastProcessedAssetID
+        self.tier = tier
     }
 
     public var isActive: Bool { state == .running || state == .paused }
@@ -331,11 +335,20 @@ public struct ScanProgress: Sendable, Hashable {
     /// wins were stored, or a block of photos was finished and saved (spec 008). A screen that
     /// rebuilds results compares it with the last value it acted on.
     public var publishedRevision: Int
+    /// The tier of the job that is running, or ran last (spec 017); nil for a one-pass job.
+    /// `processed` and `total` are those of this job.
+    public var tier: ScanTier?
+    /// Photos whose Vision work is still owed, as of the last plan (spec 017); zero when none is owed or
+    /// when it is not known. Only a tiered scan owes any.
+    public var deepRemaining: Int
+    /// Why the deep tier is not starting by itself, when it is not (spec 017 FR-010).
+    public var deepWait: DeepWait?
 
     public init(
         processed: Int, total: Int, notScanned: Int, state: ScanState,
         isThermalPaused: Bool = false, pauseReason: ScanPauseReason? = nil, failed: Int = 0,
-        publishedRevision: Int = 0
+        publishedRevision: Int = 0, tier: ScanTier? = nil, deepRemaining: Int = 0,
+        deepWait: DeepWait? = nil
     ) {
         self.processed = processed
         self.total = total
@@ -345,6 +358,9 @@ public struct ScanProgress: Sendable, Hashable {
         self.pauseReason = pauseReason
         self.failed = failed
         self.publishedRevision = publishedRevision
+        self.tier = tier
+        self.deepRemaining = deepRemaining
+        self.deepWait = deepWait
     }
 
     public var fraction: Double { total == 0 ? 1 : Double(processed) / Double(total) }
