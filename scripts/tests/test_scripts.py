@@ -31,6 +31,7 @@ workflows = load("check-workflows.py")
 ui_shards = load("ui-test-shards.py")
 junit_summary = load("junit-summary.py")
 built_app = load("check-built-app.py")
+flaky_tests = load("flaky-tests.py")
 
 
 def write(root: pathlib.Path, relative: str, text: str = "x\n"):
@@ -867,6 +868,37 @@ class BuiltAppTests(unittest.TestCase):
             problems, _ = built_app.check_app(app, release=False)
         self.assertEqual(len(problems), 1)
         self.assertIn("cannot be read", problems[0])
+
+
+class FlakyTestsTests(unittest.TestCase):
+    LOG = (
+        "Test Case '-[icleanUITests.AccessibilityTests testMainScreens]' started.\n"
+        "Test Case '-[icleanUITests.AccessibilityTests testMainScreens]' failed (58.3 seconds).\n"
+        "Test Case '-[icleanUITests.AccessibilityTests testMainScreens]' started.\n"
+        "Test Case '-[icleanUITests.AccessibilityTests testMainScreens]' passed (54.0 seconds).\n"
+        "Test Case '-[icleanUITests.SimilarFlowTests testKeeping]' failed (20.0 seconds).\n"
+        "Test Case '-[icleanUITests.SimilarFlowTests testKeeping]' failed (21.0 seconds).\n"
+        "Test Case '-[icleanUITests.HomeStatesTests testPause]' passed (9.0 seconds).\n"
+    )
+
+    def test_a_test_that_failed_and_then_passed_is_flaky(self):
+        self.assertEqual(flaky_tests.flaky(self.LOG), {"AccessibilityTests/testMainScreens": 2})
+
+    def test_a_test_that_failed_every_time_or_never_is_not(self):
+        flaky = flaky_tests.flaky(self.LOG)
+        self.assertNotIn("SimilarFlowTests/testKeeping", flaky)
+        self.assertNotIn("HomeStatesTests/testPause", flaky)
+
+    def test_a_test_that_passed_and_then_failed_is_not_reported_as_flaky(self):
+        log = (
+            "Test Case '-[T.A testOne]' passed (1.0 seconds).\n"
+            "Test Case '-[T.A testOne]' failed (1.0 seconds).\n"
+        )
+        self.assertEqual(flaky_tests.flaky(log), {})
+
+    def test_the_report_names_the_test_and_says_nothing_when_nothing_is_flaky(self):
+        self.assertIn("`AccessibilityTests/testMainScreens` took 2 tries", flaky_tests.report(self.LOG))
+        self.assertEqual(flaky_tests.report("Test Case '-[T.A testOne]' passed (1.0 seconds).\n"), "")
 
 
 if __name__ == "__main__":

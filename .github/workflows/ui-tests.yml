@@ -145,7 +145,10 @@ jobs:
         run: |
           only=()
           for class in $CLASSES; do only+=("-only-testing:icleanUITests/$class"); done
-          scripts/run-ui-tests.sh "$UDID" Default "shard-$SHARD" "${only[@]}"
+          # A test that fails is run again, up to three times in all, and reported as flaky if a later
+          # run passes. One that fails every time fails the shard.
+          scripts/run-ui-tests.sh "$UDID" Default "shard-$SHARD" \
+            -retry-tests-on-failure -test-iterations 3 "${only[@]}"
       - name: Summary
         if: always()
         env:
@@ -182,6 +185,8 @@ jobs:
       - name: Run the full flow with the tripwire on
         env:
           UDID: ${{ steps.xcode.outputs.udid }}
+        # Not run again when it fails: an attempt to use the network that only sometimes happens is
+        # exactly what this plan is there to find.
         run: scripts/run-ui-tests.sh "$UDID" NoNetwork no-network
       - name: Summary
         if: always()
@@ -227,7 +232,10 @@ jobs:
           TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screenshots
         run: |
           mkdir -p build/screenshots
-          scripts/run-ui-tests.sh "$UDID" Default "tour-$LOOK" "-only-testing:icleanUITests/ScreenshotTour/$TEST"
+          # The tour is run again once if the simulator timed out under it.
+          scripts/run-ui-tests.sh "$UDID" Default "tour-$LOOK" \
+            -retry-tests-on-failure -test-iterations 2 \
+            "-only-testing:icleanUITests/ScreenshotTour/$TEST"
       - name: What was saved
         if: always()
         run: |

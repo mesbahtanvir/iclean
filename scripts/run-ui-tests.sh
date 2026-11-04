@@ -49,4 +49,7 @@ if grep -q 'AUDIT' "build/$NAME.log"; then
   grep 'AUDIT' "build/$NAME.log" | sort -u | head -80
   echo "::endgroup::"
 fi
+
+# A test that failed and then passed on a retry is reported, not hidden.
+python3 scripts/flaky-tests.py "build/$NAME.log" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 exit "$status"

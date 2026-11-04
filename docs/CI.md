@@ -109,3 +109,20 @@ python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
   scroll-performance test is a measurement and runs on request (`SCROLL_PERF=1`).
 - **Xcode 27.** The README asks for Xcode 27; the runner has an earlier Xcode, so code that needs the
   iOS 27 SDK is compiled only where the compiler is new enough (`ScanContinuation.swift`).
+
+## Where the runner differs from a Mac with Xcode 27
+
+The runner has Xcode 26.6 and iOS 26.5 simulators. Four things came out of that, each found by a run:
+
+- The system's abbreviations for a duration differ ("12 secs." on iOS 27, "12 sec" on iOS 26), so
+  `FormatTests` compares the numbers and the units, not the plural style.
+- How alike a photo and its crop are is Vision's to say, and a release says it differently: in the demo
+  library the edited pair is a second Similar group on iOS 26.5. `SimilarFlowTests` therefore checks that
+  what is removed is what was selected, not that the category holds only the twins.
+- The accessibility audit (`AccessibilityTests`) is not deterministic: the same code passed and failed it
+  on the runner (the test's own comments say the audit flags a different row from run to run). A UI test
+  that fails is run again, up to three times, and **a test that needed a retry is listed as flaky** in the
+  job summary and as a warning; a test that fails every time still fails the shard. The NoNetwork plan is
+  never run again.
+- A simulator can time out under the screenshot tour ("Timed out while evaluating UI query"), so the
+  tour is run again once.
