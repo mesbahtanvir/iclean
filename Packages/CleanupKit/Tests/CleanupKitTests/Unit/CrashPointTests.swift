@@ -236,7 +236,11 @@ final class DyingStore: Store, @unchecked Sendable {
         let expectedResults = try await results(reference)
         #expect(expected.count == 12)
 
-        // Die after every write in turn, and one past the last (nothing lost).
+        // Die after every write in turn, and one past the last (nothing lost). `interrupted` and
+        // `betweenTiers` count the kills that really cut a scan short, so a sweep whose deaths all
+        // landed on a finished scan, or on none, cannot pass for a proof.
+        var interrupted = 0
+        var betweenTiers = 0
         for limit in 0...(total + 1) {
             let base = try InMemoryStore.make()
             let dying = DyingStore(base, limit: limit)
@@ -248,6 +252,12 @@ final class DyingStore: Store, @unchecked Sendable {
             let completeAtDeath = Set(
                 summaries.filter { $0.analysisSource.hasAnalysis && $0.skippedVision.isEmpty }
                     .map(\.assetID))
+
+            // Every photo stored, and some not yet as an uninterrupted scan leaves them: the photo
+            // check done, the deep check not.
+            let atDeath = try await snapshot(base)
+            if summaries.count < expected.count { interrupted += 1 }
+            if atDeath.count == expected.count && atDeath != expected { betweenTiers += 1 }
 
             // A new process, a new person's tap, until nothing is left to do.
             let after = newLog()
@@ -272,6 +282,11 @@ final class DyingStore: Store, @unchecked Sendable {
             for id in completeAtDeath {
                 #expect(after.requests(id).isEmpty, "\(label): \(id) was analyzed again")
             }
+        }
+        #expect(interrupted >= 3, "tiered \(tiered): only \(interrupted) kills cut the scan short")
+        if tiered {
+            // The kill the spec worries about most: after the photo check, before the deep check.
+            #expect(betweenTiers >= 1, "no kill landed between the photo check and the deep check")
         }
     }
 

@@ -30,7 +30,10 @@ made as an **artifact**.
   has a spec and a well-formed task list; every JSON file, test plan, string catalog and property list
   parses; every test a test plan names exists; the privacy manifest tracks and collects nothing; no
   test is switched off without a reason or commented out; no key, token or signing team is committed;
-  no build output or oversized file is committed; no merge conflict markers.
+  no build output or oversized file is committed; no merge conflict markers; every "spec 017" in the
+  code and the documents names a spec folder that exists; no package comes from a remote URL; the
+  layers hold (CleanupKit imports no UI framework but for converting an image, and the app reads
+  photos, runs Vision and imports BaselineKit only in files that are wholly `#if DEBUG`).
 
 ### App
 
@@ -39,8 +42,9 @@ made as an **artifact**.
 - **The built app keeps its promises** (`scripts/check-built-app.py`): the bundle id, the Photos text
   that says nothing leaves the device, no App Transport Security exceptions, the iPhone's background
   mode for a scan that continues, the Mac's minimum system version, a privacy manifest in the bundle,
-  no networking framework linked, no networking API named in the binary, and in Release none of the
-  tooling that is only compiled into Debug.
+  no networking framework linked, no networking API named in the binary (a Debug build keeps its code
+  in a debug dylib, which is read too), and in Release none of the tooling that is only compiled into
+  Debug. The size of the bundle is reported.
 - **Unit tests** of the app target (`icleanTests`) on a simulator, with the result summarized
   (`scripts/xcresult-summary.py`) and the coverage of the app target.
 

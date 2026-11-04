@@ -30,6 +30,12 @@ on:
 permissions:
   contents: read
 
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ui-tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -46,13 +52,24 @@ jobs:
     timeout-minutes: 5
     outputs:
       shards: ${{ steps.plan.outputs.shards }}
+      looks: ${{ steps.plan.outputs.looks }}
     steps:
       - uses: actions/checkout@v4
       - name: Put every test class in a shard
         id: plan
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           echo "shards=$(python3 scripts/ui-test-shards.py --shards "$SHARDS")" >> "$GITHUB_OUTPUT"
-          python3 scripts/ui-test-shards.py --shards "$SHARDS" --table >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/ui-test-shards.py --shards "$SHARDS" --table | tee -a "$GITHUB_STEP_SUMMARY"
+          # A pull request takes two looks at the screens; the nightly run and a push to main, four.
+          light='{"look":"light","test":"testLight"},{"look":"dark","test":"testDark"}'
+          large='{"look":"largetext","test":"testLargeText"},{"look":"xxxl","test":"testLargestText"}'
+          if [[ "$EVENT" == pull_request ]]; then
+            echo "looks=[$light]" >> "$GITHUB_OUTPUT"
+          else
+            echo "looks=[$light,$large]" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: Build for testing
@@ -180,21 +197,13 @@ jobs:
 
   screenshots:
     name: Screenshots (${{ matrix.look }})
-    needs: build
+    needs: [plan, build]
     runs-on: macos-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - look: light
-            test: testLight
-          - look: dark
-            test: testDark
-          - look: largetext
-            test: testLargeText
-          - look: xxxl
-            test: testLargestText
+        include: ${{ fromJSON(needs.plan.outputs.looks) }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/xcode-project
@@ -230,7 +239,7 @@ jobs:
             echo '```'
             ls build/screenshots 2>/dev/null || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

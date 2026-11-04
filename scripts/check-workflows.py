@@ -5,6 +5,8 @@ checks (it does the syntax, the expressions and the shell).
     scripts/check-workflows.py [root]
 
   - the token is least-privilege: `permissions` is written, at the top or on every job
+  - `defaults.run.shell` is `bash`, which is `bash -eo pipefail`: a pipeline fails when any command in
+    it fails, so a check piped into `tee` still fails the step
   - a job that can hang has `timeout-minutes`
   - a workflow that starts on `pull_request` or `push` has a `concurrency` group, so a new push
     does not leave the old run holding a runner
@@ -69,6 +71,9 @@ def check_workflow(root: Path, path: Path):
 
     if "permissions" not in doc and not all("permissions" in job for job in jobs.values()):
         problems.append(f"{name}: no `permissions` (write them at the top, or on every job)")
+
+    if ((doc.get("defaults") or {}).get("run") or {}).get("shell") != "bash":
+        problems.append(f"{name}: no `defaults: run: shell: bash` (a pipeline would hide a failure)")
 
     if ("pull_request" in on or "push" in on) and "concurrency" not in doc:
         problems.append(f"{name}: no `concurrency` group")

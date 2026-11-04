@@ -454,6 +454,56 @@ class RepoFilesTests(unittest.TestCase):
         found = self.problems("markers", {"README.md": text})
         self.assertEqual(len(found), 2)
 
+    # references
+    def test_a_reference_to_a_spec_that_has_no_folder_is_reported(self):
+        files = {
+            "specs/017-tiers/spec.md": "x\n",
+            "iclean/A.swift": "// spec 017 says so\n// see specs/017-tiers/spec.md\n// spec 099 is gone\n",
+        }
+        found = self.problems("references", files)
+        self.assertEqual(len(found), 1)
+        self.assertIn("spec 099", found[0])
+        self.assertIn("A.swift:3", found[0])
+
+    def test_the_specs_folder_itself_is_not_read_for_references(self):
+        self.assertEqual(self.problems("references", {"specs/001-a/spec.md": "spec 042 will come\n"}), [])
+
+    # dependencies
+    def test_a_remote_package_is_reported_and_a_local_one_is_not(self):
+        remote = '.package(url: "https://github.com/x/y", from: "1.0.0"),\n'
+        local = '.package(path: "../.."),\n'
+        self.assertEqual(len(self.problems("dependencies", {"Packages/P/Package.swift": remote})), 1)
+        self.assertEqual(self.problems("dependencies", {"Packages/P/Package.swift": local}), [])
+
+    def test_a_remote_package_in_the_project_is_reported(self):
+        remote = "packages:\n  Thing:\n    url: https://github.com/x/y\n    from: 1.0.0\n"
+        local = "packages:\n  CleanupKit:\n    path: Packages/CleanupKit\n"
+        self.assertEqual(len(self.problems("dependencies", {"project.yml": remote})), 1)
+        self.assertEqual(self.problems("dependencies", {"project.yml": local}), [])
+
+    # layers
+    def test_the_package_may_not_import_a_ui_framework_but_for_the_image_conversion(self):
+        files = {
+            "Packages/CleanupKit/Sources/CleanupKit/Models/A.swift": "import SwiftUI\n",
+            "Packages/CleanupKit/Sources/CleanupKit/Library/PhotoKitLibrary.swift": "import UIKit\n",
+            "Packages/CleanupKit/Sources/CleanupKit/Models/B.swift": "import Foundation\n",
+        }
+        found = self.problems("layers", files)
+        self.assertEqual(len(found), 1)
+        self.assertIn("Models/A.swift", found[0])
+
+    def test_the_package_may_not_import_the_tooling_that_depends_on_it(self):
+        files = {"Packages/CleanupKit/Sources/CleanupKit/A.swift": "import BaselineKit\n"}
+        self.assertEqual(len(self.problems("layers", files)), 1)
+
+    def test_the_app_reads_photos_and_runs_vision_only_in_debug_files(self):
+        debug = "// DEBUG-only.\n#if DEBUG\n    import Photos\n    import BaselineKit\n#endif\n"
+        shipped = "import SwiftUI\nimport Vision\n"
+        found = self.problems("layers", {"iclean/App/D.swift": debug, "iclean/Features/S.swift": shipped})
+        self.assertEqual(len(found), 1)
+        self.assertIn("iclean/Features/S.swift", found[0])
+        self.assertIn("Vision", found[0])
+
     def test_the_whole_run_names_every_check(self):
         with tempfile.TemporaryDirectory() as tmp:
             write(pathlib.Path(tmp), "a.json", "{}")
@@ -470,6 +520,9 @@ on:
     paths: ["src/**"]
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: good-${{ github.ref }}
   cancel-in-progress: true
@@ -502,13 +555,17 @@ jobs:
     def test_a_workflow_that_follows_the_rules_passes(self):
         self.assertEqual(self.problems(), [])
 
-    def test_no_permissions_concurrency_or_timeout_is_reported(self):
+    def test_no_permissions_shell_concurrency_or_timeout_is_reported(self):
         bare = "on: pull_request\njobs:\n  j:\n    runs-on: x\n    steps:\n      - run: echo\n"
         found = self.problems(bare)
-        self.assertEqual(len(found), 3)
+        self.assertEqual(len(found), 4)
         joined = " ".join(found)
-        for word in ("permissions", "concurrency", "timeout-minutes"):
+        for word in ("permissions", "shell: bash", "concurrency", "timeout-minutes"):
             self.assertIn(word, joined)
+
+    def test_a_default_shell_other_than_bash_is_reported(self):
+        text = self.GOOD.replace("shell: bash", "shell: sh")
+        self.assertTrue(any("shell: bash" in p for p in self.problems(text)))
 
     def test_permissions_on_every_job_are_enough(self):
         text = self.GOOD.replace("permissions:\n  contents: read\n", "").replace(
@@ -785,6 +842,14 @@ class BuiltAppTests(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertTrue(any("privacy manifest" in p for p in problems))
         self.assertTrue(any("executable is missing" in p for p in problems))
+
+    def test_the_size_of_the_bundle_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            app = self.write_bundle(pathlib.Path(tmp), "ios", self.IOS, self.MANIFEST)
+            (app / "blob.bin").write_bytes(b"0" * 2_000_000)
+            problems, notes = built_app.check_app(app, release=False)
+        self.assertEqual(problems, [])
+        self.assertTrue(notes[0].startswith("the bundle is 2.0 MB"), notes)
 
     def test_a_debug_dylib_is_read_with_the_executable(self):
         with tempfile.TemporaryDirectory() as tmp:

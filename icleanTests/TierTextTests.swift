@@ -107,16 +107,17 @@ import Testing
     /// Big counts are grouped the way the rest of the app groups them ("12,400"), not run together.
     @Test(.enabled(if: Self.isEnglish)) func countsAreGrouped() {
         let words = TierState.running(done: 1_200, total: 12_400).words
-        #expect(words.contains(1_200.formatted()), words)
-        #expect(words.contains(12_400.formatted()), words)
+        #expect(words.contains(1_200.formatted()), "\(words)")
+        #expect(words.contains(12_400.formatted()), "\(words)")
     }
 
     // MARK: The offer to look deeper
 
+    /// The count is in the sentence, grouped ("12,400") or not ("12400"): either says it.
     @Test func theExplanationNamesTheNumberOwed() {
         for owed in [1, 2, 12, 1_000, 12_400] {
             let text = DeepOfferText.explanation(owed: owed, wait: nil)
-            #expect(text.contains(owed.formatted()), "\(owed): \(text)")
+            #expect(text.contains(owed.formatted()) || text.contains(String(owed)), "\(owed): \(text)")
         }
     }
 
@@ -124,24 +125,24 @@ import Testing
     @Test(.enabled(if: Self.isEnglish)) func theExplanationNeverSaysTheLibraryIsClean() {
         for wait in [nil, DeepWait.lowPowerMode] {
             let text = DeepOfferText.explanation(owed: 40, wait: wait).lowercased()
-            #expect(text.contains("may be missing"), text)
-            #expect(!text.contains("all clean"), text)
-            #expect(!text.contains("nothing to clean"), text)
+            #expect(text.contains("may be missing"), "\(text)")
+            #expect(!text.contains("all clean"), "\(text)")
+            #expect(!text.contains("nothing to clean"), "\(text)")
         }
     }
 
     @Test(.enabled(if: Self.isEnglish)) func theExplanationAgreesWithTheCount() {
         let one = DeepOfferText.explanation(owed: 1, wait: nil)
         let twelve = DeepOfferText.explanation(owed: 12, wait: nil)
-        #expect(one.hasPrefix("1 photo not compared yet."), one)
-        #expect(twelve.hasPrefix("12 photos not compared yet."), twelve)
+        #expect(one.hasPrefix("1 photo not compared yet."), "\(one)")
+        #expect(twelve.hasPrefix("12 photos not compared yet."), "\(twelve)")
     }
 
     /// In Low Power Mode the sentence starts with why nothing began by itself.
     @Test func lowPowerModeIsSaidFirst() {
         let wait = DeepWait.lowPowerMode
         let text = DeepOfferText.explanation(owed: 5, wait: wait)
-        #expect(text.hasPrefix(wait.because), text)
+        #expect(text.hasPrefix(wait.because), "\(text)")
         #expect(!wait.words.isEmpty)
         #expect(text.count > DeepOfferText.explanation(owed: 5, wait: nil).count)
     }

@@ -131,6 +131,11 @@ def binaries(executable: Path):
     return [executable] + sorted(executable.parent.glob("*.debug.dylib"))
 
 
+def bundle_size(app: Path) -> int:
+    """Bytes in every file of the bundle."""
+    return sum(f.stat().st_size for f in app.rglob("*") if f.is_file())
+
+
 def check_app(app: Path, release: bool):
     """Returns (problems, notes)."""
     platform, info_path, binary_dir, resources = layout(app)
@@ -140,7 +145,7 @@ def check_app(app: Path, release: bool):
     problems = check_info(info, platform)
     problems += check_privacy(read_plist(resources / "PrivacyInfo.xcprivacy"))
 
-    notes = []
+    notes = [f"the bundle is {bundle_size(app) / 1_000_000:.1f} MB"]
     executable = binary_dir / info.get("CFBundleExecutable", app.stem)
     if not executable.exists():
         problems.append(f"{executable}: the executable is missing")

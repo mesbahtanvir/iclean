@@ -147,6 +147,16 @@ final class ScreenshotTour: XCTestCase {
         }
         app.terminate()
 
+        // The deep check held back (Low Power Mode): the flat list with the offer to run it.
+        app = start("standard", extra: ["-Tiered", "on", "-LowPowerMode", "on"])
+        if element(app, "home.scan").waitForExistence(timeout: 10) {
+            element(app, "home.scan").tap()
+            if element(app, "home.deepScan").waitForExistence(timeout: 60) {
+                shot(app, "02-tiers-offer")
+            }
+        }
+        app.terminate()
+
         // Results and every screen under them.
         app = start("standard")
         guard element(app, "home.scan").waitForExistence(timeout: 10) else { return }

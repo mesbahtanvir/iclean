@@ -42,7 +42,7 @@ struct AppEnvironment: Sendable {
                 library: library, store: store, analyzer: Detectors.analyzer,
                 profile: LaunchArguments.scanProfile,
                 deferVision: LaunchArguments.deferVision, tiered: LaunchArguments.tiered,
-                minProgressInterval: .milliseconds(250)),
+                minProgressInterval: .milliseconds(250), lowPowerMode: LaunchArguments.lowPowerMode),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
@@ -149,6 +149,20 @@ enum LaunchArguments {
             if args.contains("-UITesting") { return false }
         #endif
         return true
+    }
+
+    /// Whether the deep check should wait as it does in Low Power Mode (spec 017 FR-010). DEBUG only:
+    /// `-LowPowerMode on` says so whatever the device is doing, so a UI test can see the deep check held
+    /// back and start it by hand.
+    static var lowPowerMode: @Sendable () -> Bool {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-LowPowerMode"), i + 1 < args.count {
+                let on = args[i + 1] != "off"
+                return { on }
+            }
+        #endif
+        return { ProcessInfo.processInfo.isLowPowerModeEnabled }
     }
 
     static var demoScenario: String {

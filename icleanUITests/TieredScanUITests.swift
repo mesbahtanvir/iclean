@@ -46,6 +46,27 @@ final class TieredScanUITests: XCTestCase {
         XCTAssertTrue(element(app, "home.hero").exists)
     }
 
+    /// Spec 017 FR-010 and FR-015: in Low Power Mode the deep check does not start by itself, Home
+    /// says so and offers it, and running it by hand finds what only it can find.
+    func testLowPowerModeHoldsTheDeepCheckBackAndRunNowStartsIt() {
+        let app = launchApp(
+            scenario: "standard", extraArguments: ["-Tiered", "on", "-LowPowerMode", "on"])
+        scan(app, expect: "results.category.duplicates")
+        XCTAssertTrue(app.buttons["scan.pause"].waitForNonExistence(timeout: 60))
+
+        // The photo check is done and the deep check is held: Home offers it and says why.
+        let offer = element(app, "home.deepScan")
+        XCTAssertTrue(offer.waitForExistence(timeout: 10))
+        XCTAssertTrue(offer.label.contains("Run Now"), offer.label)
+        XCTAssertTrue(offer.label.contains("Low Power Mode"), offer.label)
+        // What only the deep check finds is not listed as if there were none.
+        XCTAssertFalse(element(app, "results.category.similar").exists)
+
+        offer.tap()
+        XCTAssertTrue(element(app, "results.category.similar").waitForExistence(timeout: 60))
+        XCTAssertTrue(element(app, "home.deepScan").waitForNonExistence(timeout: 60))
+    }
+
     func testAScanEndsAsTheFlatListOfBefore() {
         let app = launchApp(scenario: "standard", extraArguments: ["-Tiered", "on"])
         scan(app, expect: "results.category.duplicates")

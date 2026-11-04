@@ -22,6 +22,12 @@ on:
 permissions:
   contents: read
 
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: package-deep-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -50,11 +56,15 @@ jobs:
           shopt -s nullglob
           reports=(build/package*.xml)
           python3 scripts/junit-summary.py --require 250 "${reports[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      # 85.0% when this gate was set (PhotoKitLibrary, which needs a real Photos library, is 0%). A
+      # drop below the minimum fails; raise the minimum when the coverage rises.
       - name: Coverage
         if: always()
+        env:
+          COVERAGE_MIN: "83"
         run: |
           json="$(swift test --package-path "$PACKAGE" --show-codecov-path)"
-          { echo "### Line coverage of CleanupKit"; echo; python3 scripts/coverage-summary.py "$json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          { echo "### Line coverage of CleanupKit"; echo; python3 scripts/coverage-summary.py "$json" --min "$COVERAGE_MIN"; } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -68,9 +78,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      # `-enable-testing` lets the tests keep `@testable import` in a release build.
+      # `-enable-testing` lets the tests keep `@testable import` in an optimized build; `-DDEBUG` keeps the
+      # fault-injection hooks the store tests use (`#if DEBUG`), which an optimized build would drop.
       - name: Test in release
-        run: swift test --package-path "$PACKAGE" -c release -Xswiftc -enable-testing --skip AccuracyTests
+        run: |
+          swift test --package-path "$PACKAGE" -c release \
+            -Xswiftc -enable-testing -Xswiftc -DDEBUG --skip AccuracyTests
 
   sanitizers:
     name: Sanitizer (${{ matrix.sanitizer }})
@@ -134,7 +147,7 @@ jobs:
             echo '```'
             cat build-repeat.txt
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           [[ $failed -eq 0 ]]
 
   accuracy:
@@ -157,7 +170,7 @@ jobs:
             echo '```'
             grep -iE "accuracy|recall|precision|false" build/accuracy.log | grep -v "^\[" || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   platforms:
     name: Compiles for every platform
@@ -199,7 +212,7 @@ jobs:
             echo '```'
             grep -E "(warning|error):" build/strict.log | sed -E "s|$PWD/||" | sort -u | head -60 || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   bench:
     name: One pass and tiered find the same

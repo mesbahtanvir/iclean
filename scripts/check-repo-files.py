@@ -14,6 +14,12 @@ Each check names what it protects:
   secrets  no private key or access token is committed, and no signing team
   junk     no build output or editor state is committed, and no file is too big for a repository
   markers  no merge conflict markers
+  references  every "spec 017" or "specs/017" in code and documents names a spec folder that exists
+  dependencies  no package or project dependency comes from a remote URL (the app is local-only, and
+           what it is built from is in this repository)
+  layers   the logic stays in CleanupKit and the tooling stays in Debug: the package imports no UI
+           framework (but for converting an image), the app reads photos and runs Vision only in
+           files that are wholly `#if DEBUG`, and BaselineKit is imported only there
 
 Prints one line per problem and exits 1 when there is any.
 """
@@ -233,6 +239,74 @@ def check_markers(root: Path, files):
     return problems
 
 
+SPEC_REFERENCE = re.compile(r"\bspecs?[ /](\d{3})\b", re.IGNORECASE)
+REFERENCE_SUFFIXES = (".swift", ".md", ".sh", ".py", ".yml")
+REMOTE_PACKAGE = re.compile(r"\.package\(\s*url:")
+REMOTE_PROJECT_PACKAGE = re.compile(r"^\s*url:\s", re.MULTILINE)
+
+
+def check_references(root: Path, files):
+    folders = {f.split("/")[1][:3] for f in files if f.startswith("specs/") and f.count("/") >= 2}
+    problems = []
+    for relative in files:
+        if relative in SELF or relative.startswith("specs/") or not relative.endswith(REFERENCE_SUFFIXES):
+            continue
+        for number, line in enumerate((text_of(root, relative) or "").splitlines(), 1):
+            for found in SPEC_REFERENCE.finditer(line):
+                if found.group(1) not in folders:
+                    problems.append(f"{relative}:{number}: refers to spec {found.group(1)}, which has no folder")
+    return problems
+
+
+def check_dependencies(root: Path, files):
+    problems = []
+    for relative in files:
+        name = Path(relative).name
+        text = text_of(root, relative) if name in ("Package.swift", "project.yml") else None
+        if text is None:
+            continue
+        if name == "Package.swift" and REMOTE_PACKAGE.search(text):
+            problems.append(f"{relative}: a package comes from a remote URL; use a path")
+        if name == "project.yml" and REMOTE_PROJECT_PACKAGE.search(text):
+            problems.append(f"{relative}: a package comes from a remote URL; use a path")
+    return problems
+
+
+UI_IMPORT = re.compile(r"^\s*import\s+(SwiftUI|UIKit|AppKit|WatchKit)\b", re.MULTILINE)
+LOGIC_IMPORT = re.compile(r"^\s*import\s+(Photos|Vision|BaselineKit)\b", re.MULTILINE)
+# The one place the package turns an image into a platform one.
+UI_IMPORT_ALLOWED = {"Packages/CleanupKit/Sources/CleanupKit/Library/PhotoKitLibrary.swift"}
+PACKAGE_SOURCES = "Packages/CleanupKit/Sources/CleanupKit/"
+
+
+def first_code_line(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("//"):
+            return stripped
+    return ""
+
+
+def check_layers(root: Path, files):
+    problems = []
+    for relative in files:
+        if not relative.endswith(".swift"):
+            continue
+        text = text_of(root, relative) or ""
+        if relative.startswith(PACKAGE_SOURCES):
+            if UI_IMPORT.search(text) and relative not in UI_IMPORT_ALLOWED:
+                problems.append(f"{relative}: the package imports a UI framework")
+            if re.search(r"^\s*import\s+BaselineKit\b", text, re.MULTILINE):
+                problems.append(f"{relative}: CleanupKit imports BaselineKit, which depends on it")
+        elif relative.startswith("iclean/"):
+            found = LOGIC_IMPORT.search(text)
+            if found and first_code_line(text) != "#if DEBUG":
+                problems.append(
+                    f"{relative}: the app imports {found.group(1)} outside `#if DEBUG` tooling"
+                )
+    return problems
+
+
 CHECKS = {
     "data": check_data,
     "plans": check_plans,
@@ -241,6 +315,9 @@ CHECKS = {
     "secrets": check_secrets,
     "junk": check_junk,
     "markers": check_markers,
+    "references": check_references,
+    "dependencies": check_dependencies,
+    "layers": check_layers,
 }
 
 

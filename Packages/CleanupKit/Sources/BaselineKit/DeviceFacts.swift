@@ -63,7 +63,9 @@ public struct DeviceFacts: Codable, Sendable, Hashable {
         guard size > 0 else { return "unknown" }
         var value = [CChar](repeating: 0, count: size)
         sysctlbyname(name, &value, &size, nil, 0)
-        return String(cString: value)
+        // Up to the terminating zero.
+        let bytes = value.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private static func describe(_ state: ProcessInfo.ThermalState) -> String {

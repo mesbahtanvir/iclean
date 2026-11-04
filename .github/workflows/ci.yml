@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
 # A new push to a pull request replaces the run in progress; a push to main is never cancelled.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
