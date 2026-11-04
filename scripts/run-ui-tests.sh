@@ -40,4 +40,13 @@ xcodebuild test-without-building \
   -destination "platform=iOS Simulator,id=$UDID" \
   -resultBundlePath "build/$NAME.xcresult" \
   "$@" 2>&1 | tee "build/$NAME.log" | "${pretty[@]}"
-exit "${PIPESTATUS[0]}"
+status="${PIPESTATUS[0]}"
+
+# What the tests printed that the pretty log leaves out: the accessibility audit says which element it
+# means there, and the result bundle (the only other place) cannot be read from a log.
+if grep -q 'AUDIT' "build/$NAME.log"; then
+  echo "::group::What the accessibility audit printed"
+  grep 'AUDIT' "build/$NAME.log" | sort -u | head -80
+  echo "::endgroup::"
+fi
+exit "$status"

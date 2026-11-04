@@ -35,15 +35,28 @@ final class TieredScanUITests: XCTestCase {
         app.buttons["home.scan"].tap()
 
         XCTAssertTrue(element(app, "results.category.screenshots").waitForExistence(timeout: 20))
-        // What the library describes without opening a photo is under "Ready now"; the groups for
-        // the later tiers say what is coming; nothing is listed that the photo check has not found.
-        XCTAssertTrue(element(app, "results.section.instant").exists)
-        XCTAssertTrue(element(app, "results.section.photos").exists)
-        XCTAssertTrue(element(app, "results.section.deep").exists)
-        XCTAssertFalse(element(app, "results.category.duplicates").exists)
+        // The scan card and the hero work as in the one-pass scan.
         XCTAssertTrue(app.buttons["scan.pause"].exists)
-        // The Review bar and the hero work as in the one-pass scan.
         XCTAssertTrue(element(app, "home.hero").exists)
+        // What the library describes without opening a photo is under "Ready now"; the groups for
+        // the later tiers say what is coming. They are further down the list, and a list holds only
+        // the rows near the screen, so each is scrolled to before it is looked for.
+        XCTAssertTrue(element(app, "results.section.instant").exists)
+        XCTAssertTrue(scrollTo(app, "results.section.photos").exists)
+        XCTAssertTrue(scrollTo(app, "results.section.deep").exists)
+        // Nothing is listed that the photo check has not found.
+        XCTAssertFalse(element(app, "results.category.duplicates").exists)
+    }
+
+    /// Swipes up until the element is in the hierarchy.
+    private func scrollTo(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+        let target = element(app, id)
+        var swipes = 0
+        while !target.exists, swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        return target
     }
 
     /// Spec 017 FR-010 and FR-015: in Low Power Mode the deep check does not start by itself, Home
