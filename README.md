@@ -105,6 +105,7 @@ scripts/seed-simulator.sh "iPhone 17 Pro"
 - `specs/004-phased-cleaning/` — phased cleaning for large libraries (design; part delivered by 008)
 - `specs/008-staged-cleanup-at-scale/` — results while the scan runs, bounded memory and time at
   30,000 photos
+- `specs/017-tiered-scanning/` — the scan in tiers: quick wins, a photo check, a deep check
 
 ## Earlier design documents
 
