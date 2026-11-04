@@ -155,7 +155,18 @@ Screenshots has been ready for ten minutes.
 is ready before any photo is checked, the second shows a count, the third says it waits; after the scan the
 flat list returns and every identifier of earlier specs still resolves.
 
-**Acceptance Scenarios**: see Requirements FR-012 to FR-016.
+**Acceptance Scenarios**:
+
+1. **Given** a tiered scan is running, **When** Home shows, **Then** the status card has one row per tier,
+   each saying ready, its own count, waiting, or why it waits, and VoiceOver reads each as one sentence.
+2. **Given** the photo check is running and screenshots are listed, **When** Home shows, **Then** Screenshots
+   is under "Ready now", Duplicates is not listed yet, and the group of the photo check says what will
+   appear in it.
+3. **Given** the deep check was stopped or is waiting, **When** the scan is over, **Then** Home shows the
+   list with a "Look Deeper" (or "Run Now") row that names how many photos were not compared, and with
+   nothing found it says "Nothing found so far" and never "Nothing to clean up".
+4. **Given** every tier has run, **When** the scan is over, **Then** Home is the flat list of 014 and
+   shows no tier group and no offer.
 
 ---
 
@@ -245,9 +256,10 @@ selection, not-scanned count, and the same stored analysis for what a detector r
 
 **Screens**
 
-- **FR-014**: While a tiered scan runs, or while deep work is owed, Home MUST show the three tiers with their
-  states (FR-013) and group the category rows by tier, each group headed by its tier's state in plain
-  words. Otherwise it MUST show the flat list of 014.
+- **FR-014**: While a tiered scan runs, Home MUST show the three tiers with their states (FR-013) in the
+  status card, and group the category rows by the tier that found them, each group headed in plain words
+  and, while its tier has found nothing, saying what will appear there. Once nothing runs, Home is the flat
+  list of 014, and when deep work is owed it adds one row that says what was not looked at and starts it.
 - **FR-015**: Home MUST NOT say "Nothing to clean up" or "looks clean" while deep work is owed; it MUST say
   what was not looked at and offer Look Deeper (004 FR-013).
 - **FR-016**: Every accessibility identifier of earlier specs MUST still resolve. VoiceOver, Dynamic Type,
@@ -273,9 +285,9 @@ Each has a default this entry follows unless you say otherwise.
 3. **Bursts are quick wins.** Default: yes. A burst can shrink when Duplicates claims one of its frames after
    the photo check, and its keeper can change when a sharper frame or a face score is known; neither moves
    under an open list (004 FR-010), and only a keeper the person chose is pinned (008 Decision 1).
-4. **Tier groups only while it matters.** Default: grouped while a scan runs or deep work is owed, flat
-   afterwards. A permanent grouping would turn a finished library into three headings for the sake of the
-   scan that made it.
+4. **Tier groups only while a scan runs.** Default: grouped while it runs, the flat list of 014 afterwards,
+   with one offer row when deep work is owed. A permanent grouping would turn a finished library into three
+   headings for the sake of the scan that made it.
 5. **No time estimates.** Default: counts only. Add ranges once the phone is measured (004 FR-021).
 6. **Battery.** Default: not built. 004 FR-019 (below 20% and unplugged) needs the battery level, which
    UIKit gives only on the main actor; the injected `deepWait` closure is where it would go.
@@ -310,9 +322,14 @@ sent anywhere, no network API is added, and the no-network checks are unchanged 
 
 ## Validation
 
-Package: `TieredScanTests` (planner scopes, the photo and deep jobs, deferral, resume across tiers, equality
-with a one-shot scan), run by CI with the rest of the package.
+Package: `TieredScanTests` (planner scopes, quick-check isolation, tier status, session and summary storage,
+the photo and deep jobs, deferral, resume of a stored deep job, equality with a one-shot scan on both
+profiles). CI runs them with the rest of the package: 374 tests pass, with lint and the no-network check.
 
-The SwiftUI side (`iclean/`) is not compiled by CI and could not be built where this entry was written (a
-Linux container with no Swift toolchain). It is written to mirror the existing views and is unbuilt and
-unrun; the first thing to do on a Mac is `xcodegen generate` and a build. Nothing in the package depends on it.
+The SwiftUI side (`iclean/`) is not compiled by CI (lint parses it, so a syntax error would show, but a type
+error would not) and could not be built where this entry was written (a Linux container with no Swift
+toolchain). It is written to mirror the existing views and is unbuilt and unrun. Two things to do first on a
+Mac: `xcodegen generate` and a build, then run the UI tests. Under `-UITesting` tiers are off by default
+(`LaunchArguments.tiered`), so the existing UI tests keep testing the one-pass scan; `TieredScanUITests` opts
+in with `-Tiered on`. When the existing tests are updated for tiers (their "Found so far" and "N of M checked"
+expectations), make tiers the default there.
