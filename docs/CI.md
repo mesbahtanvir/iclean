@@ -63,7 +63,9 @@ made as an **artifact**.
 
 - **Coverage** and a **test report** (counts, failures, skips, the slowest tests).
 - **Optimized build**: the tests in release mode.
-- **Sanitizers**: the thread and the address sanitizer (informational until a report has been read).
+- **Sanitizers**: the thread and the address sanitizer over the whole suite. One test is left out
+  under them, and the job summary says which: it races a quick check against a 30 second timeout,
+  which the instrumented run trips without any report.
 - **Repeat**: the suites that use concurrency, run over and over in parallel and one at a time.
 - **Accuracy**: the accuracy suites, with what they measured.
 - **Platforms**: the package compiles for macOS, iOS and visionOS.

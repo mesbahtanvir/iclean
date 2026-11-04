@@ -93,14 +93,18 @@ jobs:
       fail-fast: false
       matrix:
         sanitizer: [thread, address]
-    # A sanitizer report is read before it is trusted: the first runs are informational.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      # All 379 tests ran under both sanitizers without a report. One test is left out: it races a quick
+      # check against a 30 second timeout, and the instrumented suite, running in parallel on three
+      # cores, is slow enough to trip that timeout (it did under both) without any sanitizer finding.
       - name: Test under the ${{ matrix.sanitizer }} sanitizer
         env:
           SANITIZER: ${{ matrix.sanitizer }}
-        run: swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --skip AccuracyTests
+          SKIPPED: aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody
+        run: |
+          echo "Skipped under the sanitizers, because of its 30 second timeout: $SKIPPED" | tee -a "$GITHUB_STEP_SUMMARY"
+          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --skip AccuracyTests --skip "$SKIPPED"
 
   repeat:
     name: Repeat the concurrent suites
