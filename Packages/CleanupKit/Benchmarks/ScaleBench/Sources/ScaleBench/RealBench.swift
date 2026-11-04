@@ -451,6 +451,9 @@ struct RealScanOptions {
     /// Runs every photo's feature print and face quality, as the scan did before spec 010. The app
     /// defers them for photos no detector can read them for; the results are the same either way.
     var completeVision = false
+    /// Runs the scan as a photo check and then a deep check (spec 017). The results and the stored
+    /// analysis are the same as a one-pass scan's, which the two digests printed below show.
+    var tiered = false
 }
 
 /// A full scan with the real analyzer, then the results build the app does after it. Prints the
@@ -475,8 +478,13 @@ func runRealScan(_ o: RealScanOptions, sampler: PeakSampler) async throws {
     let start = ContinuousClock.now
     var last: ScanProgress?
     var nextMark = max(1, o.count / 4)
+    // When the photo check ended, which is when a tiered scan's cheap results are all in (spec 017).
+    var photoCheckDoneAt: Double?
     for await p in await scanner.startFullScan() {
         last = p
+        if o.tiered, p.tier == .deep, photoCheckDoneAt == nil {
+            photoCheckDoneAt = seconds(ContinuousClock.now - start)
+        }
         if p.processed >= nextMark {
             nextMark += max(1, o.count / 4)
             print(
@@ -496,6 +504,15 @@ func runRealScan(_ o: RealScanOptions, sampler: PeakSampler) async throws {
             (last?.state.rawValue ?? "?") as NSString, wall, Double(analyzed) / wall, cpu,
             cpu / wall,
             sampler.value))
+    if o.tiered {
+        let photoCheck = photoCheckDoneAt ?? wall
+        print(
+            String(
+                format:
+                    "tiers: photo check done at %.1f s (%.0f items/s), deep check compared %d photos, all done at %.1f s",
+                photoCheck, Double(analyzed) / photoCheck,
+                last?.tier == .deep ? (last?.total ?? 0) : 0, wall))
+    }
     fflush(stdout)
 
     sampler.reset()
@@ -555,7 +572,8 @@ func scanProfile(_ o: RealScanOptions) -> ScanProfile {
 func makeScanner(_ o: RealScanOptions, library: RealLibrary, store: Store) -> ScanPipeline {
     ScanPipeline(
         library: library, store: store, analyzer: DefaultAnalyzer(), profile: scanProfile(o),
-        progressEvery: 10, deferVision: !o.completeVision, minProgressInterval: .milliseconds(250))
+        progressEvery: 10, deferVision: !o.completeVision, tiered: o.tiered, deepWait: { nil },
+        minProgressInterval: .milliseconds(250))
 }
 
 // MARK: Vision probe

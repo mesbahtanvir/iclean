@@ -16,3 +16,7 @@ build/
 
 # LLVM coverage output
 *.profraw
+
+# Python bytecode of the scripts in scripts/
+__pycache__/
+*.pyc

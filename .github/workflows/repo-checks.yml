@@ -1,0 +1,78 @@
+name: Repo checks
+
+# Everything about the repository that needs no Swift compiler: the workflows themselves, the scripts,
+# the documents and specs, and the files no compiler reads. On Linux and quick, so it answers first.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Bytecode goes where it cannot become an untracked file of the checkout.
+  PYTHONPYCACHEPREFIX: /tmp/pycache
+
+jobs:
+  workflows:
+    name: Workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the linters
+        run: pip install actionlint-py==1.7.12.25 shellcheck-py==0.11.0.1 pyyaml==6.0.3
+      # Syntax, expressions, action inputs, and ShellCheck on every `run:` script.
+      - name: actionlint
+        run: actionlint -color
+      # What actionlint does not know about this repository: permissions, timeouts, pins, injection.
+      - name: Workflow rules
+        run: python3 scripts/check-workflows.py
+
+  scripts:
+    name: Scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the linters
+        run: pip install shellcheck-py==0.11.0.1 pyyaml==6.0.3
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+      - name: The Python scripts compile
+        run: python3 -m py_compile scripts/*.py scripts/tests/*.py
+      - name: Tests of the scripts
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Every UI test class is planned into a shard or excluded with a reason
+        run: python3 scripts/ui-test-shards.py --table | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: No networking APIs
+        run: scripts/check-no-network.sh
+      # The check above passing proves little unless it is shown to fail when it should.
+      - name: The no-network check fails on what it is there to catch
+        run: scripts/test-no-network-guard.sh
+
+  repository:
+    name: Documents, specs and files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Markdown links resolve
+        run: python3 scripts/check-doc-links.py
+      - name: Spec folders and task lists are well formed
+        run: python3 scripts/check-spec-folders.py
+      - name: Data files parse, test plans resolve, nothing secret or generated is committed
+        run: python3 scripts/check-repo-files.py

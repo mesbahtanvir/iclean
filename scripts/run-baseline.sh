@@ -15,7 +15,7 @@
 # access once (`simctl privacy grant` does not replace the prompt): tap Allow Full Access
 # (on a phone, unlock it first). The answer is remembered, so later runs go straight through.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 2
 
 BUILD=1
 REMOVE=0
