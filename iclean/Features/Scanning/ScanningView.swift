@@ -18,20 +18,26 @@ struct ScanningView: View {
         let p = model.progress
         let starting = p == nil || (p?.total ?? 0) == 0
         let paused = p?.state == .paused
+        // A tiered scan shows its three tiers, each with its own count; a one-pass scan, one bar.
+        let tiers = p.flatMap { ScanTierStatus($0) }
         VStack(alignment: .leading, spacing: Space.m) {
             Text(statusText(p, starting: starting))
                 .font(.headline)
                 .accessibilityIdentifier("scan.status")
-            progressBar(p, starting: starting, paused: paused)
-            if starting {
-                Text("Results appear here as they’re found.")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.quietText)
-            } else if let p {
-                // One text, "12,408 of 30,112 checked": a test and VoiceOver read it whole.
-                Text("\(p.processed, format: .number) of \(p.total, format: .number) checked")
-                    .font(.subheadline)
-                    .foregroundStyle(Palette.quietText)
+            if let tiers {
+                TierRows(status: tiers)
+            } else {
+                progressBar(p, starting: starting, paused: paused)
+                if starting {
+                    Text("Results appear here as they’re found.")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.quietText)
+                } else if let p {
+                    // One text, "12,408 of 30,112 checked": a test and VoiceOver read it whole.
+                    Text("\(p.processed, format: .number) of \(p.total, format: .number) checked")
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.quietText)
+                }
             }
             if let failed = p?.failed, failed > 0 {
                 Text("\(failed, format: .number) couldn’t be checked")
@@ -195,6 +201,7 @@ struct ScanningView: View {
             case .user, nil: return String(localized: "Paused")
             }
         }
+        if p.tier == .deep { return String(localized: "Comparing photos…") }
         return String(localized: "Scanning your library…")
     }
 }

@@ -133,21 +133,51 @@ struct HomeNothingToShow: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HomeMessage(systemImage: symbol, title: title, message: message) {
-            // An empty library can only be fixed outside iclean; scanning is still offered.
-            Button {
-                model.startScan()
-            } label: {
-                // The label, not the tint: a tint would colour the button's fill too.
-                Text("Scan Again").foregroundStyle(Palette.accentText)
+        if model.hasDeepOwed, kind != .emptyLibrary {
+            deepOwed
+        } else {
+            HomeMessage(systemImage: symbol, title: title, message: message) {
+                // An empty library can only be fixed outside iclean; scanning is still offered.
+                Button {
+                    model.startScan()
+                } label: {
+                    // The label, not the tint: a tint would colour the button's fill too.
+                    Text("Scan Again").foregroundStyle(Palette.accentText)
+                }
+                .secondaryButtonStyle()
+                .controlSize(.large)
+                .actionShape()
+                .accessibilityIdentifier("home.scan")
             }
-            .secondaryButtonStyle()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("results.empty")
+        }
+    }
+
+    /// The scan found nothing, but part of it did not run, so this is not "nothing to clean up": it says
+    /// what was not looked at and offers to look (spec 017 FR-015).
+    private var deepOwed: some View {
+        HomeMessage(
+            systemImage: "magnifyingglass", title: Text("Nothing found so far"),
+            message: Text(
+                DeepOfferText.explanation(owed: model.deepRemaining, wait: model.deepWait))
+        ) {
+            Button {
+                model.startDeepScan()
+            } label: {
+                if model.deepWait == nil {
+                    Text("Look Deeper")
+                } else {
+                    Text("Run Now")
+                }
+            }
+            .prominentButtonStyle()
             .controlSize(.large)
             .actionShape()
-            .accessibilityIdentifier("home.scan")
+            .accessibilityIdentifier("home.deepScan")
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("results.empty")
+        .accessibilityIdentifier("results.deepOwed")
     }
 
     private var symbol: String {

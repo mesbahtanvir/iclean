@@ -39,6 +39,16 @@ final class AppModel {
     var progress: ScanProgress?
     var isScanning = false
     var hasInterruptedScan = false
+    /// The tier of the scan's running job, for the screens that group the finds by tier. Coarser than
+    /// `progress`: it changes only when the tier does, so the list is not drawn again on every tick
+    /// (spec 017).
+    private(set) var scanTier: ScanTier?
+    /// Photos whose Vision work a tiered scan still owes, and why the deep check did not start by
+    /// itself. From the last scan's final event and from each quick check (spec 017).
+    private(set) var deepRemaining = 0
+    private(set) var deepWait: DeepWait?
+    /// Deep work is owed and nothing is running: Home offers to do it, and does not say "clean".
+    var hasDeepOwed: Bool { deepRemaining > 0 && !isScanning && !isFinishing }
     /// When the newest full scan that ran to the end finished. Not the last quick check, and not a
     /// scan that was stopped: Home must never say "nothing to clean up" for a library that was not
     /// fully checked.
@@ -243,7 +253,13 @@ final class AppModel {
         else { return }
         reconciling = true
         defer { reconciling = false }
-        _ = await environment.scanner.quickCheck()
+        let check = await environment.scanner.quickCheck()
+        // A tiered scan may owe Vision work; the check says how much (spec 017). Not from a check that
+        // never ran (a scan was started meanwhile): that one reports the scan's own counts.
+        if check.state == .completed || check.state == .stopped {
+            deepRemaining = check.deepRemaining
+            deepWait = check.deepWait
+        }
         guard !isDeleting else { return }
         // The check may have added photos: Home's "No photos to check" and "We checked N photos"
         // read this count.
@@ -259,16 +275,30 @@ final class AppModel {
 
     // MARK: Scanning
 
-    func startScan() {
+    func startScan() { beginScan(deepOnly: false) }
+
+    /// Runs only the deep check, the Vision work a tiered scan left owed: "Look Deeper" and "Run Now"
+    /// (spec 017).
+    func startDeepScan() { beginScan(deepOnly: true) }
+
+    private func beginScan(deepOnly: Bool) {
         guard !isScanning, !isFinishing else { return }
         isScanning = true
         hasInterruptedScan = false
         continuation.scanStarted(scanner: environment.scanner)
         publishedRevision = -1
         Task {
-            for await p in await environment.scanner.startFullScan() {
+            // Not a conditional expression: `await` may not stand to the right of `?:`.
+            let stream: AsyncStream<ScanProgress>
+            if deepOnly {
+                stream = await environment.scanner.startDeepScan()
+            } else {
+                stream = await environment.scanner.startFullScan()
+            }
+            for await p in stream {
                 progress = p
                 continuation.update(p)
+                if p.tier != scanTier { scanTier = p.tier }
                 // Quick wins stored, or a block of photos finished: show what was found so far.
                 if p.publishedRevision != publishedRevision {
                     publishedRevision = p.publishedRevision
@@ -280,6 +310,12 @@ final class AppModel {
             }
             isFinishing = true
             isScanning = false
+            scanTier = nil
+            if let final = progress {
+                // What a tiered scan left owed, and why (spec 017): Home offers it once nothing runs.
+                deepRemaining = final.deepRemaining
+                deepWait = final.deepWait
+            }
             if progress?.state == .completed { lastScanDate = .now }
             // Rebuild before the system is told the work is over, so the last build is not left
             // to a process that may be suspended at once.

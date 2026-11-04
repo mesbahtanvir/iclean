@@ -295,6 +295,14 @@
             if p.isThermalPaused {
                 return (title, String(localized: "Paused to let your \(device) cool down"))
             }
+            // The deep check compares photos that were already checked (spec 017).
+            if p.tier == .deep {
+                return (
+                    title,
+                    String(
+                        localized: "\(p.processed.formatted()) of \(p.total.formatted()) compared")
+                )
+            }
             return (
                 title,
                 String(
