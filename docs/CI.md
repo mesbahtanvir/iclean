@@ -69,7 +69,7 @@ made as an **artifact**.
 - **Repeat**: the suites that use concurrency, run over and over in parallel and one at a time.
 - **Accuracy**: the accuracy suites, with what they measured.
 - **Platforms**: the package compiles for macOS, iOS and visionOS.
-- **Warnings**: a build with warnings as errors (informational until the count is zero).
+- **Warnings**: the library and its tests build with warnings as errors (the count is zero).
 - **One pass against tiered**: the same synthetic library scanned both ways with the real analyzer
   (`ScaleBench --real-scan`); the results digest and the analysis digest must be equal
   (spec 017: a tiered scan finds exactly what a one-pass scan finds).

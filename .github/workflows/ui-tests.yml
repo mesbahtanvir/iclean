@@ -305,7 +305,8 @@ jobs:
 
   result:
     name: UI tests passed
-    if: always()
+    # Not when the run was cancelled by a newer push: that is not a failure of these tests.
+    if: ${{ !cancelled() }}
     needs: [shard, no-network, screenshots]
     runs-on: ubuntu-latest
     timeout-minutes: 5

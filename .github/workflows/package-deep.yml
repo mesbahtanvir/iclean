@@ -198,8 +198,6 @@ jobs:
     name: Warnings
     runs-on: macos-latest
     timeout-minutes: 45
-    # Reports first; it becomes a gate when the count is zero.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Build the library and its tests with warnings as errors

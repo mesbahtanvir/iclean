@@ -29,23 +29,39 @@ import Testing
         }
     }
 
+    /// The system's abbreviations differ between releases: iOS 27 says "12 secs." and "2 hrs", iOS 26
+    /// says "12 sec" and "2 hr". These tests are about the numbers and the units (rounding, carrying),
+    /// so they compare without the plural "s" and the full stop.
+    private static func stems(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(sec|min|hr)s?\.?"#, with: "$1", options: .regularExpression)
+    }
+
+    @Test func theStemsIgnorePluralsAndFullStopsOnly() {
+        #expect(Self.stems("12 secs.") == "12 sec")
+        #expect(Self.stems("12 sec") == "12 sec")
+        #expect(Self.stems("2 hrs, 2 mins") == "2 hr, 2 min")
+        #expect(Self.stems("1 hr, 1 min") == "1 hr, 1 min")
+        // The numbers and their order are kept: a wrong number is still wrong.
+        #expect(Self.stems("2 hrs, 60 mins") == "2 hr, 60 min")
+    }
+
     @Test(.enabled(if: Self.isEnglish)) func shortDurationCarriesIntoTheHour() {
         // 59 min 30 s is 1 hour, not "60 min".
-        #expect(Format.durationShort(3570) == "1 hr")
+        #expect(Self.stems(Format.durationShort(3570)) == "1 hr")
         // 1 h 59 min 40 s is 2 hours, not "1 hr, 60 mins".
-        #expect(Format.durationShort(7180) == "2 hrs")
-        #expect(Format.durationShort(7199) == "2 hrs")
-        #expect(Format.durationShort(86370) == "24 hrs")
+        #expect(Self.stems(Format.durationShort(7180)) == "2 hr")
+        #expect(Self.stems(Format.durationShort(7199)) == "2 hr")
+        #expect(Self.stems(Format.durationShort(86370)) == "24 hr")
     }
 
     @Test(.enabled(if: Self.isEnglish)) func shortDurationReadsInUnits() {
-        #expect(Format.durationShort(12) == "12 secs.")
+        #expect(Self.stems(Format.durationShort(12)) == "12 sec")
         // 59.6 s rounds to a minute.
-        #expect(Format.durationShort(59.6) == "1 min")
-        #expect(Format.durationShort(300) == "5 mins")
-        #expect(Format.durationShort(3630) == "1 hr, 1 min")
-        #expect(Format.durationShort(3660) == "1 hr, 1 min")
-        #expect(Format.durationShort(7320) == "2 hrs, 2 mins")
+        #expect(Self.stems(Format.durationShort(59.6)) == "1 min")
+        #expect(Self.stems(Format.durationShort(300)) == "5 min")
+        #expect(Self.stems(Format.durationShort(3630)) == "1 hr, 1 min")
+        #expect(Self.stems(Format.durationShort(3660)) == "1 hr, 1 min")
+        #expect(Self.stems(Format.durationShort(7320)) == "2 hr, 2 min")
     }
 
     @Test func shortDurationSurvivesNonsense() {
