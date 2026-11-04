@@ -125,6 +125,12 @@ def read_plist(path: Path):
         return None
 
 
+def binaries(executable: Path):
+    """The executable, and beside it the debug dylib a Debug build keeps its code in (Xcode 16 and
+    later leave only a stub in the executable)."""
+    return [executable] + sorted(executable.parent.glob("*.debug.dylib"))
+
+
 def check_app(app: Path, release: bool):
     """Returns (problems, notes)."""
     platform, info_path, binary_dir, resources = layout(app)
@@ -135,17 +141,20 @@ def check_app(app: Path, release: bool):
     problems += check_privacy(read_plist(resources / "PrivacyInfo.xcprivacy"))
 
     notes = []
-    binary = binary_dir / info.get("CFBundleExecutable", app.stem)
-    if not binary.exists():
-        problems.append(f"{binary}: the executable is missing")
+    executable = binary_dir / info.get("CFBundleExecutable", app.stem)
+    if not executable.exists():
+        problems.append(f"{executable}: the executable is missing")
     elif shutil.which("otool") and shutil.which("strings"):
-        linked = subprocess.run(["otool", "-L", str(binary)], capture_output=True, text=True).stdout
-        names = subprocess.run(["strings", "-a", str(binary)], capture_output=True, text=True).stdout
-        problems += check_linked(linked)
-        problems += check_names(names, release)
-        notes.append(f"{binary.name}: {len(names.splitlines())} strings, {len(linked.splitlines()) - 1} linked libraries")
-        if release and "BaselineKit" in names:
-            notes.append("BaselineKit is linked into the Release binary (linked, never called)")
+        for binary in binaries(executable):
+            linked = subprocess.run(["otool", "-L", str(binary)], capture_output=True, text=True).stdout
+            names = subprocess.run(["strings", "-a", str(binary)], capture_output=True, text=True).stdout
+            problems += [f"{binary.name}: {p}" for p in check_linked(linked)]
+            problems += [f"{binary.name}: {p}" for p in check_names(names, release)]
+            notes.append(
+                f"{binary.name}: {len(names.splitlines())} strings, {len(linked.splitlines()) - 1} linked libraries"
+            )
+            if release and "BaselineKit" in names:
+                notes.append("BaselineKit is linked into the Release binary (linked, never called)")
     else:
         notes.append("otool or strings is missing: the binary was not read")
     return problems, notes

@@ -786,6 +786,14 @@ class BuiltAppTests(unittest.TestCase):
         self.assertTrue(any("privacy manifest" in p for p in problems))
         self.assertTrue(any("executable is missing" in p for p in problems))
 
+    def test_a_debug_dylib_is_read_with_the_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp)
+            for name in ("iclean", "iclean.debug.dylib", "__preview.dylib", "other.txt"):
+                write(folder, name)
+            found = [p.name for p in built_app.binaries(folder / "iclean")]
+        self.assertEqual(found, ["iclean", "iclean.debug.dylib"])
+
     def test_an_unreadable_info_plist_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
             app = pathlib.Path(tmp) / "iclean.app"

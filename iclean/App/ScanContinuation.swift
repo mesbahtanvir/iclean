@@ -169,11 +169,17 @@
                     identifier: identifier, title: title, subtitle: subtitle)
                 request.strategy = .queue
                 do {
-                    if #available(iOS 27.0, *) {
-                        try await BGTaskScheduler.shared.submitTaskRequest(request)
-                    } else {
+                    // The asynchronous submission is in the iOS 27 SDK (Xcode 27, which the README
+                    // asks for). An earlier SDK, such as the one on a CI runner, has only `submit`.
+                    #if compiler(>=6.4)
+                        if #available(iOS 27.0, *) {
+                            try await BGTaskScheduler.shared.submitTaskRequest(request)
+                        } else {
+                            try BGTaskScheduler.shared.submit(request)
+                        }
+                    #else
                         try BGTaskScheduler.shared.submit(request)
-                    }
+                    #endif
                     return nil
                 } catch {
                     return String(describing: error)

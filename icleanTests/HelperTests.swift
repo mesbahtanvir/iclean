@@ -85,7 +85,7 @@ import Testing
         // The limits themselves are inside.
         #expect(CGFloat(10).clamped(to: range) == 10)
         #expect(CGFloat(20).clamped(to: range) == 20)
-        #expect(CGFloat(-.infinity).clamped(to: range) == 10)
+        #expect((-CGFloat.infinity).clamped(to: range) == 10)
         #expect(CGFloat.infinity.clamped(to: range) == 20)
     }
 

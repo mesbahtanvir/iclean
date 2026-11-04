@@ -164,6 +164,18 @@ final class DyingStore: Store, @unchecked Sendable {
         TieredScanTests.RequestLog(sharpness: Self.softOnes)
     }
 
+    /// A full scan, run to the end of its stream. The pipeline is held until then: the scan's task
+    /// holds the pipeline weakly, so one that nothing else holds is gone before its scan starts and
+    /// the stream ends empty.
+    func fullScan(
+        _ lib: FakePhotoLibrary, _ store: any Store, log: TieredScanTests.RequestLog, tiered: Bool
+    ) async -> [ScanProgress] {
+        let pipeline = scanner(lib, store, log: log, tiered: tiered)
+        let events = await drain(await pipeline.startFullScan())
+        withExtendedLifetime(pipeline) {}
+        return events
+    }
+
     /// What the person does after the app was killed, the way Home leads them: Resume while a job is
     /// unfinished; Scan Library before any scan has finished; otherwise a quick check says whether work
     /// is owed, and Look Deeper does it.
@@ -179,11 +191,13 @@ final class DyingStore: Store, @unchecked Sendable {
             }
             if active || !finishedOnce {
                 _ = await drain(await scan.startFullScan())
+                withExtendedLifetime(scan) {}
                 continue
             }
             let check = await scan.quickCheck()
             guard check.deepRemaining > 0 else { return }
             _ = await drain(await scan.startDeepScan())
+            withExtendedLifetime(scan) {}
         }
     }
 
@@ -212,8 +226,7 @@ final class DyingStore: Store, @unchecked Sendable {
         // The reference: nothing dies. It also says how many writes a scan makes.
         let reference = try InMemoryStore.make()
         let counting = DyingStore(reference, limit: .max)
-        let events = await drain(
-            await scanner(lib, counting, log: newLog(), tiered: tiered).startFullScan())
+        let events = await fullScan(lib, counting, log: newLog(), tiered: tiered)
         #expect(events.last?.state == .completed)
         let total = counting.writeCount
         // Three chunks make a lease and a checkpoint each, and a job a start and an end: a one-pass scan
@@ -227,8 +240,7 @@ final class DyingStore: Store, @unchecked Sendable {
         for limit in 0...(total + 1) {
             let base = try InMemoryStore.make()
             let dying = DyingStore(base, limit: limit)
-            _ = await drain(
-                await scanner(lib, dying, log: newLog(), tiered: tiered).startFullScan())
+            _ = await fullScan(lib, dying, log: newLog(), tiered: tiered)
 
             // What the store held when the process died.
             let summaries = try await base.itemSummaries()
@@ -268,7 +280,7 @@ final class DyingStore: Store, @unchecked Sendable {
         var snapshots: [Bool: [String: String]] = [:]
         for tiered in [true, false] {
             let store = try InMemoryStore.make()
-            _ = await drain(await scanner(lib, store, log: newLog(), tiered: tiered).startFullScan())
+            _ = await fullScan(lib, store, log: newLog(), tiered: tiered)
             snapshots[tiered] = try await snapshot(store)
         }
         #expect(snapshots[true] == snapshots[false])
