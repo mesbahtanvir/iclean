@@ -616,13 +616,22 @@ import Testing
         let oneShotItems = Dictionary(
             uniqueKeysWithValues: try await oneShot.items().map { ($0.assetID, $0) })
         #expect(Set(tieredItems.keys) == Set(oneShotItems.keys))
+        // The one photo whose store differs: its neighbour was deleted in the second batch, so the
+        // tiered store analyzed it while it had one and keeps the work, as 010 Decision 3 says a
+        // stored photo does ("nothing reads it"). The one-pass scan never gave it a neighbour.
+        let lostANeighbour: Set<String> = ["pair60a"]
         for (id, x) in tieredItems {
             let y = try #require(oneShotItems[id])
             #expect(x.analysisSource == y.analysisSource, "\(id)")
             #expect(x.analysis?.dHash == y.analysis?.dHash, "\(id)")
             #expect(x.analysis?.sharpness == y.analysis?.sharpness, "\(id)")
-            #expect(x.analysis?.skippedVision == y.analysis?.skippedVision, "\(id)")
-            #expect(x.analysis?.faceQuality == y.analysis?.faceQuality, "\(id)")
+            if lostANeighbour.contains(id) {
+                #expect(x.analysis?.skippedVision == [], "\(id)")
+                #expect(y.analysis?.skippedVision == .all, "\(id)")
+            } else {
+                #expect(x.analysis?.skippedVision == y.analysis?.skippedVision, "\(id)")
+                #expect(x.analysis?.faceQuality == y.analysis?.faceQuality, "\(id)")
+            }
         }
     }
 }
