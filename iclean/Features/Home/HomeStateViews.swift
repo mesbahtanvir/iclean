@@ -158,7 +158,9 @@ struct HomeNothingToShow: View {
     /// what was not looked at and offers to look (spec 017 FR-015).
     private var deepOwed: some View {
         HomeMessage(
-            systemImage: "magnifyingglass", title: Text("Nothing found so far"),
+            systemImage: "magnifyingglass",
+            // Said for what the person did: they removed what was found, or nothing was found.
+            title: kind == .allCleaned ? Text("All cleaned up so far") : Text("Nothing found so far"),
             message: Text(
                 DeepOfferText.explanation(owed: model.deepRemaining, wait: model.deepWait))
         ) {
