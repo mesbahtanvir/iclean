@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Lists the tests that failed and then passed in an xcodebuild log: a retry made them pass.
+"""Reads the XCTest results of one or more xcodebuild logs, in the order they were made.
 
-    scripts/flaky-tests.py build/shard-1.log
+    scripts/flaky-tests.py build/shard-1.log build/shard-1-rerun1.log      # the flaky ones, as Markdown
+    scripts/flaky-tests.py --failing build/shard-1.log build/shard-1-rerun1.log   # `Class/test`, one per line
 
-XCTest prints `Test Case '-[Class test]' passed|failed (1.2 seconds).` for every attempt. A test with
-both is flaky; one with only failures failed for good (and the build already failed for it). Prints a
-Markdown list and a GitHub warning per flaky test, and always exits 0: a report is never the reason a
-job fails.
+XCTest prints `Test Case '-[Class test]' passed|failed (1.2 seconds).` for every attempt. A test that
+failed and then passed is flaky; one whose last attempt failed is failing, and is what a rerun is for.
+The report prints a GitHub warning per flaky test and always exits 0: a report is never the reason a job
+fails.
 """
 
 import re
@@ -33,6 +34,11 @@ def flaky(log: str):
     }
 
 
+def failing(log: str):
+    """The tests whose last attempt failed, sorted."""
+    return sorted(name for name, results in attempts(log).items() if results[-1] == "failed")
+
+
 def report(log: str) -> str:
     tests = flaky(log)
     if not tests:
@@ -42,14 +48,30 @@ def report(log: str) -> str:
     return "\n".join(lines)
 
 
+def read(paths) -> str:
+    """The logs one after the other; one that cannot be read is skipped."""
+    text = []
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                text.append(handle.read())
+        except OSError:
+            continue
+    return "\n".join(text)
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
+    args = sys.argv[1:]
+    only_failing = False
+    if args[:1] == ["--failing"]:
+        only_failing, args = True, args[1:]
+    if not args:
         print(__doc__)
         return 2
-    try:
-        with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
-            log = handle.read()
-    except OSError:
+    log = read(args)
+    if only_failing:
+        for name in failing(log):
+            print(name)
         return 0
     text = report(log)
     if text:

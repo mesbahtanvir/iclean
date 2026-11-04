@@ -69,6 +69,10 @@ jobs:
       # The check above passing proves little unless it is shown to fail when it should.
       - name: The no-network check fails on what it is there to catch
         run: scripts/test-no-network-guard.sh
+      # The script every UI job runs, with a stand-in for xcodebuild: it reruns what failed, forgives
+      # only what then passes, and reports it.
+      - name: The UI test runner reruns, forgives and fails the way it says
+        run: scripts/test-run-ui-tests.sh
 
   repository:
     name: Documents, specs and files

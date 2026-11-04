@@ -128,7 +128,10 @@ The runner has Xcode 26.6 and iOS 26.5 simulators. Four things came out of that,
   that fails is run again, up to three times, and **a test that needed a retry is listed as flaky** in the
   job summary and as a warning; a test that fails every time still fails the shard. The NoNetwork plan is
   never run again.
-- A simulator can time out under a UI test or the screenshot tour ("Timed out while evaluating UI
-  query"), so the tour and the environment runs are run again once.
+- A simulator that times out under a query ("Timed out while evaluating UI query") takes the test runner
+  with it, and xcodebuild's own retry does not run that test again. `scripts/run-ui-tests.sh` therefore
+  runs any test whose last result is a failure again on its own, in a fresh runner, up to twice
+  (`UI_TEST_RERUNS`). `scripts/test-run-ui-tests.sh` shows that it reruns only what failed, forgives only
+  what then passes, and still fails a test that fails every time, using a stand-in for xcodebuild.
 - The audit of the removal confirmation sheet flagged its lines as "may be clipped at larger sizes" when it
   ran before the sheet had finished moving to its tall detent; the test now waits for the sheet to stop.

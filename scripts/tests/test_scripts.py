@@ -900,6 +900,27 @@ class FlakyTestsTests(unittest.TestCase):
         self.assertIn("`AccessibilityTests/testMainScreens` took 2 tries", flaky_tests.report(self.LOG))
         self.assertEqual(flaky_tests.report("Test Case '-[T.A testOne]' passed (1.0 seconds).\n"), "")
 
+    def test_the_failing_tests_are_those_whose_last_attempt_failed(self):
+        self.assertEqual(flaky_tests.failing(self.LOG), ["SimilarFlowTests/testKeeping"])
+
+    def test_logs_are_read_in_order_so_a_later_pass_clears_an_earlier_failure(self):
+        first = "Test Case '-[icleanUITests.ReviewScreensTests testVideo]' failed (52.0 seconds).\n"
+        rerun = "Test Case '-[icleanUITests.ReviewScreensTests testVideo]' passed (20.0 seconds).\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            paths = [str(write(root, "a.log", first)), str(write(root, "b.log", rerun))]
+            log = flaky_tests.read(paths)
+            self.assertEqual(flaky_tests.failing(log), [])
+            self.assertEqual(flaky_tests.flaky(log), {"ReviewScreensTests/testVideo": 2})
+            # In the other order the failure is the last word.
+            self.assertEqual(flaky_tests.failing(flaky_tests.read(paths[::-1])), ["ReviewScreensTests/testVideo"])
+
+    def test_a_log_that_cannot_be_read_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            good = write(pathlib.Path(tmp), "a.log", "Test Case '-[T.A testOne]' failed (1.0 seconds).\n")
+            log = flaky_tests.read(["/no/such/file.log", str(good)])
+        self.assertEqual(flaky_tests.failing(log), ["A/testOne"])
+
 
 if __name__ == "__main__":
     unittest.main()
