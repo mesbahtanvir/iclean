@@ -95,16 +95,20 @@ jobs:
         sanitizer: [thread, address]
     steps:
       - uses: actions/checkout@v4
-      # All 379 tests ran under both sanitizers without a report. One test is left out: it races a quick
-      # check against a 30 second timeout, and the instrumented suite, running in parallel on three
-      # cores, is slow enough to trip that timeout (it did under both) without any sanitizer finding.
+      # The whole suite runs under both sanitizers, and no ThreadSanitizer or AddressSanitizer report has
+      # been produced by any run. Two tests wait on the clock (a quick check against 30 seconds, a pause
+      # for up to 20): beside ~380 others on three cores, at the sanitizer's slowdown, they overrun
+      # without any report, so they are not run in that pass. They run alone, one at a time, in the next.
       - name: Test under the ${{ matrix.sanitizer }} sanitizer
         env:
           SANITIZER: ${{ matrix.sanitizer }}
-          SKIPPED: aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody
+          TIMED: aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody|laneCountersNeverRunAheadOfTheSavedResults
         run: |
-          echo "Skipped under the sanitizers, because of its 30 second timeout: $SKIPPED" | tee -a "$GITHUB_STEP_SUMMARY"
-          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --skip AccuracyTests --skip "$SKIPPED"
+          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --skip AccuracyTests \
+            --skip aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody \
+            --skip laneCountersNeverRunAheadOfTheSavedResults
+          echo "Run alone, one at a time, under the sanitizer: $TIMED" | tee -a "$GITHUB_STEP_SUMMARY"
+          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --no-parallel --filter "$TIMED"
 
   repeat:
     name: Repeat the concurrent suites
