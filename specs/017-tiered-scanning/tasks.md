@@ -50,12 +50,17 @@ record and repair rule instead of adding a mechanism.
   Mac, Debug and Release, Xcode 26.6) and the built-app check passes. The screens compiled as written; the one
   error was an older line (`ScanContinuation.swift` calls the iOS 27 SDK's asynchronous `submitTaskRequest`),
   now compiled only by a Swift 6.4 or later compiler.
-- [ ] T014 Run the UI tests. Expect `TieredScanUITests` to need adjustments, and the one-pass tests to pass
-  unchanged (tiers are off under `-UITesting` unless asked for).
+- [X] T014 Run the UI tests. `ui-tests.yml` runs them in four shards on an iPhone 17 Pro simulator (iOS 26.5):
+  all pass, and the one-pass tests passed unchanged. `TieredScanUITests` needed one adjustment, to scroll to the
+  later tier groups (a `List` holds only the rows near the screen); the Low Power Mode test passed first time.
+  The NoNetwork plan passes (zero network requests in the full flow).
 - [ ] T015 Update the older UI tests for tiers (`results.foundSoFar`, "N of M checked") and make tiers the
   default under `-UITesting`.
 - [ ] T016 Look at the screens in Dynamic Type at the accessibility sizes, VoiceOver, Dark Mode and Increase
-  Contrast; the tier rows stack at accessibility sizes, which is untested.
+  Contrast. Partly covered by CI: at the largest text size the three tier rows are there and say "Ready" (a UI
+  test), the tiers' flows pass in dark mode, and the screenshot tour saves frames of the tiers, the finds grouped
+  by tier and the "Run Now" offer as artifacts. **No person has looked at them**, and VoiceOver and Increase
+  Contrast are untested.
 - [X] T017 `ScaleBench --tiered`, and `package-deep.yml` runs both scans of the same library with the real
   analyzer and requires equal digests. On a 3-core virtual Mac (600 synthetic items, phone profile): the photo
   check was done at 3.9 s (152 items/s), the whole tiered scan took 35.8 s, a one-pass scan 38.1 s, and the

@@ -25,7 +25,8 @@ made as an **artifact**.
 - **Scripts**: ShellCheck on `scripts/*.sh`; the unit tests of the scripts themselves
   (`scripts/tests`); the UI test plan; the no-network check and its canary
   (`scripts/test-no-network-guard.sh`, which plants each forbidden token and entitlement in a copy of
-  the sources and requires the check to fail on every one).
+  the sources and requires the check to fail on every one); and the script every UI job runs
+  (`scripts/test-run-ui-tests.sh`, against a stand-in for `xcodebuild`).
 - **Documents, specs and files**: every Markdown link resolves; every `specs/` folder is numbered and
   has a spec and a well-formed task list; every JSON file, test plan, string catalog and property list
   parses; every test a test plan names exists; the privacy manifest tracks and collects nothing; no
@@ -87,6 +88,7 @@ python3 scripts/check-doc-links.py
 python3 scripts/check-spec-folders.py
 python3 scripts/check-repo-files.py
 scripts/test-no-network-guard.sh
+scripts/test-run-ui-tests.sh                       # the UI runner's reruns, against a fake xcodebuild
 python3 scripts/ui-test-shards.py --table          # which test class runs in which shard
 python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
 ```
@@ -116,7 +118,7 @@ python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
 
 ## Where the runner differs from a Mac with Xcode 27
 
-The runner has Xcode 26.6 and iOS 26.5 simulators. Four things came out of that, each found by a run:
+The runner has Xcode 26.6 and iOS 26.5 simulators. These came out of that, each found by a run:
 
 - The system's abbreviations for a duration differ ("12 secs." on iOS 27, "12 sec" on iOS 26), so
   `FormatTests` compares the numbers and the units, not the plural style.
@@ -135,3 +137,10 @@ The runner has Xcode 26.6 and iOS 26.5 simulators. Four things came out of that,
   what then passes, and still fails a test that fails every time, using a stand-in for xcodebuild.
 - The audit of the removal confirmation sheet flagged its lines as "may be clipped at larger sizes" when it
   ran before the sheet had finished moving to its tall detent; the test now waits for the sheet to stop.
+
+## Good to know
+
+- A pull request's path filters look at the whole pull request, so every push starts every workflow again
+  and cancels the run it replaces. GitHub runs five macOS jobs at a time, so a full run takes about an hour.
+- The job summaries and artifacts are on the run's page. The logs print what matters too (the failures,
+  what the accessibility audit flagged, which tests were flaky), so a run can be read from the log alone.
