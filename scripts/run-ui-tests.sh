@@ -17,6 +17,10 @@
 #                      scripts/flaky-tests.py lists them as flaky. A test that fails every time still fails.
 #
 # The reruns' results go to build/<result name>-rerun<N>.xcresult and .log.
+#
+# A simulator that never finishes booting would leave `simctl bootstatus` waiting for the rest of the job
+# (it did, for an hour). Each wait is limited to UI_TEST_BOOT_TIMEOUT seconds (default 240); a simulator
+# that is not up by then is shut down and booted again, up to three times, before the script gives up (2).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -34,8 +38,42 @@ if [[ -z "$RUN" ]]; then
   exit 2
 fi
 
+# with_timeout <seconds> <command...>: the command's status, or 143 if it was still running at the limit.
+# Pure bash (macOS has no `timeout`), and the watchdog keeps no pipe open after the command is done.
+with_timeout() {
+  local seconds="$1" pid watchdog status
+  shift
+  "$@" &
+  pid=$!
+  (sleep "$seconds" && kill "$pid" 2>/dev/null) >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid"
+  status=$?
+  pkill -P "$watchdog" 2>/dev/null
+  kill "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
+  return "$status"
+}
+
+# boot_simulator: the simulator up, or not at all.
+boot_simulator() {
+  local attempt
+  for attempt in 1 2 3; do
+    if with_timeout "${UI_TEST_BOOT_TIMEOUT:-240}" xcrun simctl bootstatus "$UDID" -b >/dev/null; then
+      return 0
+    fi
+    echo "::warning::The simulator $UDID was not up after ${UI_TEST_BOOT_TIMEOUT:-240} s (attempt $attempt of 3); restarting it"
+    xcrun simctl shutdown "$UDID" >/dev/null 2>&1
+    sleep 3
+  done
+  return 1
+}
+
 echo "Running $RUN on $UDID"
-xcrun simctl bootstatus "$UDID" -b >/dev/null
+if ! boot_simulator; then
+  echo "::error::The simulator $UDID would not boot" >&2
+  exit 2
+fi
 
 if command -v xcbeautify >/dev/null; then
   pretty=(xcbeautify --renderer github-actions)

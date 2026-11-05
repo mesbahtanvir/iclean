@@ -135,6 +135,10 @@ The runner has Xcode 26.6 and iOS 26.5 simulators. These came out of that, each 
   runs any test whose last result is a failure again on its own, in a fresh runner, up to twice
   (`UI_TEST_RERUNS`). `scripts/test-run-ui-tests.sh` shows that it reruns only what failed, forgives only
   what then passes, and still fails a test that fails every time, using a stand-in for xcodebuild.
+- A simulator can fail to finish booting, and `simctl bootstatus` then waits for ever: one shard sat on it
+  for 61 minutes, until the job limit, without running a test. Each wait is now limited
+  (`UI_TEST_BOOT_TIMEOUT`, 240 s), and a simulator that is not up is shut down and booted again, up to
+  three times, before the script gives up. `scripts/test-run-ui-tests.sh` shows both outcomes.
 - The audit of the removal confirmation sheet flagged its lines as "may be clipped at larger sizes" when it
   ran before the sheet had finished moving to its tall detent; the test now waits for the sheet to stop.
 

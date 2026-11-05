@@ -16,8 +16,15 @@ mkdir -p "$work/scripts" "$work/bin" "$work/build/DerivedData/Build/Products"
 cp "$root/scripts/run-ui-tests.sh" "$root/scripts/flaky-tests.py" "$work/scripts/"
 touch "$work/build/DerivedData/Build/Products/iclean_Default_iphonesimulator26.5-arm64.xctestrun"
 
+# xcrun: `simctl bootstatus` hangs for the first $FAKE_BOOT_HANGS calls (counted in $FAKE_BOOTS), as a
+# simulator that never finishes booting does; everything else succeeds.
 cat >"$work/bin/xcrun" <<'EOF'
 #!/usr/bin/env bash
+if [[ "$1 $2" == "simctl bootstatus" ]]; then
+  n="$(cat "$FAKE_BOOTS" 2>/dev/null || echo 0)"
+  echo $((n + 1)) >"$FAKE_BOOTS"
+  if ((n < ${FAKE_BOOT_HANGS:-0})); then exec sleep 60; fi
+fi
 exit 0
 EOF
 
@@ -51,10 +58,12 @@ run() {
   local reruns="$1"
   shift
   : >"$work/args"
+  rm -f "$work/boots"
   printf '%s\n' "$@" >"$work/calls"
-  (cd "$work" && FAKE_CALLS="$work/calls" FAKE_ARGS="$work/args" PATH="$work/bin:$PATH" \
-    UI_TEST_RERUNS="$reruns" scripts/run-ui-tests.sh UDID Default shard -only-testing:icleanUITests/X \
-    >"$work/out" 2>&1)
+  (cd "$work" && FAKE_CALLS="$work/calls" FAKE_ARGS="$work/args" FAKE_BOOTS="$work/boots" \
+    FAKE_BOOT_HANGS="${FAKE_BOOT_HANGS:-0}" \
+    PATH="$work/bin:$PATH" UI_TEST_RERUNS="$reruns" UI_TEST_BOOT_TIMEOUT=1 \
+    scripts/run-ui-tests.sh UDID Default shard -only-testing:icleanUITests/X >"$work/out" 2>&1)
   status=$?
 }
 
@@ -122,5 +131,17 @@ expect "a test that passes in the second round succeeds" is_zero
 expect "it takes three calls" calls_are 3
 expect "the last call is for the one that was still failing" \
   bash -c "tail -n 1 '$work/args' | grep -q 'B/t2' && ! tail -n 1 '$work/args' | grep -q 'A/t1'"
+
+# 8. A simulator that does not boot the first time is restarted, and the tests then run.
+FAKE_BOOT_HANGS=1 run 0 "A/testOne:passed"
+expect "a simulator that boots on the second try runs the tests" is_zero
+expect "the tests run once" calls_are 1
+expect "the restart is said" output_has "was not up after 1 s (attempt 1 of 3)"
+
+# 9. A simulator that never boots fails the run, without running a test.
+FAKE_BOOT_HANGS=9 run 0 "A/testOne:passed"
+expect "a simulator that never boots fails" is_nonzero
+expect "no test is run" calls_are 0
+expect "it says why" output_has "would not boot"
 
 exit "$failed"
