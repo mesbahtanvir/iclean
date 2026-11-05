@@ -2,6 +2,7 @@
 """Checks an app that was built, not the sources it was built from.
 
     scripts/check-built-app.py path/to/iclean.app [--configuration Release]
+                               [--expect-version 1.2.0] [--expect-build 42]
 
 What a person installs is what the constitution (Principle V) and the privacy manifest promise
 about, and a build setting can change it without one line of source changing. For the iPhone and the
@@ -13,11 +14,15 @@ Mac bundle alike:
   - the privacy manifest is in the bundle and tracks nothing
   - the app links no networking framework, and its binary names no networking API
   - a Release binary holds none of the tooling that is only compiled into DEBUG builds
+  - with --expect-version and --expect-build: the bundle carries the version and the build number the
+    build was asked for (an Info.plist that spells them out would ignore MARKETING_VERSION and
+    CURRENT_PROJECT_VERSION, and TestFlight would be sent the wrong numbers)
 
 The binary checks need `otool` and `strings` (macOS) and are skipped, with a note, without them.
 Prints one line per problem and exits 1 when there is any.
 """
 
+import argparse
 import plistlib
 import re
 import shutil
@@ -91,6 +96,18 @@ def check_info(info: dict, platform: str):
     return problems
 
 
+def check_version(info: dict, version, build):
+    """The version and build number the build was asked for, when it was asked for any."""
+    problems = []
+    for key, expected, setting in (
+        ("CFBundleShortVersionString", version, "MARKETING_VERSION"),
+        ("CFBundleVersion", build, "CURRENT_PROJECT_VERSION"),
+    ):
+        if expected is not None and info.get(key) != expected:
+            problems.append(f"Info.plist: {key} is {info.get(key)!r}, not {expected!r} (is it $({setting})?)")
+    return problems
+
+
 def check_privacy(manifest):
     if manifest is None:
         return ["the privacy manifest (PrivacyInfo.xcprivacy) is not in the bundle"]
@@ -136,13 +153,14 @@ def bundle_size(app: Path) -> int:
     return sum(f.stat().st_size for f in app.rglob("*") if f.is_file())
 
 
-def check_app(app: Path, release: bool):
+def check_app(app: Path, release: bool, version=None, build=None):
     """Returns (problems, notes)."""
     platform, info_path, binary_dir, resources = layout(app)
     info = read_plist(info_path)
     if info is None:
         return [f"{info_path}: cannot be read"], []
     problems = check_info(info, platform)
+    problems += check_version(info, version, build)
     problems += check_privacy(read_plist(resources / "PrivacyInfo.xcprivacy"))
 
     notes = [f"the bundle is {bundle_size(app) / 1_000_000:.1f} MB"]
@@ -165,17 +183,19 @@ def check_app(app: Path, release: bool):
     return problems, notes
 
 
-def main() -> int:
-    args = sys.argv[1:]
-    release = False
-    if "--configuration" in args:
-        i = args.index("--configuration")
-        release = args[i + 1] == "Release"
-        del args[i : i + 2]
-    if len(args) != 1 or not Path(args[0]).is_dir():
-        print(__doc__)
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("app", help="the .app bundle that was built")
+    parser.add_argument("--configuration", default="Debug")
+    parser.add_argument("--expect-version", help="the CFBundleShortVersionString the build was given")
+    parser.add_argument("--expect-build", help="the CFBundleVersion the build was given")
+    args = parser.parse_args(argv)
+    if not Path(args.app).is_dir():
+        print(f"{args.app}: not a directory", file=sys.stderr)
         return 2
-    problems, notes = check_app(Path(args[0]), release)
+    problems, notes = check_app(
+        Path(args.app), args.configuration == "Release", args.expect_version, args.expect_build
+    )
     for note in notes:
         print(f"note: {note}")
     for problem in problems:
@@ -183,7 +203,7 @@ def main() -> int:
     if problems:
         print(f"\n{len(problems)} problem(s)")
         return 1
-    print(f"{args[0]}: the built app keeps its promises")
+    print(f"{args.app}: the built app keeps its promises")
     return 0
 
 

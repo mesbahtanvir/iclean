@@ -21,7 +21,8 @@ with their photos. See the [constitution](.specify/memory/constitution.md).
 ## Build
 
 Requirements: macOS with Xcode 27. The app runs on iOS 18 or newer (device or simulator).
-To put the app on your own iPhone, see [INSTALL.md](INSTALL.md).
+To put the app on your own iPhone, see [INSTALL.md](INSTALL.md). To send a build to TestFlight from
+GitHub, see [docs/RELEASING.md](docs/RELEASING.md).
 
 ```bash
 brew install xcodegen
