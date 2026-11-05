@@ -17,6 +17,8 @@ final class ScanSessionRecord {
     var failedItems: Int?
     var crashCount: Int?
     var interruptedCount: Int?
+    // Spec 017: optional and additive. Nil, as in a session written before, is a one-pass job.
+    var tierRaw: Int?
 
     init(_ session: ScanSession) {
         id = session.id
@@ -42,6 +44,7 @@ final class ScanSessionRecord {
         failedItems = s.failedItems
         crashCount = s.crashCount
         interruptedCount = s.interruptedCount
+        tierRaw = s.tier?.rawValue
     }
 
     var session: ScanSession {
@@ -51,6 +54,7 @@ final class ScanSessionRecord {
             finishedAt: finishedAt, totalItems: totalItems, processedItems: processedItems,
             notScannedCount: notScannedCount, lastProcessedAssetID: lastProcessedAssetID,
             baseProcessed: baseProcessed ?? 0, failedItems: failedItems ?? 0,
-            crashCount: crashCount ?? 0, interruptedCount: interruptedCount ?? 0)
+            crashCount: crashCount ?? 0, interruptedCount: interruptedCount ?? 0,
+            tier: tierRaw.flatMap(ScanTier.init(rawValue:)))
     }
 }

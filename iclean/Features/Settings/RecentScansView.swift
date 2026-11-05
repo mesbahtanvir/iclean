@@ -141,10 +141,18 @@ private struct ScanRow: View {
         }
     }
 
+    /// "Full scan", or the tier a tiered scan's job was (spec 017): each is a row of its own.
+    private var kind: String {
+        switch session.tier {
+        case .photos?: String(localized: "Photo check")
+        case .deep?: String(localized: "Deep check")
+        default: String(localized: "Full scan")
+        }
+    }
+
     /// "Full scan · Completed · 23 items", or "Full scan · Stopped · 4,200 of 30,214 items".
     private var detail: String {
-        let kind = String(localized: "Full scan")
-        return "\(kind) · \(outcome) · \(items)"
+        "\(kind) · \(outcome) · \(items)"
     }
 
     private var items: String {
@@ -157,7 +165,7 @@ private struct ScanRow: View {
     /// Starts with how it ended, so the one word that matters is heard first.
     private var spoken: String {
         let when = ScanDay.phrase(for: session.when, capitalized: false)
-        var parts = "\(outcome). " + String(localized: "Full scan, \(when), \(checked).")
+        var parts = "\(outcome). " + String(localized: "\(kind), \(when), \(checked).")
         if session.failedItems > 0 {
             parts += " " + String(localized: "\(session.failedItems) couldn’t be checked.")
         }

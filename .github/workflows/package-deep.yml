@@ -1,0 +1,246 @@
+name: Package deep tests
+
+# CleanupKit under conditions the everyday run (ci.yml) does not give it: measured coverage, an
+# optimized build, the thread and address sanitizers, the suites that use concurrency run over and over
+# to find a flake, the accuracy suites, a strict compile, every platform the package declares, and the
+# one-pass against the tiered scan on the real analyzer (spec 017: they must find exactly the same).
+
+on:
+  pull_request:
+    paths:
+      - "Packages/**"
+      - ".github/workflows/package-deep.yml"
+      - "scripts/coverage-summary.py"
+      - "scripts/junit-summary.py"
+      - "scripts/compare-bench.py"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: package-deep-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PACKAGE: Packages/CleanupKit
+  # The suites that use threads, the clock, or the store from several places at once: where a flake
+  # would show first. A name here that no test has makes the repeat job fail, not pass quietly.
+  CONCURRENT_SUITES: ParallelScanTests|DurableScanTests|ScanPipelineTests|TieredScanTests|CrashPointTests|StoreFaultTests|StorageFailureScanTests|DeferredStoreTests|ResultsRevisionTests|StagedCleanupTests|PlannerPropertyTests
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test with coverage
+        run: |
+          mkdir -p build
+          swift test --package-path "$PACKAGE" --skip AccuracyTests \
+            --enable-code-coverage --xunit-output "$PWD/build/package.xml"
+      - name: Test report
+        if: always()
+        run: |
+          shopt -s nullglob
+          reports=(build/package*.xml)
+          python3 scripts/junit-summary.py --require 250 "${reports[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      # 85.0% when this gate was set (PhotoKitLibrary, which needs a real Photos library, is 0%). A
+      # drop below the minimum fails; raise the minimum when the coverage rises.
+      - name: Coverage
+        if: always()
+        env:
+          COVERAGE_MIN: "83"
+        run: |
+          json="$(swift test --package-path "$PACKAGE" --show-codecov-path)"
+          { echo "### Line coverage of CleanupKit"; echo; python3 scripts/coverage-summary.py "$json" --min "$COVERAGE_MIN"; } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-test-reports
+          path: build/package*.xml
+          retention-days: 7
+
+  release:
+    name: Optimized build
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # `-enable-testing` lets the tests keep `@testable import` in an optimized build; `-DDEBUG` keeps the
+      # fault-injection hooks the store tests use (`#if DEBUG`), which an optimized build would drop.
+      - name: Test in release
+        run: |
+          swift test --package-path "$PACKAGE" -c release \
+            -Xswiftc -enable-testing -Xswiftc -DDEBUG --skip AccuracyTests
+
+  sanitizers:
+    name: Sanitizer (${{ matrix.sanitizer }})
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [thread, address]
+    steps:
+      - uses: actions/checkout@v4
+      # The whole suite runs under both sanitizers, and no ThreadSanitizer or AddressSanitizer report has
+      # been produced by any run. Two tests wait on the clock (a quick check against 30 seconds, a pause
+      # for up to 20): beside ~380 others on three cores, at the sanitizer's slowdown, they overrun
+      # without any report, so they are not run in that pass. They run alone, one at a time, in the next.
+      - name: Test under the ${{ matrix.sanitizer }} sanitizer
+        env:
+          SANITIZER: ${{ matrix.sanitizer }}
+          TIMED: aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody|laneCountersNeverRunAheadOfTheSavedResults
+        run: |
+          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --skip AccuracyTests \
+            --skip aQuickCheckThatCannotSaveEndsInsteadOfWaitingForNobody \
+            --skip laneCountersNeverRunAheadOfTheSavedResults
+          echo "Run alone, one at a time, under the sanitizer: $TIMED" | tee -a "$GITHUB_STEP_SUMMARY"
+          swift test --package-path "$PACKAGE" --sanitize="$SANITIZER" --no-parallel --filter "$TIMED"
+
+  repeat:
+    name: Repeat the concurrent suites
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      REPEATS: ${{ github.event_name == 'pull_request' && '4' || '20' }}
+    steps:
+      - uses: actions/checkout@v4
+      # A filter with a name nothing has would run less than it says and still pass.
+      - name: Every suite in the list exists
+        run: |
+          for suite in ${CONCURRENT_SUITES//|/ }; do
+            grep -rqE "(struct|class|actor) $suite\b" "$PACKAGE/Tests" || { echo "::error::no test suite is named $suite"; exit 1; }
+          done
+      - name: Build the tests once
+        run: swift build --package-path "$PACKAGE" --build-tests
+      # Parallel finds races between tests; serial finds a test that depends on another having run.
+      - name: Run them over and over, in parallel and one at a time
+        run: |
+          failed=0
+          ran=0
+          for mode in parallel serial; do
+            flags=()
+            [[ "$mode" == serial ]] && flags=(--no-parallel)
+            for ((i = 1; i <= REPEATS; i++)); do
+              echo "::group::$mode run $i of $REPEATS"
+              if swift test --package-path "$PACKAGE" --skip-build ${flags[@]+"${flags[@]}"} --filter "$CONCURRENT_SUITES"; then
+                result=passed
+              else
+                result=FAILED
+                failed=$((failed + 1))
+              fi
+              ran=$((ran + 1))
+              echo "::endgroup::"
+              echo "$mode run $i: $result" | tee -a build-repeat.txt
+            done
+          done
+          {
+            echo "### Repeat runs"
+            echo
+            echo "$failed of $ran runs failed ($REPEATS in parallel, $REPEATS one at a time)."
+            echo
+            echo '```'
+            cat build-repeat.txt
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [[ $failed -eq 0 ]]
+
+  accuracy:
+    name: Accuracy
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Accuracy suites
+        run: |
+          set -o pipefail
+          mkdir -p build
+          swift test --package-path "$PACKAGE" --filter AccuracyTests 2>&1 | tee build/accuracy.log
+      - name: What was measured
+        if: always()
+        run: |
+          {
+            echo "### Accuracy"
+            echo
+            echo '```'
+            grep -iE "accuracy|recall|precision|false" build/accuracy.log | grep -v "^\[" || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  platforms:
+    name: Compiles for every platform
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # The package declares iOS, macOS and visionOS; the app only builds the first two.
+      - name: Build for each
+        working-directory: Packages/CleanupKit
+        run: |
+          for destination in "generic/platform=macOS" "generic/platform=iOS Simulator" "generic/platform=visionOS Simulator"; do
+            echo "::group::$destination"
+            xcodebuild build -scheme CleanupKit -destination "$destination" -derivedDataPath "$RUNNER_TEMP/dd" \
+              CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 25
+            [[ ${PIPESTATUS[0]} -eq 0 ]] || { echo "::error::The package does not build for $destination"; exit 1; }
+            echo "::endgroup::"
+          done
+
+  strict:
+    name: Warnings
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the library and its tests with warnings as errors
+        run: |
+          set -o pipefail
+          mkdir -p build
+          swift build --package-path "$PACKAGE" --build-tests -Xswiftc -warnings-as-errors 2>&1 | tee build/strict.log
+      - name: Warnings
+        if: always()
+        run: |
+          {
+            echo "### Warnings"
+            echo
+            echo '```'
+            grep -E "(warning|error):" build/strict.log | sed -E "s|$PWD/||" | sort -u | head -60 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  bench:
+    name: One pass and tiered find the same
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ITEMS: "600"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the benchmark
+        run: swift build --package-path "$PACKAGE/Benchmarks/ScaleBench" -c release
+      - name: Scan the same library once in one pass and once in tiers
+        run: |
+          mkdir -p build
+          bench="$PACKAGE/Benchmarks/ScaleBench/.build/release/ScaleBench"
+          "$bench" --real-scan --demo --count "$ITEMS" --profile phone | tee build/one-pass.txt
+          "$bench" --real-scan --demo --count "$ITEMS" --profile phone --tiered | tee build/tiered.txt
+      - name: Compare
+        run: python3 scripts/compare-bench.py build/one-pass.txt build/tiered.txt | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-output
+          path: build/*.txt
+          retention-days: 7

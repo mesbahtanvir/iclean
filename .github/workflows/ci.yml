@@ -5,9 +5,24 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+# A new push to a pull request replaces the run in progress; a push to main is never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: No networking APIs

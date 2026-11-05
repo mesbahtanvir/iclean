@@ -1,0 +1,177 @@
+name: App
+
+# Builds the app the way a person gets it (iPhone and Mac, Debug and Release), looks inside what came
+# out, and runs the unit tests of the app target on a simulator. Until this workflow the app target was
+# not compiled by any check: only CleanupKit was.
+
+on:
+  pull_request:
+    paths:
+      - "iclean/**"
+      - "icleanTests/**"
+      - "icleanUITests/**"
+      - "project.yml"
+      - "Packages/CleanupKit/Sources/**"
+      - "Packages/CleanupKit/Package.swift"
+      - ".github/workflows/app.yml"
+      - ".github/actions/**"
+      - "scripts/check-built-app.py"
+      - "scripts/pick-simulator.py"
+      - "scripts/xcresult-summary.py"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: app-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} ${{ matrix.configuration }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iPhone
+            configuration: Debug
+            destination: generic/platform=iOS Simulator
+            products: Debug-iphonesimulator
+          - platform: iPhone
+            configuration: Release
+            destination: generic/platform=iOS Simulator
+            products: Release-iphonesimulator
+          - platform: Mac
+            configuration: Debug
+            destination: platform=macOS
+            products: Debug
+          - platform: Mac
+            configuration: Release
+            destination: platform=macOS
+            products: Release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        with:
+          simulator: "false"
+
+      - name: Build
+        env:
+          CONFIGURATION: ${{ matrix.configuration }}
+          DESTINATION: ${{ matrix.destination }}
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build \
+            -project iclean.xcodeproj -scheme iclean \
+            -configuration "$CONFIGURATION" \
+            -destination "$DESTINATION" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            2>&1 | tee build/xcodebuild.log | xcbeautify --renderer github-actions
+
+      # The sources say what the app does; the build says what it is. A build setting can change the
+      # second without a line of the first changing.
+      - name: The built app keeps its promises
+        env:
+          CONFIGURATION: ${{ matrix.configuration }}
+          PRODUCTS: ${{ matrix.products }}
+        run: |
+          app="build/DerivedData/Build/Products/$PRODUCTS/iclean.app"
+          ls "$app"
+          python3 scripts/check-built-app.py "$app" --configuration "$CONFIGURATION"
+
+      - name: Warnings
+        if: always()
+        run: |
+          [[ -f build/xcodebuild.log ]] || exit 0
+          {
+            echo "### Warnings: $(grep -cE ': warning: ' build/xcodebuild.log || true)"
+            echo
+            echo '```'
+            grep -E ': warning: ' build/xcodebuild.log | sed -E "s|$PWD/||" | sort | uniq -c | sort -rn | head -40 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log-${{ matrix.platform }}-${{ matrix.configuration }}
+          path: build/xcodebuild.log
+          retention-days: 7
+
+  unit-tests:
+    name: Unit tests (app target)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+
+      # The project file is generated from project.yml; this is where a target or a test plan that
+      # the generation lost would show before any test runs.
+      - name: The project has its app, its scheme and both test plans
+        run: |
+          mkdir -p build
+          xcodebuild -list -json -project iclean.xcodeproj | tee build/list.json
+          python3 - <<'PY'
+          import json
+          project = json.load(open("build/list.json"))["project"]
+          assert "iclean" in project["targets"], project["targets"]
+          assert "iclean" in project["schemes"], project["schemes"]
+          PY
+          plans="$(xcodebuild -showTestPlans -project iclean.xcodeproj -scheme iclean)"
+          echo "$plans"
+          for plan in Default NoNetwork; do
+            grep -qE "^[[:space:]]+${plan}$" <<<"$plans" || { echo "::error::the scheme has no test plan $plan"; exit 1; }
+          done
+
+      - name: Test
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+        run: |
+          set -o pipefail
+          xcrun simctl bootstatus "$UDID" -b >/dev/null
+          xcodebuild test \
+            -project iclean.xcodeproj -scheme iclean \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:icleanTests \
+            -enableCodeCoverage YES \
+            -resultBundlePath build/UnitTests.xcresult \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build/xcodebuild.log | xcbeautify --renderer github-actions
+
+      - name: Summary
+        if: always()
+        run: python3 scripts/xcresult-summary.py build/UnitTests.xcresult | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage of the app target
+        if: always()
+        run: |
+          {
+            echo "### Coverage"
+            echo
+            echo '```'
+            xcrun xccov view --report --only-targets build/UnitTests.xcresult || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-tests-xcresult
+          path: build/UnitTests.xcresult
+          retention-days: 7

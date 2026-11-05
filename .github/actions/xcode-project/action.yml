@@ -1,0 +1,62 @@
+name: Xcode project
+description: >
+  Prepares a macOS runner to build or test the app: shows the toolchain, installs XcodeGen and
+  xcbeautify when the image does not have them, generates iclean.xcodeproj, and picks the iPhone
+  simulator to test on. Run it after actions/checkout.
+
+inputs:
+  generate:
+    description: Install XcodeGen and generate the Xcode project. "false" for a job that only runs
+      products another job built.
+    default: "true"
+  simulator:
+    description: Pick an iPhone simulator and say it in the outputs.
+    default: "true"
+
+outputs:
+  udid:
+    description: The chosen simulator's UDID.
+    value: ${{ steps.simulator.outputs.udid }}
+  name:
+    description: The chosen simulator's name.
+    value: ${{ steps.simulator.outputs.name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Toolchain
+      shell: bash
+      run: |
+        xcodebuild -version
+        swift --version
+        xcrun simctl list runtimes
+
+    - name: Install the tools the image does not have
+      shell: bash
+      env:
+        GENERATE: ${{ inputs.generate }}
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        HOMEBREW_NO_ENV_HINTS: "1"
+      run: |
+        # xcbeautify makes the log readable and annotates errors; XcodeGen is only for generating.
+        missing=()
+        command -v xcbeautify >/dev/null || missing+=(xcbeautify)
+        if [[ "$GENERATE" == true ]]; then
+          command -v xcodegen >/dev/null || missing+=(xcodegen)
+        fi
+        if [[ ${#missing[@]} -gt 0 ]]; then
+          brew install "${missing[@]}"
+        fi
+
+    - name: Generate the Xcode project
+      if: inputs.generate == 'true'
+      shell: bash
+      run: xcodegen generate
+
+    - name: Pick a simulator
+      id: simulator
+      if: inputs.simulator == 'true'
+      shell: bash
+      run: |
+        xcrun simctl list devices available -j | python3 scripts/pick-simulator.py | tee -a "$GITHUB_OUTPUT"

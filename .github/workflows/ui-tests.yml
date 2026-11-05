@@ -1,0 +1,342 @@
+name: UI tests
+
+# The app is built once for testing and its UI tests run on simulators at the same time, in shards
+# (scripts/ui-test-shards.py puts every test class into one). Besides the suite there are:
+#   - the NoNetwork plan: the full flow with a tripwire on every URL load (SC-006)
+#   - the screenshot tour: a PNG of every screen in light, dark and large text, kept as artifacts
+#   - the same flows with the simulator in dark mode and at the largest text size
+
+on:
+  pull_request:
+    paths:
+      - "iclean/**"
+      - "icleanTests/**"
+      - "icleanUITests/**"
+      - "project.yml"
+      - "Packages/CleanupKit/Sources/**"
+      - "Packages/CleanupKit/Package.swift"
+      - ".github/workflows/ui-tests.yml"
+      - ".github/actions/**"
+      - "scripts/run-ui-tests.sh"
+      - "scripts/ui-test-shards.py"
+      - "scripts/pick-simulator.py"
+      - "scripts/xcresult-summary.py"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a check
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ui-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SHARDS: "4"
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      looks: ${{ steps.plan.outputs.looks }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Put every test class in a shard
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "shards=$(python3 scripts/ui-test-shards.py --shards "$SHARDS")" >> "$GITHUB_OUTPUT"
+          python3 scripts/ui-test-shards.py --shards "$SHARDS" --table | tee -a "$GITHUB_STEP_SUMMARY"
+          # A pull request takes two looks at the screens; the nightly run and a push to main, four.
+          light='{"look":"light","test":"testLight"},{"look":"dark","test":"testDark"}'
+          large='{"look":"largetext","test":"testLargeText"},{"look":"xxxl","test":"testLargestText"}'
+          if [[ "$EVENT" == pull_request ]]; then
+            echo "looks=[$light]" >> "$GITHUB_OUTPUT"
+          else
+            echo "looks=[$light,$large]" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build for testing
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+
+      # One build for both plans. The second only writes the plan's .xctestrun file.
+      - name: Build the app and the UI tests
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+        run: |
+          set -o pipefail
+          mkdir -p build
+          for plan in Default NoNetwork; do
+            xcodebuild build-for-testing \
+              -project iclean.xcodeproj -scheme iclean -testPlan "$plan" \
+              -destination "platform=iOS Simulator,id=$UDID" \
+              -derivedDataPath build/DerivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              2>&1 | tee "build/build-$plan.log" | xcbeautify --renderer github-actions
+          done
+          ls -l build/DerivedData/Build/Products
+
+      # upload-artifact does not keep the executable bit; a tarball does.
+      - name: Package the products
+        run: tar -C build/DerivedData/Build -czf build/products.tar.gz Products
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-products
+          path: build/products.tar.gz
+          retention-days: 2
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-logs
+          path: build/*.log
+          retention-days: 7
+
+  shard:
+    name: UI tests, shard ${{ matrix.shard }}
+    needs: [plan, build]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+        with:
+          generate: "false"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-products
+          path: build
+      - name: Unpack the products
+        run: |
+          mkdir -p build/DerivedData/Build
+          tar -xzf build/products.tar.gz -C build/DerivedData/Build
+      - name: Run the shard
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+          CLASSES: ${{ matrix.classes }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          only=()
+          for class in $CLASSES; do only+=("-only-testing:icleanUITests/$class"); done
+          # A test that fails is run again, by xcodebuild up to three times in all, and then, if a
+          # query timed out and took the test runner with it, on its own in a fresh runner (twice at
+          # most). It is reported as flaky if a later run passes. One that fails every time fails the shard.
+          UI_TEST_RERUNS=2 scripts/run-ui-tests.sh "$UDID" Default "shard-$SHARD" \
+            -retry-tests-on-failure -test-iterations 3 "${only[@]}"
+      - name: Summary
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python3 scripts/xcresult-summary.py "build/shard-$SHARD.xcresult" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shard-${{ matrix.shard }}
+          path: |
+            build/shard-${{ matrix.shard }}*.xcresult
+            build/shard-${{ matrix.shard }}*.log
+          retention-days: 7
+
+  no-network:
+    name: No network (NoNetwork plan)
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+        with:
+          generate: "false"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-products
+          path: build
+      - name: Unpack the products
+        run: |
+          mkdir -p build/DerivedData/Build
+          tar -xzf build/products.tar.gz -C build/DerivedData/Build
+      - name: Run the full flow with the tripwire on
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+        # Not run again when it fails: an attempt to use the network that only sometimes happens is
+        # exactly what this plan is there to find.
+        run: scripts/run-ui-tests.sh "$UDID" NoNetwork no-network
+      - name: Summary
+        if: always()
+        run: python3 scripts/xcresult-summary.py build/no-network.xcresult | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: no-network
+          path: |
+            build/no-network.xcresult
+            build/no-network.log
+          retention-days: 7
+
+  screenshots:
+    name: Screenshots (${{ matrix.look }})
+    needs: [plan, build]
+    runs-on: macos-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.looks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+        with:
+          generate: "false"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-products
+          path: build
+      - name: Unpack the products
+        run: |
+          mkdir -p build/DerivedData/Build
+          tar -xzf build/products.tar.gz -C build/DerivedData/Build
+      - name: Walk every screen
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+          TEST: ${{ matrix.test }}
+          LOOK: ${{ matrix.look }}
+          # The tour saves a PNG of each screen here when it is set (xcodebuild passes TEST_RUNNER_* on).
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/build/screenshots
+        run: |
+          mkdir -p build/screenshots
+          # The tour is run again once if the simulator timed out under it.
+          UI_TEST_RERUNS=1 scripts/run-ui-tests.sh "$UDID" Default "tour-$LOOK" \
+            -retry-tests-on-failure -test-iterations 2 \
+            "-only-testing:icleanUITests/ScreenshotTour/$TEST"
+      - name: What was saved
+        if: always()
+        run: |
+          {
+            echo "### Screenshots: ${{ matrix.look }}"
+            echo
+            echo "$(find build/screenshots -name '*.png' | wc -l | tr -d ' ') PNG files:"
+            echo
+            echo '```'
+            ls build/screenshots 2>/dev/null || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.look }}
+          path: build/screenshots
+          retention-days: 14
+
+  environments:
+    name: ${{ matrix.environment }} flows
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 45
+    # Tests written for the default size and look, run in another: informational, read before it gates.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dark mode
+            tests: HomeStatesTests ResultsHeroTests TieredScanUITests AccessibilityTests
+          # The first complete run at the largest size passed 18 of 25: the rest look for a row that is
+          # below the fold at that size (a list holds only the rows near the screen) and do not scroll,
+          # and the audit judges the confirm sheet at a size RemovalScreensTests covers. None of the seven
+          # was shown to be a finding about the app, so this run keeps the tests that find their rows
+          # without scrolling: every Home state, and the tier rows and the end of a tiered scan.
+          - environment: largest text
+            tests: >-
+              HomeStatesTests
+              TieredScanUITests/testTheThreeTiersAreShownAndQuickWinsAreReadyFirst
+              TieredScanUITests/testAScanEndsAsTheFlatListOfBefore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/xcode-project
+        id: xcode
+        with:
+          generate: "false"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-products
+          path: build
+      - name: Unpack the products
+        run: |
+          mkdir -p build/DerivedData/Build
+          tar -xzf build/products.tar.gz -C build/DerivedData/Build
+      # The simulator's own settings, which every app launched on it follows.
+      - name: Set the simulator up
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+          ENVIRONMENT: ${{ matrix.environment }}
+        run: |
+          xcrun simctl bootstatus "$UDID" -b >/dev/null
+          case "$ENVIRONMENT" in
+            "dark mode") xcrun simctl ui "$UDID" appearance dark ;;
+            "largest text") xcrun simctl ui "$UDID" content_size accessibility-extra-extra-extra-large ;;
+          esac
+      - name: Run the flows
+        env:
+          UDID: ${{ steps.xcode.outputs.udid }}
+          TESTS: ${{ matrix.tests }}
+        run: |
+          only=()
+          for test in $TESTS; do only+=("-only-testing:icleanUITests/$test"); done
+          # A simulator that times out under a test is not a finding: run it again, and say so.
+          UI_TEST_RERUNS=1 scripts/run-ui-tests.sh "$UDID" Default environment \
+            -retry-tests-on-failure -test-iterations 2 "${only[@]}"
+      - name: Summary
+        if: always()
+        run: python3 scripts/xcresult-summary.py build/environment.xcresult | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: environment-${{ strategy.job-index }}
+          path: |
+            build/environment*.xcresult
+            build/environment*.log
+          retention-days: 7
+
+  result:
+    name: UI tests passed
+    # Not when the run was cancelled by a newer push: that is not a failure of these tests.
+    if: ${{ !cancelled() }}
+    needs: [shard, no-network, screenshots]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard, the NoNetwork plan and the tour passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            [[ "$result" == success ]] || { echo "::error::a job ended $result"; exit 1; }
+          done

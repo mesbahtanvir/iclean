@@ -101,6 +101,23 @@ final class AccessibilityTests: XCTestCase {
         }
     }
 
+    /// Waits until an element's frame has not changed for a moment: an animation has ended.
+    private func settle(_ element: XCUIElement, timeout: TimeInterval = 10) {
+        var last = element.frame
+        var steady = 0
+        let deadline = Date().addingTimeInterval(timeout)
+        while steady < 2, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.4)
+            let now = element.frame
+            if now == last {
+                steady += 1
+            } else {
+                steady = 0
+                last = now
+            }
+        }
+    }
+
     func testMainScreens() throws {
         let app = launchApp()
         try check(app, "home")
@@ -115,6 +132,10 @@ final class AccessibilityTests: XCTestCase {
         // happen (big text switches the sheet to the tall detent), so it is judged at the tall one.
         // RemovalScreensTests checks the largest text size on the sheet itself.
         app.descendants(matching: .any)["confirm.summary"].firstMatch.swipeUp()
+        // The sheet reaches its tall detent with an animation and the audit reads what is on screen:
+        // before it stops, the audit reports the sheet's lines as "may be clipped at larger sizes". The
+        // runner showed that (it passed on a retry), so wait until the sheet has stopped moving.
+        settle(app.buttons["confirm.remove"])
         try check(app, "confirm")
         app.buttons["confirm.cancel"].tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()

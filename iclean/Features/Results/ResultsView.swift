@@ -30,6 +30,8 @@ struct ResultsView: View {
             }
             if !model.continueRoute.isEmpty { ContinueSection() }
             if model.pendingNewCount > 0 { showNewSection }
+            // Vision work a tiered scan left owed: said, and one tap away (spec 017 FR-015).
+            if model.hasDeepOwed { Section { DeepOfferRow() } }
             if hasResults {
                 categorySection(scannedLine: idle)
             } else {
@@ -86,7 +88,9 @@ struct ResultsView: View {
 
     /// The categories, with the periphery as the section's footer, the way a list says such things.
     @ViewBuilder private func categorySection(scannedLine: Bool) -> some View {
-        if model.isScanning {
+        if model.isScanning, let tier = model.scanTier {
+            tieredSections(running: tier, scannedLine: scannedLine)
+        } else if model.isScanning {
             // These are the finds so far; the scan is still going (004 FR-009).
             Section {
                 categoryRows
@@ -107,12 +111,50 @@ struct ResultsView: View {
 
     /// Rows keep the categories' fixed order, so they never reshuffle under a finger.
     private var categoryRows: some View {
-        ForEach(model.results.categories) { result in
-            NavigationLink(value: Route.category(result.category)) {
-                CategoryRow(category: result.category)
-            }
-            .accessibilityIdentifier("results.category.\(result.category.rawValue)")
+        ForEach(model.results.categories) { result in categoryLink(result) }
+    }
+
+    private func categoryLink(_ result: CategoryResult) -> some View {
+        NavigationLink(value: Route.category(result.category)) {
+            CategoryRow(category: result.category)
         }
+        .accessibilityIdentifier("results.category.\(result.category.rawValue)")
+    }
+
+    /// While a tiered scan runs, the finds are grouped by the tier that produced them: what is ready now
+    /// is a short list to act on at once, and what is still coming says so (spec 017 FR-014). Inside a
+    /// group the rows keep the categories' fixed order. Nothing here reads the scan's progress: the
+    /// counts are in the status card, so a tick still redraws only that.
+    @ViewBuilder private func tieredSections(running: ScanTier, scannedLine: Bool) -> some View {
+        ForEach(ScanTier.allCases, id: \.self) { tier in
+            let rows = model.results.categories.filter { $0.category.tier == tier }
+            // A library with no screenshots, recordings, large videos or bursts has nothing to say here.
+            if tier != .instant || !rows.isEmpty {
+                Section {
+                    ForEach(rows) { result in categoryLink(result) }
+                } header: {
+                    Text(tier.heading)
+                        .accessibilityIdentifier("results.section.\(tier.identifier)")
+                } footer: {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        if let note = tierNote(tier, running: running, isEmpty: rows.isEmpty) {
+                            Text(note)
+                        }
+                        if tier == .deep { footer(scannedLine: scannedLine) }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What a group says while its tier has not found anything yet, or has not started.
+    private func tierNote(_ tier: ScanTier, running: ScanTier, isEmpty: Bool) -> String? {
+        if tier > running { return tier.comingLater }
+        guard tier == running, isEmpty else { return nil }
+        if tier == .deep {
+            return String(localized: "Similar shots and unimportant photos appear here as they’re found.")
+        }
+        return tier.comingLater
     }
 
     private var updatingSection: some View {

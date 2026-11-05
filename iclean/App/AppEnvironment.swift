@@ -41,7 +41,8 @@ struct AppEnvironment: Sendable {
             scanner: ScanPipeline(
                 library: library, store: store, analyzer: Detectors.analyzer,
                 profile: LaunchArguments.scanProfile,
-                deferVision: LaunchArguments.deferVision, minProgressInterval: .milliseconds(250)),
+                deferVision: LaunchArguments.deferVision, tiered: LaunchArguments.tiered,
+                minProgressInterval: .milliseconds(250), lowPowerMode: LaunchArguments.lowPowerMode),
             resultsBuilder: builder,
             resultsLoader: ResultsLoader(store: store, builder: builder),
             remover: DefaultRemover(library: library),
@@ -133,6 +134,35 @@ enum LaunchArguments {
             }
         #endif
         return true
+    }
+
+    /// Whether a full scan runs as a photo check and then a deep check (spec 017). On in the app.
+    /// DEBUG only: `-Tiered off` runs the one-pass scan on a device, to compare the two, and `-Tiered on`
+    /// asks for tiers under `-UITesting`, where they are off otherwise so that the tests written for
+    /// the one-pass scan keep testing it until their expectations are updated.
+    static var tiered: Bool {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-Tiered"), i + 1 < args.count {
+                return args[i + 1] != "off"
+            }
+            if args.contains("-UITesting") { return false }
+        #endif
+        return true
+    }
+
+    /// Whether the deep check should wait as it does in Low Power Mode (spec 017 FR-010). DEBUG only:
+    /// `-LowPowerMode on` says so whatever the device is doing, so a UI test can see the deep check held
+    /// back and start it by hand.
+    static var lowPowerMode: @Sendable () -> Bool {
+        #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-LowPowerMode"), i + 1 < args.count {
+                let on = args[i + 1] != "off"
+                return { on }
+            }
+        #endif
+        return { ProcessInfo.processInfo.isLowPowerModeEnabled }
     }
 
     static var demoScenario: String {
