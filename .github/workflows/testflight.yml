@@ -145,11 +145,13 @@ jobs:
         env:
           MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
           CURRENT_PROJECT_VERSION: ${{ steps.version.outputs.build_number }}
+          # A pull request is built merged into its base; the commit that matters is its own.
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           {
             echo "### Archive"
             echo
-            echo "- version **$MARKETING_VERSION**, build **$CURRENT_PROJECT_VERSION**, commit \`${GITHUB_SHA:0:7}\`"
+            echo "- version **$MARKETING_VERSION**, build **$CURRENT_PROJECT_VERSION**, commit \`${COMMIT:0:7}\`"
             echo "- $(xcodebuild -version | head -n 1), $(du -sh build/iclean.xcarchive | cut -f 1 | tr -d ' ') archived, not signed"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 

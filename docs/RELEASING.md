@@ -74,8 +74,10 @@ You need a paid Apple Developer Program membership ($99 a year). The rest takes 
 
 ## Shipping a build
 
-- **By hand:** Actions, TestFlight, Run workflow, on `main`. Leave `dry_run` off.
-- **By tag:** `git tag v1.1.0 && git push origin v1.1.0`. The tag names the version.
+- **By hand:** Actions, TestFlight, Run workflow, on `main`. Leave `dry_run` off. While the runners have
+  no Xcode 27, tick `allow_older_xcode` too (see **Xcode** below).
+- **By tag:** `git tag v1.1.0 && git push origin v1.1.0`. The tag names the version. While the runners
+  have no Xcode 27 this needs the repository variable `TESTFLIGHT_ALLOW_OLDER_XCODE` (see **Xcode** below).
 
 Either way the `upload` job waits for a reviewer of the `testflight` environment. The run's page has the
 Review deployments button.
@@ -127,11 +129,12 @@ GitHub hides the secrets in them.
 
 ## Why the archive is built unsigned
 
-The archive job has no secrets and signs nothing; the upload job signs. So the code of a pull request or
-a tag never runs next to the key, the job that waits for approval builds nothing, and the dry run builds
-exactly the bits that would be signed. Signing at export is also what Apple's cloud signing is made for:
-the distribution certificate stays at Apple, and no development certificate or registered device is
-needed on the runner.
+The archive job has no secrets and signs nothing; the upload job signs. So compiling the app, which runs
+the project's build phases and the code of its packages, never happens next to the key: the upload job
+runs only `scripts/testflight.py` and `xcodebuild -exportArchive`, on an archive that is already built. The
+dry run also builds exactly the bits that would be signed. Signing at export is what Apple's cloud signing
+is made for: the distribution certificate stays at Apple, and no development certificate or registered
+device is needed on the runner.
 
 Two limits come with it. The iPhone app must have no entitlements (it has none now), because an archive
 built without signing keeps none: when it gains a capability that needs one, such as iCloud, push or Sign
