@@ -73,14 +73,24 @@
 
         // MARK: Metadata
 
-        public func fetchAllItems() async -> [AssetMetadata] {
-            if authorizationStatus() == .full || authorizationStatus() == .limited {
-                PHPhotoLibrary.shared().register(self)
-            }
+        /// How every fetch, and every look-up by identifier, sees the library: the person's own library,
+        /// with every frame of every burst. A fetch that leaves out `includeAllBurstAssets` returns only
+        /// the one frame of a burst that Photos shows (its key photo), so each other frame is "not
+        /// found": no thumbnail, no preview, no size, and it could not be removed. The scan finds all
+        /// the frames, so everything that asks for one again must see them too.
+        static func lookupOptions() -> PHFetchOptions {
             let options = PHFetchOptions()
             // Only the user's own library: shared-album items are never touched.
             options.includeAssetSourceTypes = [.typeUserLibrary]
             options.includeAllBurstAssets = true
+            return options
+        }
+
+        public func fetchAllItems() async -> [AssetMetadata] {
+            if authorizationStatus() == .full || authorizationStatus() == .limited {
+                PHPhotoLibrary.shared().register(self)
+            }
+            let options = Self.lookupOptions()
             options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
             let result = PHAsset.fetchAssets(with: options)
             lock.withLock { fetchResult = result }
@@ -101,10 +111,8 @@
             // The same view of the library as the full enumeration: the person's own library, bursts
             // included, and nothing hidden. A photo that is hidden, in Recently Deleted or outside
             // a limited selection is simply not returned, which is what a check before removing wants.
-            let options = PHFetchOptions()
-            options.includeAssetSourceTypes = [.typeUserLibrary]
-            options.includeAllBurstAssets = true
-            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: Self.lookupOptions())
+                .enumerateObjects {
                 asset, _, _ in
                 guard !asset.isHidden else { return }
                 if asset.mediaType == .image || asset.mediaType == .video { assets.append(asset) }
@@ -123,11 +131,9 @@
 
         public func stamps(forIDs assetIDs: [String]) async -> [String: AssetStamp] {
             guard !assetIDs.isEmpty else { return [:] }
-            let options = PHFetchOptions()
-            options.includeAssetSourceTypes = [.typeUserLibrary]
-            options.includeAllBurstAssets = true
             var out: [String: AssetStamp] = [:]
-            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: options).enumerateObjects {
+            PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: Self.lookupOptions())
+                .enumerateObjects {
                 asset, _, _ in
                 guard !asset.isHidden, asset.mediaType == .image || asset.mediaType == .video
                 else { return }
@@ -198,8 +204,9 @@
         private func asset(_ id: String) -> PHAsset? {
             if let cached = assetCache.object(forKey: id as NSString) { return cached }
             guard
-                let found = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
-                    .firstObject
+                let found = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [id], options: Self.lookupOptions()
+                ).firstObject
             else { return nil }
             assetCache.setObject(found, forKey: id as NSString)
             return found
@@ -217,7 +224,7 @@
                 }
             }
             if !missing.isEmpty {
-                PHAsset.fetchAssets(withLocalIdentifiers: missing, options: nil)
+                PHAsset.fetchAssets(withLocalIdentifiers: missing, options: Self.lookupOptions())
                     .enumerateObjects { asset, _, _ in
                         self.assetCache.setObject(asset, forKey: asset.localIdentifier as NSString)
                         found.append(asset)
@@ -427,7 +434,8 @@
 
         public func remove(_ assetIDs: [String]) async -> RemovalResult {
             guard !assetIDs.isEmpty else { return RemovalResult(removed: [], failed: []) }
-            let assets = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil)
+            // Every frame of a burst, not only its key photo: the selection of a burst is its other frames.
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: Self.lookupOptions())
             var found: [String] = []
             assets.enumerateObjects { asset, _, _ in found.append(asset.localIdentifier) }
             let missing = Set(assetIDs).subtracting(found)

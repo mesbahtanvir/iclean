@@ -20,6 +20,9 @@ Each check names what it protects:
   layers   the logic stays in CleanupKit and the tooling stays in Debug: the package imports no UI
            framework (but for converting an image), the app reads photos and runs Vision only in
            files that are wholly `#if DEBUG`, and BaselineKit is imported only there
+  photokit a look-up of photos by identifier is given options (PhotoKitLibrary.lookupOptions()): with
+           none, PhotoKit returns only the one frame of a burst that Photos shows, and every other
+           frame of the burst gets no thumbnail, no preview and no removal
 
 Prints one line per problem and exits 1 when there is any.
 """
@@ -307,6 +310,30 @@ def check_layers(root: Path, files):
     return problems
 
 
+# PhotoKit hides all but one frame of a burst from a fetch that is given no options. The scan asks for every
+# frame (`includeAllBurstAssets`), so a look-up by identifier with `options: nil` cannot find them again.
+BY_IDENTIFIER_WITHOUT_OPTIONS = re.compile(
+    r"fetchAssets\(\s*withLocalIdentifiers:(?:(?!fetchAssets).){0,200}?options:\s*nil\b", re.DOTALL
+)
+
+
+def check_photokit(root: Path, files):
+    problems = []
+    for relative in files:
+        if not relative.endswith(".swift") or not relative.startswith((PACKAGE_SOURCES, "iclean/")):
+            continue
+        text = text_of(root, relative)
+        if text is None:
+            continue
+        for found in BY_IDENTIFIER_WITHOUT_OPTIONS.finditer(text):
+            line = text.count("\n", 0, found.start()) + 1
+            problems.append(
+                f"{relative}:{line}: a look-up by identifier without options finds only the key photo of "
+                "a burst; pass PhotoKitLibrary.lookupOptions()"
+            )
+    return problems
+
+
 CHECKS = {
     "data": check_data,
     "plans": check_plans,
@@ -318,6 +345,7 @@ CHECKS = {
     "references": check_references,
     "dependencies": check_dependencies,
     "layers": check_layers,
+    "photokit": check_photokit,
 }
 
 

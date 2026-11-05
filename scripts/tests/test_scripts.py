@@ -515,6 +515,37 @@ class RepoFilesTests(unittest.TestCase):
         self.assertIn("iclean/Features/S.swift", found[0])
         self.assertIn("Vision", found[0])
 
+    # photokit
+    LIBRARY = "Packages/CleanupKit/Sources/CleanupKit/Library/PhotoKitLibrary.swift"
+
+    def test_a_look_up_by_identifier_without_options_is_reported_where_it_is(self):
+        text = (
+            "let a = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: Self.lookupOptions())\n"
+            "let b = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)\n"
+            "let c = PHAsset.fetchAssets(\n    withLocalIdentifiers: missing,\n    options: nil\n)\n"
+        )
+        found = self.problems("photokit", {self.LIBRARY: text})
+        self.assertEqual(len(found), 2)
+        self.assertIn(f"{self.LIBRARY}:2:", found[0])
+        self.assertIn(f"{self.LIBRARY}:3:", found[1])
+        self.assertIn("lookupOptions", found[0])
+
+    def test_other_fetches_and_other_files_are_left_alone(self):
+        album = "PHAsset.fetchAssets(in: album, options: nil)\nPHAsset.fetchAssets(with: nil)\n"
+        by_identifier = "PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)\n"
+        self.assertEqual(self.problems("photokit", {self.LIBRARY: album}), [])
+        self.assertEqual(self.problems("photokit", {"scripts/a.swift": by_identifier}), [])
+        self.assertEqual(self.problems("photokit", {"iclean/App/B.swift": by_identifier})[0][:19], "iclean/App/B.swift:")
+
+    def test_one_call_with_options_does_not_hide_the_next_without(self):
+        text = (
+            "PHAsset.fetchAssets(withLocalIdentifiers: ids, options: opts)\n"
+            "PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)\n"
+        )
+        found = self.problems("photokit", {self.LIBRARY: text})
+        self.assertEqual(len(found), 1)
+        self.assertIn(":2:", found[0])
+
     def test_the_whole_run_names_every_check(self):
         with tempfile.TemporaryDirectory() as tmp:
             write(pathlib.Path(tmp), "a.json", "{}")

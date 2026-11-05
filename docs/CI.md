@@ -35,7 +35,8 @@ made as an **artifact**.
   no build output or oversized file is committed; no merge conflict markers; every "spec 017" in the
   code and the documents names a spec folder that exists; no package comes from a remote URL; the
   layers hold (CleanupKit imports no UI framework but for converting an image, and the app reads
-  photos, runs Vision and imports BaselineKit only in files that are wholly `#if DEBUG`).
+  photos, runs Vision and imports BaselineKit only in files that are wholly `#if DEBUG`); and no look-up
+  of photos by identifier is made without options (PhotoKit then returns only the key photo of a burst).
 
 ### App
 
