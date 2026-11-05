@@ -14,11 +14,14 @@ checks (it does the syntax, the expressions and the shell).
   - an uploaded artifact has `retention-days`
   - no `pull_request_target` (it runs the base branch's workflow with a token for the fork's code)
   - no event text (a title, a branch name, a body) is pasted into a `run:` script, where it is code
+  - a secret (the run's own token aside) is read only by a job under an `environment`, whose reviewers
+    and branch rules decide when it may be used
   - the files a workflow's `paths:` filter and its scripts name exist
 
 Needs PyYAML. Prints one line per problem and exits 1 when there is any.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -26,6 +29,8 @@ from pathlib import Path
 import yaml
 
 TAGGED = re.compile(r"^[\w.-]+/[\w./-]+@(?:v?\d[\w.]*|[0-9a-f]{40})$")
+# A secret of the repository or an environment, not the token every run gets.
+SECRET = re.compile(r"\bsecrets\.(?!GITHUB_TOKEN\b)\w+")
 # Text anyone who can open a pull request or an issue writes. In a `run:` script it is code.
 UNTRUSTED = (
     r"github\.head_ref",
@@ -91,6 +96,8 @@ def check_workflow(root: Path, path: Path):
         where = f"{name}: job {job_name}"
         if "uses" not in job and "timeout-minutes" not in job:
             problems.append(f"{where}: no `timeout-minutes`")
+        if "environment" not in job and SECRET.search(json.dumps(job, default=str)):
+            problems.append(f"{where}: reads a secret without an `environment` (put the job under one, so that its reviewers decide)")
         for step in steps_of(job):
             uses = str(step.get("uses", ""))
             problems += check_step(root, where, step, uses)

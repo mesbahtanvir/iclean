@@ -5,10 +5,19 @@
 Each check is shown to fail on what it is there to catch, not only to pass on the tree as it is.
 """
 
+import base64
+import contextlib
 import importlib.util
+import io
+import json
+import os
 import pathlib
+import plistlib
+import stat
 import tempfile
 import unittest
+
+import yaml
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
 
@@ -32,6 +41,7 @@ ui_shards = load("ui-test-shards.py")
 junit_summary = load("junit-summary.py")
 built_app = load("check-built-app.py")
 flaky_tests = load("flaky-tests.py")
+testflight = load("testflight.py")
 
 
 def write(root: pathlib.Path, relative: str, text: str = "x\n"):
@@ -505,6 +515,37 @@ class RepoFilesTests(unittest.TestCase):
         self.assertIn("iclean/Features/S.swift", found[0])
         self.assertIn("Vision", found[0])
 
+    # photokit
+    LIBRARY = "Packages/CleanupKit/Sources/CleanupKit/Library/PhotoKitLibrary.swift"
+
+    def test_a_look_up_by_identifier_without_options_is_reported_where_it_is(self):
+        text = (
+            "let a = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: Self.lookupOptions())\n"
+            "let b = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)\n"
+            "let c = PHAsset.fetchAssets(\n    withLocalIdentifiers: missing,\n    options: nil\n)\n"
+        )
+        found = self.problems("photokit", {self.LIBRARY: text})
+        self.assertEqual(len(found), 2)
+        self.assertIn(f"{self.LIBRARY}:2:", found[0])
+        self.assertIn(f"{self.LIBRARY}:3:", found[1])
+        self.assertIn("lookupOptions", found[0])
+
+    def test_other_fetches_and_other_files_are_left_alone(self):
+        album = "PHAsset.fetchAssets(in: album, options: nil)\nPHAsset.fetchAssets(with: nil)\n"
+        by_identifier = "PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)\n"
+        self.assertEqual(self.problems("photokit", {self.LIBRARY: album}), [])
+        self.assertEqual(self.problems("photokit", {"scripts/a.swift": by_identifier}), [])
+        self.assertEqual(self.problems("photokit", {"iclean/App/B.swift": by_identifier})[0][:19], "iclean/App/B.swift:")
+
+    def test_one_call_with_options_does_not_hide_the_next_without(self):
+        text = (
+            "PHAsset.fetchAssets(withLocalIdentifiers: ids, options: opts)\n"
+            "PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)\n"
+        )
+        found = self.problems("photokit", {self.LIBRARY: text})
+        self.assertEqual(len(found), 1)
+        self.assertIn(":2:", found[0])
+
     def test_the_whole_run_names_every_check(self):
         with tempfile.TemporaryDirectory() as tmp:
             write(pathlib.Path(tmp), "a.json", "{}")
@@ -597,6 +638,15 @@ jobs:
             '- run: echo "$TITLE"\n        env:\n          TITLE: ${{ github.event.pull_request.title }}',
         )
         self.assertEqual(self.problems(safe), [])
+
+    def test_a_secret_is_read_only_by_a_job_under_an_environment(self):
+        step = "- run: scripts/tool.sh\n        env:\n          KEY: ${{ secrets.KEY }}"
+        bare = self.GOOD.replace("- run: scripts/tool.sh", step)
+        self.assertTrue(any("without an `environment`" in p for p in self.problems(bare)))
+        gated = bare.replace("    timeout-minutes: 5\n", "    timeout-minutes: 5\n    environment: release\n")
+        self.assertEqual(self.problems(gated), [])
+        token = self.GOOD.replace("- run: scripts/tool.sh", step.replace("secrets.KEY", "secrets.GITHUB_TOKEN"))
+        self.assertEqual(self.problems(token), [])
 
     def test_a_script_that_does_not_exist_is_reported(self):
         found = self.problems(self.GOOD.replace("scripts/tool.sh", "scripts/typo.sh"))
@@ -752,6 +802,7 @@ class BuiltAppTests(unittest.TestCase):
         "CFBundleExecutable": "iclean",
         "NSPhotoLibraryUsageDescription": "You choose what to remove, and nothing leaves your iPhone.",
         "ITSAppUsesNonExemptEncryption": False,
+        "UIDeviceFamily": [1],
         "UIBackgroundModes": ["processing"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.mesbahtanvir.iclean.scan.*"],
     }
@@ -774,6 +825,7 @@ class BuiltAppTests(unittest.TestCase):
             "Photos text": {"NSPhotoLibraryUsageDescription": "We look at your photos."},
             "transport security": {"NSAppTransportSecurity": {"NSAllowsArbitraryLoads": True}},
             "encryption": {"ITSAppUsesNonExemptEncryption": True},
+            "iPad support": {"UIDeviceFamily": [1, 2]},
             "background modes": {"UIBackgroundModes": ["processing", "fetch"]},
             "task identifiers": {"BGTaskSchedulerPermittedIdentifiers": []},
         }
@@ -868,6 +920,327 @@ class BuiltAppTests(unittest.TestCase):
             problems, _ = built_app.check_app(app, release=False)
         self.assertEqual(len(problems), 1)
         self.assertIn("cannot be read", problems[0])
+
+    def test_the_version_and_build_number_a_build_was_given_are_checked(self):
+        stamped = {**self.IOS, "CFBundleShortVersionString": "1.2.0", "CFBundleVersion": "42"}
+        self.assertEqual(built_app.check_version(stamped, "1.2.0", "42"), [])
+        self.assertEqual(built_app.check_version(stamped, None, None), [])
+        self.assertEqual(len(built_app.check_version(stamped, "1.3.0", "42")), 1)
+        self.assertEqual(len(built_app.check_version(stamped, "1.2.0", "43")), 1)
+        # An Info.plist that spells the numbers out ignores the build settings, and says so.
+        spelled = {**self.IOS, "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1"}
+        found = built_app.check_version(spelled, "1.2.0", "42")
+        self.assertEqual(len(found), 2)
+        self.assertIn("MARKETING_VERSION", found[0])
+        self.assertIn("CURRENT_PROJECT_VERSION", found[1])
+        self.assertEqual(len(built_app.check_version(self.IOS, "1.2.0", None)), 1)
+
+    def test_main_checks_the_version_only_when_asked(self):
+        stamped = {**self.IOS, "CFBundleShortVersionString": "1.2.0", "CFBundleVersion": "42"}
+        with tempfile.TemporaryDirectory() as tmp:
+            app = str(self.write_bundle(pathlib.Path(tmp), "ios", stamped, self.MANIFEST))
+            for arguments, status in (
+                ([app], 0),
+                ([app, "--configuration", "Release", "--expect-version", "1.2.0", "--expect-build", "42"], 0),
+                ([app, "--expect-version", "9.9.9"], 1),
+                ([app, "--expect-build", "7"], 1),
+                ([app + "-missing"], 2),
+            ):
+                with self.subTest(arguments), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                    io.StringIO()
+                ):
+                    self.assertEqual(built_app.main(arguments), status)
+
+
+# What the .p8 file Apple gives out looks like, with a body that only has the shape of a key.
+FAKE_KEY_BODY = "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgZmFrZWZha2VmYWtlZmFrZWZha2VmYWtlZmFrZQ" * 2
+FAKE_KEY_FILE = (
+    "-----BEGIN PRIVATE KEY-----\n"
+    + "\n".join(FAKE_KEY_BODY[i : i + 64] for i in range(0, len(FAKE_KEY_BODY), 64))
+    + "\n-----END PRIVATE KEY-----\n"
+)
+
+
+class TestflightTests(unittest.TestCase):
+    BODY = FAKE_KEY_BODY
+    PEM = FAKE_KEY_FILE
+    SECRETS = {
+        "ASC_KEY_ID": "ABCDE12345",
+        "ASC_ISSUER_ID": "11111111-2222-3333-4444-555555555555",
+        "ASC_KEY_P8": PEM,
+        "APPLE_TEAM_ID": "TEAM123456",
+    }
+
+    def run_main(self, argv, environ=None, stdin=""):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            status = testflight.main(argv, environ=environ or {}, stdin=io.StringIO(stdin))
+        return status, out.getvalue(), err.getvalue()
+
+    # --- the version and the build number
+
+    def test_a_tag_names_the_version(self):
+        for tag, version in (("v1.2.3", "1.2.3"), ("v2", "2"), ("v1.20", "1.20"), ("v0.9.0", "0.9.0")):
+            with self.subTest(tag):
+                self.assertEqual(testflight.release_version(f"refs/tags/{tag}", "", "1.0")[0], version)
+
+    def test_a_tag_that_is_not_a_version_is_reported(self):
+        for tag in ("v1.2.3-beta", "v1.2.3.4", "v01.2", "release", "v", "1.2.3", "V1.2"):
+            with self.subTest(tag), self.assertRaises(testflight.Problem):
+                testflight.release_version(f"refs/tags/{tag}", "", "1.0")
+
+    def test_the_tag_and_the_input_must_agree(self):
+        self.assertEqual(testflight.release_version("refs/tags/v1.2.0", "1.2.0", "1.0")[0], "1.2.0")
+        with self.assertRaises(testflight.Problem):
+            testflight.release_version("refs/tags/v1.2.0", "1.3.0", "1.0")
+
+    def test_without_a_tag_the_input_then_project_yml_decide(self):
+        self.assertEqual(testflight.release_version("refs/heads/main", "2.1", "1.0"), ("2.1", "the version input"))
+        self.assertEqual(testflight.release_version("refs/heads/main", "", "1.4"), ("1.4", "project.yml"))
+        self.assertEqual(testflight.release_version("refs/pull/9/merge", "  ", "1.4")[0], "1.4")
+        for bad in ("v2", "1.2.3.4", "1.2-beta", "latest", "01.2"):
+            with self.subTest(bad), self.assertRaises(testflight.Problem):
+                testflight.release_version("refs/heads/main", bad, "1.0")
+
+    def test_project_yml_gives_the_default_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            good = write(root, "a.yml", 'settings:\n  base:\n    # MARKETING_VERSION: "9.9"\n    MARKETING_VERSION: "1.4"  # now\n')
+            self.assertEqual(testflight.project_version(good), "1.4")
+            self.assertEqual(testflight.project_version(write(root, "b.yml", "  MARKETING_VERSION: 2.0.1\n")), "2.0.1")
+            for text in ("settings: {}\n", "MARKETING_VERSION: latest\n"):
+                with self.subTest(text), self.assertRaises(testflight.Problem):
+                    testflight.project_version(write(root, "c.yml", text))
+
+    def test_the_real_project_yml_has_a_version_both_plists_read(self):
+        repo = SCRIPTS.parent
+        self.assertRegex(testflight.project_version(repo / "project.yml"), testflight.VERSION)
+        for plist in ("iclean/Info.plist", "iclean/Info-macOS.plist"):
+            with self.subTest(plist):
+                info = plistlib.loads((repo / plist).read_bytes())
+                self.assertEqual(info["CFBundleShortVersionString"], "$(MARKETING_VERSION)")
+                self.assertEqual(info["CFBundleVersion"], "$(CURRENT_PROJECT_VERSION)")
+        self.assertIn("CURRENT_PROJECT_VERSION", (repo / "project.yml").read_text())
+
+    def test_the_build_number_is_the_run_number_plus_the_offset(self):
+        self.assertEqual(testflight.build_number("7", ""), 7)
+        self.assertEqual(testflight.build_number("7", "100"), 107)
+        self.assertEqual(testflight.build_number(" 7 ", " 0 "), 7)
+        for run, offset in (("0", ""), ("abc", ""), ("", ""), ("7", "-1"), ("7", "1.5"), ("7", "x"), ("7", "999999999")):
+            with self.subTest(run=run, offset=offset), self.assertRaises(testflight.Problem):
+                testflight.build_number(run, offset)
+
+    def test_the_version_command_prints_the_outputs_and_nothing_else_on_stdout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = str(write(pathlib.Path(tmp), "project.yml", 'MARKETING_VERSION: "1.0"\n'))
+            argv = ["version", "--project", project, "--run-number", "12", "--offset", "30"]
+            status, out, err = self.run_main(argv + ["--ref", "refs/tags/v3.1.0"])
+            self.assertEqual((status, out), (0, "marketing_version=3.1.0\nbuild_number=42\n"))
+            self.assertIn("::notice", err)
+            # Whatever it prints is appended to $GITHUB_OUTPUT, so a failure must leave stdout empty.
+            status, out, err = self.run_main(argv + ["--ref", "refs/tags/nightly"])
+            self.assertEqual((status, out), (1, ""))
+            self.assertIn("::error::", err)
+
+    # --- Xcode
+
+    OLD = "Xcode 26.6\nBuild version 17E100\n"
+
+    def test_an_xcode_older_than_asked_for_fails_unless_it_is_allowed(self):
+        self.assertEqual(testflight.check_xcode(self.OLD, 27, False)[0], "error")
+        level, message = testflight.check_xcode(self.OLD, 27, True)
+        self.assertEqual(level, "warning")
+        self.assertIn("Xcode 26.6", message)
+        self.assertIn("27", message)
+        for newer in ("Xcode 27.0\nBuild version 18A1\n", "Xcode 27\n", "Xcode 28.1\n"):
+            with self.subTest(newer):
+                self.assertEqual(testflight.check_xcode(newer, 27, False)[0], "ok")
+
+    def test_output_that_is_not_xcodes_is_reported(self):
+        for text in ("", "xcode-select: error: no developer tools\n", "Build version 17E100\n"):
+            with self.subTest(text), self.assertRaises(testflight.Problem):
+                testflight.check_xcode(text, 27, False)
+
+    def test_the_xcode_command_reads_stdin_and_sets_its_status(self):
+        self.assertEqual(self.run_main(["xcode", "--require", "27"], stdin=self.OLD)[0], 1)
+        status, out, _ = self.run_main(["xcode", "--require", "27", "--allow-older"], stdin=self.OLD)
+        self.assertEqual(status, 0)
+        self.assertIn("::warning", out)
+        status, out, _ = self.run_main(["xcode", "--require", "27"], stdin="Xcode 27.0\n")
+        self.assertEqual((status, "::warning" in out), (0, False))
+
+    def test_an_xcode_is_found_by_its_version_in_the_runners_naming(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            apps = pathlib.Path(tmp)
+            (apps / "Xcode_26.6.app").mkdir()
+            (apps / "Xcode_27.0.app").mkdir()
+            self.assertEqual(testflight.xcode_path("27.0", apps), apps / "Xcode_27.0.app")
+            with self.assertRaises(testflight.Problem) as missing:
+                testflight.xcode_path("27.1", apps)
+            self.assertIn("Xcode_26.6.app, Xcode_27.0.app", str(missing.exception))
+            for bad in ("../x", "27;rm", "", "latest", "27.0.0.0"):
+                with self.subTest(bad), self.assertRaises(testflight.Problem):
+                    testflight.xcode_path(bad, apps)
+
+    # --- the secrets
+
+    def test_secrets_that_are_all_there_and_well_formed_pass(self):
+        self.assertEqual(testflight.secret_problems(self.SECRETS), [])
+
+    def test_each_missing_secret_is_named_once(self):
+        for name in testflight.SECRETS:
+            with self.subTest(name):
+                found = testflight.secret_problems({**self.SECRETS, name: "  "})
+                self.assertEqual(len(found), 1)
+                self.assertIn(f"{name} is not set", found[0])
+                self.assertIn("docs/RELEASING.md", found[0])
+        self.assertEqual(len(testflight.secret_problems({})), 4)
+
+    def test_each_secret_that_cannot_be_right_is_named_once(self):
+        wrong = {
+            "ASC_KEY_ID": "my key",
+            "ASC_ISSUER_ID": "not-a-uuid",
+            "APPLE_TEAM_ID": "TEAM-1234",
+            "ASC_KEY_P8": "hello world",
+        }
+        for name, value in wrong.items():
+            with self.subTest(name):
+                found = testflight.secret_problems({**self.SECRETS, name: value})
+                self.assertEqual(len(found), 1)
+                self.assertTrue(found[0].startswith(name), found)
+
+    def test_the_key_is_accepted_however_it_was_pasted(self):
+        flat = self.PEM.replace("\n", " ").strip()
+        forms = {
+            "the file": self.PEM,
+            "windows line ends": self.PEM.replace("\n", "\r\n"),
+            "padded": "\n\n  " + self.PEM + "\n\n",
+            "one line": flat,
+            "escaped line ends": self.PEM.replace("\n", "\\n"),
+            "base64": base64.b64encode(self.PEM.encode()).decode(),
+            "base64 in lines": "\n".join(
+                encoded[i : i + 76] for encoded in [base64.b64encode(self.PEM.encode()).decode()] for i in range(0, len(encoded), 76)
+            ),
+        }
+        for label, value in forms.items():
+            with self.subTest(label):
+                self.assertEqual(testflight.decode_key(value), self.PEM)
+
+    def test_a_key_that_is_not_one_is_reported(self):
+        no_end = self.PEM.replace("-----END PRIVATE KEY-----\n", "")
+        not_base64 = self.PEM.replace(self.BODY[:20], "!!!! not a key !!!!!")
+        for label, value in (("no end", no_end), ("text", "hello"), ("body", not_base64), ("empty body", "x")):
+            with self.subTest(label), self.assertRaises(testflight.Problem):
+                testflight.decode_key(value)
+
+    def test_the_credentials_command_says_what_is_wrong_and_never_shows_a_secret(self):
+        status, out, err = self.run_main(["credentials"], environ=self.SECRETS)
+        self.assertEqual(status, 0)
+        wrong = {**self.SECRETS, "ASC_KEY_ID": "SECRETSECRETSECRET", "ASC_ISSUER_ID": "SECRET-ISSUER", "ASC_KEY_P8": "SECRET-KEY"}
+        for environ in (self.SECRETS, wrong, {"ASC_KEY_ID": "SECRETSECRETSECRET"}):
+            status, out, err = self.run_main(["credentials"], environ=environ)
+            for secret in list(environ.values()) + [self.BODY[:30], "TEAM123456"]:
+                self.assertNotIn(secret, out + err)
+        status, out, err = self.run_main(["credentials"], environ=wrong)
+        self.assertEqual(status, 1)
+        self.assertEqual(err.count("::error::"), 3)
+        status, out, err = self.run_main(["credentials"], environ={})
+        self.assertEqual(status, 1)
+        for name in testflight.SECRETS:
+            self.assertIn(name, err)
+
+    # --- the key file and the export options
+
+    def test_the_key_is_written_where_only_its_owner_can_read_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "keys" / "AuthKey_ABCDE12345.p8"
+            encoded = base64.b64encode(self.PEM.encode()).decode()
+            status, out, err = self.run_main(["write-key", str(path)], environ={"ASC_KEY_P8": encoded})
+            self.assertEqual(status, 0)
+            self.assertEqual(path.read_text(), self.PEM)
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            self.assertNotIn(self.BODY[:30], out + err)
+            # A second run replaces the file, and keeps the mode.
+            self.assertEqual(self.run_main(["write-key", str(path)], environ={"ASC_KEY_P8": self.PEM})[0], 0)
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+
+    def test_a_key_that_is_not_one_leaves_no_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "AuthKey.p8"
+            status, _, err = self.run_main(["write-key", str(path)], environ={"ASC_KEY_P8": "nonsense"})
+            self.assertEqual(status, 1)
+            self.assertFalse(path.exists())
+            self.assertNotIn("nonsense", err)
+
+    def test_the_export_signs_in_the_cloud_and_uploads_with_the_build_number_it_was_given(self):
+        options = testflight.export_options(" TEAM123456 ")
+        self.assertEqual(options["method"], "app-store-connect")
+        self.assertEqual(options["destination"], "upload")
+        self.assertEqual(options["signingStyle"], "automatic")
+        self.assertEqual(options["teamID"], "TEAM123456")
+        self.assertIs(options["manageAppVersionAndBuildNumber"], False)
+        self.assertIs(options["uploadSymbols"], True)
+        for bad in ("", "short", "TEAM-12345", "TOOLONGTEAMID"):
+            with self.subTest(bad), self.assertRaises(testflight.Problem):
+                testflight.export_options(bad)
+
+    def test_the_export_options_command_writes_a_property_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "build" / "ExportOptions.plist"
+            self.assertEqual(self.run_main(["export-options", "--team", "TEAM123456", str(path)])[0], 0)
+            self.assertEqual(plistlib.loads(path.read_bytes()), testflight.export_options("TEAM123456"))
+            self.assertEqual(self.run_main(["export-options", "--team", "nope", str(path)])[0], 1)
+
+
+class TestflightWorkflowTests(unittest.TestCase):
+    """What keeps the signing key away from everything but a release that someone approved."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = yaml.safe_load((SCRIPTS.parent / ".github" / "workflows" / "testflight.yml").read_text())
+        cls.on = cls.doc.get("on", cls.doc.get(True))
+        cls.jobs = cls.doc["jobs"]
+
+    def test_the_two_jobs_are_an_archive_without_secrets_and_a_gated_upload(self):
+        self.assertEqual(set(self.jobs), {"archive", "upload"})
+        self.assertNotIn("environment", self.jobs["archive"])
+        self.assertEqual(self.jobs["upload"]["environment"], "testflight")
+        self.assertEqual(self.jobs["upload"]["needs"], "archive")
+
+    def test_only_the_upload_reads_a_secret_or_signs(self):
+        archive = json.dumps(self.jobs["archive"])
+        for word in ("secrets.", "authenticationKey", "allowProvisioningUpdates", "exportArchive"):
+            self.assertNotIn(word, archive)
+        upload = json.dumps(self.jobs["upload"])
+        for name in testflight.SECRETS:
+            self.assertIn(f"secrets.{name}", upload)
+
+    def test_a_pull_request_never_reaches_the_upload(self):
+        self.assertIn("pull_request", self.on)
+        self.assertNotIn("pull_request_target", self.on)
+        self.assertIn("github.event_name != 'pull_request'", self.jobs["upload"]["if"])
+        self.assertIn("!inputs.dry_run", self.jobs["upload"]["if"])
+
+    def test_only_a_version_tag_or_a_person_starts_a_release(self):
+        self.assertEqual(self.on["push"], {"tags": ["v*"]})
+        self.assertIn("workflow_dispatch", self.on)
+        self.assertIn("pull_request", self.doc["concurrency"]["cancel-in-progress"])
+
+    def test_the_iphone_app_has_no_entitlements_for_an_unsigned_archive_to_lose(self):
+        """An archive built without signing carries no entitlements, so a capability that needs one (iCloud,
+        push, Sign in with Apple, App Groups) would be missing from the build that is signed later. When
+        the iPhone app gets one, the archive step has to sign (docs/RELEASING.md); this is the reminder."""
+        project = yaml.safe_load((SCRIPTS.parent / "project.yml").read_text())
+        app = project["targets"]["iclean"]
+        self.assertNotIn("entitlements", app)
+        for key in app["settings"]["base"]:
+            if key.startswith("CODE_SIGN_ENTITLEMENTS"):
+                self.assertIn("sdk=macosx", key, f"{key} gives the iPhone app entitlements")
+
+    def test_the_pull_request_dry_run_watches_the_files_a_release_depends_on(self):
+        watched = self.on["pull_request"]["paths"]
+        for path in (".github/workflows/testflight.yml", "scripts/testflight.py", "project.yml", "iclean/Info.plist"):
+            self.assertIn(path, watched)
 
 
 class FlakyTestsTests(unittest.TestCase):

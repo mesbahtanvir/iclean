@@ -1,6 +1,6 @@
 # Continuous integration
 
-Every pull request runs five workflows. They test the same app in different ways: the sources, the
+Every pull request runs five workflows (a sixth, `testflight.yml`, ships the app). They test the same app in different ways: the sources, the
 files around them, the compiled app, the app driven like a person, and the engine pushed past what a
 quick run does. Each says what it found in its **job summary** (the page of a run) and keeps what it
 made as an **artifact**.
@@ -12,6 +12,7 @@ made as an **artifact**.
 | `app.yml` | macOS | the app, the project or CleanupKit's sources change | Does the app build for iPhone and Mac, Debug and Release? Does the built app keep its promises? Do the app target's unit tests pass? |
 | `ui-tests.yml` | macOS | the same, and nightly | Do the UI tests pass, run on four simulators at once? Does the full flow make zero network requests? What does every screen look like? |
 | `package-deep.yml` | macOS | CleanupKit changes, and nightly | Does the engine hold under an optimized build, the sanitizers, repetition, a strict compiler, every platform, and the real analyzer? |
+| `testflight.yml` | macOS | the release files change (a dry run), a `v*` tag, or by hand | Does the app archive for release with the version and build number it was given, and does the archive keep its promises? On a tag or by hand, once a reviewer approves, it also signs the archive and sends it to TestFlight ([RELEASING.md](RELEASING.md)). |
 
 ## What each one checks
 
@@ -34,7 +35,8 @@ made as an **artifact**.
   no build output or oversized file is committed; no merge conflict markers; every "spec 017" in the
   code and the documents names a spec folder that exists; no package comes from a remote URL; the
   layers hold (CleanupKit imports no UI framework but for converting an image, and the app reads
-  photos, runs Vision and imports BaselineKit only in files that are wholly `#if DEBUG`).
+  photos, runs Vision and imports BaselineKit only in files that are wholly `#if DEBUG`); and no look-up
+  of photos by identifier is made without options (PhotoKit then returns only the key photo of a burst).
 
 ### App
 
@@ -79,6 +81,17 @@ made as an **artifact**.
   (`ScaleBench --real-scan`); the results digest and the analysis digest must be equal
   (spec 017: a tiered scan finds exactly what a one-pass scan finds).
 
+### TestFlight
+
+- **Archive** (reads no secret): the iPhone app is archived in Release, unsigned, with the version and
+  build number the run chose (`scripts/testflight.py`). `scripts/check-built-app.py` reads the archive for
+  the promises above and for those two numbers. It runs for a pull request that changes the release files,
+  and by hand as a dry run.
+- **Upload** (a `v*` tag or a run by hand, once a reviewer of the `testflight` environment approves): signs
+  with Apple's cloud signing and sends the build to App Store Connect. It is the only job that reads a
+  secret; `scripts/check-workflows.py` fails any job that reads one without an environment.
+- Setup, shipping and what to do when it fails: [RELEASING.md](RELEASING.md).
+
 ## Run the same checks yourself
 
 ```bash
@@ -114,7 +127,11 @@ python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
 - **Performance on a phone.** A CI machine is a virtual one: timings are reported, never gated. The
   scroll-performance test is a measurement and runs on request (`SCROLL_PERF=1`).
 - **Xcode 27.** The README asks for Xcode 27; the runner has an earlier Xcode, so code that needs the
-  iOS 27 SDK is compiled only where the compiler is new enough (`ScanContinuation.swift`).
+  iOS 27 SDK is compiled only where the compiler is new enough (`ScanContinuation.swift`). A TestFlight
+  upload therefore stops on such a runner unless it is told to build anyway (`allow_older_xcode`, or the
+  repository variable `TESTFLIGHT_ALLOW_OLDER_XCODE`). The image of 26 October 2026 has Xcode 26.0 to 26.6.
+- **Signing and the upload to App Store Connect.** They need the Apple credentials, which a pull request
+  never has. The dry run builds the archive that would be signed; the first real run tests the rest.
 
 ## Where the runner differs from a Mac with Xcode 27
 

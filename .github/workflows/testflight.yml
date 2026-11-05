@@ -1,0 +1,272 @@
+name: TestFlight
+
+# Builds the iPhone app for release and, when asked to, sends it to TestFlight. The one-time setup (an
+# App Store Connect API key and four secrets) is in docs/RELEASING.md.
+#
+#   archive  Builds the app without signing, checks the bundle against what the app promises, and keeps
+#            the archive. It reads no secret, so it also runs on a pull request that changes the release
+#            machinery, and by hand as a dry run.
+#   upload   Signs the archive with Apple's cloud signing and uploads it to App Store Connect. Only for a
+#            version tag or a run by hand, and only after the reviewers of the `testflight` environment
+#            approve. It is the only job that reads a secret, and it builds nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and check only; upload nothing
+        type: boolean
+        default: false
+      version:
+        description: Version, for example 1.2.0. Empty keeps the one in project.yml; a tag names its own.
+        type: string
+        default: ""
+      xcode:
+        description: Xcode to build with, for example 27.0. Empty keeps the runner's.
+        type: string
+        default: ""
+      allow_older_xcode:
+        description: Build even if Xcode is older than the README asks for (the app then lacks the code written for the newer SDK)
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/testflight.yml"
+      - "scripts/testflight.py"
+      - "scripts/check-built-app.py"
+      - "project.yml"
+      - "iclean/Info.plist"
+      - "iclean/Info-macOS.plist"
+
+permissions:
+  contents: read
+
+# `bash` here is `bash -eo pipefail`: a pipeline fails when any command in it does, so a command
+# piped into `tee` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+# A pull request's dry run gives way to the next push. A release is never cancelled half way: that
+# could leave a build that was sent and a run that says it failed.
+concurrency:
+  group: testflight-${{ github.event.pull_request.number || 'release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The README's requirement. An older Xcode builds the app without the code written for the newer SDK.
+  REQUIRED_XCODE: "27"
+
+jobs:
+  archive:
+    name: Archive and check
+    runs-on: macos-latest
+    timeout-minutes: 45
+    outputs:
+      marketing_version: ${{ steps.version.outputs.marketing_version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        env:
+          XCODE: ${{ inputs.xcode }}
+        run: |
+          ls -d /Applications/Xcode*.app || true
+          if [[ -n "$XCODE" ]]; then
+            path="$(python3 scripts/testflight.py xcode-path "$XCODE")"
+            sudo xcode-select -s "$path"
+          fi
+          xcodebuild -version
+
+      # A dry run only warns: its job is to show that the pipeline works, not to ship. A run started by
+      # a tag has no inputs, so the variable is how an older Xcode is accepted for those.
+      - name: Xcode is new enough for the whole app
+        env:
+          ALLOW_OLDER: ${{ inputs.allow_older_xcode || inputs.dry_run || github.event_name == 'pull_request' || vars.TESTFLIGHT_ALLOW_OLDER_XCODE == 'true' }}
+        run: |
+          flags=()
+          if [[ "$ALLOW_OLDER" == true ]]; then flags+=(--allow-older); fi
+          xcodebuild -version | python3 scripts/testflight.py xcode --require "$REQUIRED_XCODE" "${flags[@]}"
+
+      - uses: ./.github/actions/xcode-project
+        with:
+          simulator: "false"
+
+      - name: Version and build number
+        id: version
+        env:
+          REF: ${{ github.ref }}
+          REQUESTED: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+          OFFSET: ${{ vars.TESTFLIGHT_BUILD_OFFSET }}
+        run: |
+          python3 scripts/testflight.py version \
+            --ref "$REF" --input-version "$REQUESTED" \
+            --run-number "$RUN_NUMBER" --offset "$OFFSET" | tee -a "$GITHUB_OUTPUT"
+
+      # Not signed here: the signing happens in the upload job, where the key is. What is archived is
+      # what is checked below and what is signed there.
+      - name: Archive
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+          CURRENT_PROJECT_VERSION: ${{ steps.version.outputs.build_number }}
+        run: |
+          mkdir -p build
+          xcodebuild archive \
+            -project iclean.xcodeproj -scheme iclean \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/iclean.xcarchive \
+            -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee build/archive.log | xcbeautify --renderer github-actions
+
+      - name: The archived app keeps its promises
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+          CURRENT_PROJECT_VERSION: ${{ steps.version.outputs.build_number }}
+        run: |
+          app=build/iclean.xcarchive/Products/Applications/iclean.app
+          ls "$app"
+          ls build/iclean.xcarchive/dSYMs || echo "::warning::The archive has no dSYMs, so crashes of this build cannot be symbolicated"
+          # What App Store Connect will read, in the log where a refusal can be compared with it.
+          echo "::group::Info.plist of the archived app"
+          plutil -p "$app/Info.plist"
+          echo "::endgroup::"
+          python3 scripts/check-built-app.py "$app" --configuration Release \
+            --expect-version "$MARKETING_VERSION" --expect-build "$CURRENT_PROJECT_VERSION"
+
+      - name: Summary
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing_version }}
+          CURRENT_PROJECT_VERSION: ${{ steps.version.outputs.build_number }}
+          # A pull request is built merged into its base; the commit that matters is its own.
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          {
+            echo "### Archive"
+            echo
+            echo "- version **$MARKETING_VERSION**, build **$CURRENT_PROJECT_VERSION**, commit \`${COMMIT:0:7}\`"
+            echo "- $(xcodebuild -version | head -n 1), $(du -sh build/iclean.xcarchive | cut -f 1 | tr -d ' ') archived, not signed"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # upload-artifact does not keep the executable bit; a tarball does.
+      - name: Package the archive
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
+        run: tar -C build -czf build/iclean.xcarchive.tgz iclean.xcarchive
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
+        with:
+          name: ios-archive
+          path: build/iclean.xcarchive.tgz
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: archive-logs
+          path: build/*.log
+          retention-days: 7
+
+  upload:
+    name: Upload to TestFlight
+    needs: archive
+    if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    # The reviewers of this environment decide whether a build is sent. Its secrets are ASC_KEY_ID,
+    # ASC_ISSUER_ID, ASC_KEY_P8 and APPLE_TEAM_ID.
+    environment: testflight
+    steps:
+      - uses: actions/checkout@v4
+
+      # First, so that a secret that is missing or misspelled fails in seconds and says what to do.
+      - name: The secrets are there and look right
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 scripts/testflight.py credentials
+
+      - name: Select Xcode
+        env:
+          XCODE: ${{ inputs.xcode }}
+        run: |
+          if [[ -n "$XCODE" ]]; then
+            path="$(python3 scripts/testflight.py xcode-path "$XCODE")"
+            sudo xcode-select -s "$path"
+          fi
+          xcodebuild -version
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-archive
+          path: build
+
+      - name: Unpack the archive
+        run: tar -xzf build/iclean.xcarchive.tgz -C build
+
+      - name: Write the export options
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 scripts/testflight.py export-options --team "$APPLE_TEAM_ID" build/ExportOptions.plist
+
+      # Cloud signing: Apple signs the app for distribution, so no certificate or profile is kept here.
+      # destination=upload in the export options sends the result to App Store Connect in the same step.
+      - name: Sign and upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          python3 scripts/testflight.py write-key "$key"
+          xcodebuild -exportArchive \
+            -archivePath build/iclean.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee build/export.log
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+
+      # Apple's own logs say why a signing or an upload was refused; GitHub hides the secrets in them.
+      - name: What Apple's tools logged
+        if: failure()
+        run: |
+          shopt -s nullglob
+          for folder in "${TMPDIR:-/tmp}"/*.xcdistributionlogs build/export; do
+            echo "::group::$folder"
+            for file in "$folder"/*.log; do
+              echo "--- $file"
+              tail -n 60 "$file"
+            done
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        env:
+          MARKETING_VERSION: ${{ needs.archive.outputs.marketing_version }}
+          CURRENT_PROJECT_VERSION: ${{ needs.archive.outputs.build_number }}
+        run: |
+          {
+            echo "### Sent to App Store Connect"
+            echo
+            echo "- version **$MARKETING_VERSION**, build **$CURRENT_PROJECT_VERSION**, commit \`${GITHUB_SHA:0:7}\`"
+            echo "- Apple processes the build first, usually in 10 to 30 minutes. It then appears under TestFlight in"
+            echo "  App Store Connect, and testers of an internal group with automatic distribution get it."
+          } | tee -a "$GITHUB_STEP_SUMMARY"

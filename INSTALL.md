@@ -13,7 +13,8 @@ Xcode. Once set up, getting it onto your phone takes about ten minutes.
   signs cleanly with a free "Personal Team." The free-account caveats:
   the install **expires after 7 days** (just hit Run again) and you can have
   at most 3 sideloaded apps at a time. The paid Apple Developer Program
-  ($99/yr) removes both and enables TestFlight.
+  ($99/yr) removes both and enables TestFlight ([docs/RELEASING.md](docs/RELEASING.md) sends builds there
+  from GitHub).
 
 ## Steps
 

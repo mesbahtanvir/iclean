@@ -11,6 +11,10 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     TARGETED_DEVICE_FAMILY: "1"
     DEVELOPMENT_TEAM: ""
+    # What a build reports as its version (both Info.plists read these). A release overrides them on
+    # the command line: the version from its tag, the build number from the run (docs/RELEASING.md).
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
 packages:
   CleanupKit:
     path: Packages/CleanupKit
@@ -35,6 +39,8 @@ targets:
       path: iclean/Info.plist
       properties:
         CFBundleDisplayName: iclean
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: "iclean looks through your photos to find duplicates, similar shots, blurry photos, screenshots and large videos. You choose what to remove, and nothing leaves your iPhone."
