@@ -81,10 +81,11 @@ jobs:
           fi
           xcodebuild -version
 
-      # A dry run only warns: its job is to show that the pipeline works, not to ship.
+      # A dry run only warns: its job is to show that the pipeline works, not to ship. A run started by
+      # a tag has no inputs, so the variable is how an older Xcode is accepted for those.
       - name: Xcode is new enough for the whole app
         env:
-          ALLOW_OLDER: ${{ inputs.allow_older_xcode || inputs.dry_run || github.event_name == 'pull_request' }}
+          ALLOW_OLDER: ${{ inputs.allow_older_xcode || inputs.dry_run || github.event_name == 'pull_request' || vars.TESTFLIGHT_ALLOW_OLDER_XCODE == 'true' }}
         run: |
           flags=()
           if [[ "$ALLOW_OLDER" == true ]]; then flags+=(--allow-older); fi
@@ -133,6 +134,10 @@ jobs:
           app=build/iclean.xcarchive/Products/Applications/iclean.app
           ls "$app"
           ls build/iclean.xcarchive/dSYMs || echo "::warning::The archive has no dSYMs, so crashes of this build cannot be symbolicated"
+          # What App Store Connect will read, in the log where a refusal can be compared with it.
+          echo "::group::Info.plist of the archived app"
+          plutil -p "$app/Info.plist"
+          echo "::endgroup::"
           python3 scripts/check-built-app.py "$app" --configuration Release \
             --expect-version "$MARKETING_VERSION" --expect-build "$CURRENT_PROJECT_VERSION"
 
@@ -145,7 +150,7 @@ jobs:
             echo "### Archive"
             echo
             echo "- version **$MARKETING_VERSION**, build **$CURRENT_PROJECT_VERSION**, commit \`${GITHUB_SHA:0:7}\`"
-            echo "- $(xcodebuild -version | head -n 1), $(du -sh build/iclean.xcarchive | cut -f 1) archived, not signed"
+            echo "- $(xcodebuild -version | head -n 1), $(du -sh build/iclean.xcarchive | cut -f 1 | tr -d ' ') archived, not signed"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       # upload-artifact does not keep the executable bit; a tarball does.

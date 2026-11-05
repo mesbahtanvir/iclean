@@ -9,8 +9,8 @@ about, and a build setting can change it without one line of source changing. Fo
 Mac bundle alike:
 
   - Info.plist: the bundle id, the Photos text that says nothing leaves the device, no App Transport
-    Security exceptions, no export-compliance prompt; on the iPhone the background mode a scan that
-    continues needs, on the Mac the minimum system version
+    Security exceptions, no export-compliance prompt; on the iPhone that it is an iPhone-only app and
+    the background mode a scan that continues needs, on the Mac the minimum system version
   - the privacy manifest is in the bundle and tracks nothing
   - the app links no networking framework, and its binary names no networking API
   - a Release binary holds none of the tooling that is only compiled into DEBUG builds
@@ -85,6 +85,11 @@ def check_info(info: dict, platform: str):
     if info.get("ITSAppUsesNonExemptEncryption") is not False:
         problems.append("Info.plist: ITSAppUsesNonExemptEncryption must be false")
     if platform == "ios":
+        if info.get("UIDeviceFamily") != [1]:
+            problems.append(
+                f"Info.plist: UIDeviceFamily is {info.get('UIDeviceFamily')!r}, not [1] (the app is iPhone only; "
+                "an app that supports iPad must support every orientation, or App Store Connect refuses the upload)"
+            )
         if info.get("UIBackgroundModes") != ["processing"]:
             problems.append(f"Info.plist: UIBackgroundModes is {info.get('UIBackgroundModes')!r}, not ['processing']")
         if not info.get("BGTaskSchedulerPermittedIdentifiers"):

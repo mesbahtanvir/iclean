@@ -117,7 +117,8 @@ def check_xcode(version_output: str, required: int, allow_older: bool):
     advice = (
         f"{name} is older than the Xcode {required} the README asks for. A toolchain that old compiles out the "
         "code written for the newer SDK (for example the scan that continues after the app is left), so this "
-        "build would not have it. Pick a newer Xcode with the xcode input, or build anyway with allow_older_xcode."
+        "build would not have it. Pick a newer Xcode with the xcode input, or build anyway: tick allow_older_xcode, "
+        "or set the repository variable TESTFLIGHT_ALLOW_OLDER_XCODE to true (a run started by a tag has no inputs)."
     )
     return ("warning" if allow_older else "error"), advice
 

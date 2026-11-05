@@ -68,7 +68,9 @@ You need a paid Apple Developer Program membership ($99 a year). The rest takes 
    ```
 
 3. **Try it without the secrets.** Actions, TestFlight, Run workflow, tick `dry_run`. It builds, checks
-   and stops. This is also what a pull request that changes the release files runs.
+   and stops. This is also what a pull request that changes the release files runs. (GitHub offers Run
+   workflow only for a workflow that is on the default branch, so the pull request that adds
+   `testflight.yml` has to be merged first.)
 
 ## Shipping a build
 
@@ -94,12 +96,18 @@ distribution.
 text, no App Transport Security exceptions, the privacy manifest, no networking framework or API, none of
 the Debug-only tooling, and that the version and the build number are the ones this run chose.
 
-**Xcode.** The README asks for Xcode 27. The job stops when the runner's Xcode is older, because an older
-compiler leaves out the code written for the newer SDK (the scan that goes on after the app is left,
-for one) and the build would not have it. The "Select Xcode" step lists the Xcodes the runner has; pick one
-with the `xcode` input (`27.0` selects `/Applications/Xcode_27.0.app`). To ship the older build anyway,
-tick `allow_older_xcode`. A run started by a tag has no inputs, so it needs a runner whose Xcode is
-new enough.
+**Xcode.** The README asks for Xcode 27, and GitHub's runners do not have it yet: the image of 26 October
+2026 (`macos-26-arm64`) has Xcode 26.0 to 26.6. An older compiler leaves out the code written for the newer
+SDK (the scan that goes on after the app is left, for one), so the build would not have it, and the job
+stops rather than send such a build by surprise. Until a runner has Xcode 27, accept the older build:
+
+- for every run, set the repository variable `TESTFLIGHT_ALLOW_OLDER_XCODE` to `true` (Settings, Secrets
+  and variables, Actions, Variables). A run started by a tag has no inputs, so this is the way for tags;
+- for one run by hand, tick `allow_older_xcode`.
+
+Each such run still ends with a warning that says which Xcode built it. When the "Select Xcode" step lists
+an Xcode 27, choose it with the `xcode` input (`27.0` selects `/Applications/Xcode_27.0.app`) and delete
+the variable.
 
 ## When it fails
 

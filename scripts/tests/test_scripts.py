@@ -771,6 +771,7 @@ class BuiltAppTests(unittest.TestCase):
         "CFBundleExecutable": "iclean",
         "NSPhotoLibraryUsageDescription": "You choose what to remove, and nothing leaves your iPhone.",
         "ITSAppUsesNonExemptEncryption": False,
+        "UIDeviceFamily": [1],
         "UIBackgroundModes": ["processing"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.mesbahtanvir.iclean.scan.*"],
     }
@@ -793,6 +794,7 @@ class BuiltAppTests(unittest.TestCase):
             "Photos text": {"NSPhotoLibraryUsageDescription": "We look at your photos."},
             "transport security": {"NSAppTransportSecurity": {"NSAllowsArbitraryLoads": True}},
             "encryption": {"ITSAppUsesNonExemptEncryption": True},
+            "iPad support": {"UIDeviceFamily": [1, 2]},
             "background modes": {"UIBackgroundModes": ["processing", "fetch"]},
             "task identifiers": {"BGTaskSchedulerPermittedIdentifiers": []},
         }

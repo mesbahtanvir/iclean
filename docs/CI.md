@@ -127,7 +127,8 @@ python3 scripts/check-built-app.py path/to/iclean.app --configuration Release
   scroll-performance test is a measurement and runs on request (`SCROLL_PERF=1`).
 - **Xcode 27.** The README asks for Xcode 27; the runner has an earlier Xcode, so code that needs the
   iOS 27 SDK is compiled only where the compiler is new enough (`ScanContinuation.swift`). A TestFlight
-  upload therefore stops on such a runner unless it is told to build anyway (`allow_older_xcode`).
+  upload therefore stops on such a runner unless it is told to build anyway (`allow_older_xcode`, or the
+  repository variable `TESTFLIGHT_ALLOW_OLDER_XCODE`). The image of 26 October 2026 has Xcode 26.0 to 26.6.
 - **Signing and the upload to App Store Connect.** They need the Apple credentials, which a pull request
   never has. The dry run builds the archive that would be signed; the first real run tests the rest.
 
