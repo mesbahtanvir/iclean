@@ -154,11 +154,17 @@ final class ScreenshotTour: XCTestCase {
         if element(app, "home.scan").waitForExistence(timeout: 10) {
             element(app, "home.scan").tap()
             if element(app, "scan.pause").waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 4)
+                // The scan is slow on purpose, but how slow depends on how many photos the machine checks
+                // at once: on a quick one it was over before the tour tapped Pause, and the tap failed. Look
+                // at it early, and pause it only if it is still going.
+                Thread.sleep(forTimeInterval: 1.5)
                 shot(app, "02-scanning")
-                element(app, "scan.pause").tap()
-                if element(app, "scan.resume").waitForExistence(timeout: 10) {
-                    shot(app, "02-scanning-paused")
+                let pause = element(app, "scan.pause")
+                if pause.exists {
+                    pause.tap()
+                    if element(app, "scan.resume").waitForExistence(timeout: 10) {
+                        shot(app, "02-scanning-paused")
+                    }
                 }
             }
         }
