@@ -58,7 +58,8 @@ made as an **artifact**.
   without anyone editing a workflow).
 - **No network**: the `NoNetwork` test plan runs the full flow with a tripwire on every URL load.
 - **Screenshots**: `ScreenshotTour` saves a PNG of every screen in light, dark, large text and the
-  largest text (two looks on a pull request, four nightly). Download them from the run's artifacts.
+  largest text (two looks on a pull request, four nightly and on a push to main; a pull request that
+  changes the tour itself takes all four). Download them from the run's artifacts.
 - **Environments** (informational): tests written for the default size and look, run again with the
   simulator in dark mode (four classes) and at the largest text size (the Home states and the tier rows).
   The first complete run at the largest size passed 18 of 25; the other seven look for a row that is below

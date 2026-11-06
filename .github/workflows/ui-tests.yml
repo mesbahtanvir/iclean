@@ -52,7 +52,10 @@ jobs:
       shards: ${{ steps.plan.outputs.shards }}
       looks: ${{ steps.plan.outputs.looks }}
     steps:
+      # Two commits: the merge of a pull request and the base it was merged into, to see what it changes.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - name: Put every test class in a shard
         id: plan
         env:
@@ -60,10 +63,17 @@ jobs:
         run: |
           echo "shards=$(python3 scripts/ui-test-shards.py --shards "$SHARDS")" >> "$GITHUB_OUTPUT"
           python3 scripts/ui-test-shards.py --shards "$SHARDS" --table | tee -a "$GITHUB_STEP_SUMMARY"
-          # A pull request takes two looks at the screens; the nightly run and a push to main, four.
+          # A pull request takes two looks at the screens; the nightly run and a push to main, four. A pull
+          # request that changes the tour itself takes all four: the two it would skip, the large sizes,
+          # are where the tour breaks first, and a change to it is not checked until then otherwise.
           light='{"look":"light","test":"testLight"},{"look":"dark","test":"testDark"}'
           large='{"look":"largetext","test":"testLargeText"},{"look":"xxxl","test":"testLargestText"}'
+          tour_changed=false
           if [[ "$EVENT" == pull_request ]]; then
+            changed="$(git diff --name-only HEAD^1 HEAD 2>/dev/null || true)"
+            if grep -qx 'icleanUITests/ScreenshotTour.swift' <<<"$changed"; then tour_changed=true; fi
+          fi
+          if [[ "$EVENT" == pull_request && "$tour_changed" == false ]]; then
             echo "looks=[$light]" >> "$GITHUB_OUTPUT"
           else
             echo "looks=[$light,$large]" >> "$GITHUB_OUTPUT"
