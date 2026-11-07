@@ -62,24 +62,57 @@ final class ScreenshotTour: XCTestCase {
         app.descendants(matching: .any)[id].firstMatch
     }
 
-    /// At large text a long list is taller than the screen, so a row can be off it and not tappable:
-    /// scroll until it can be tapped.
+    // MARK: Tapping a row that a pinned control may cover
+
+    /// Where a tap reaches a row of the Results list: below the navigation bar and above the pinned
+    /// Review button (and the fade over its top). At the largest text sizes a row is about as tall as what
+    /// is left between them, so its middle or its top edge can be under either, and a tap there opens the
+    /// Confirm sheet instead of the row.
+    private func tapBand(_ app: XCUIApplication) -> ClosedRange<CGFloat> {
+        let screen = app.frame
+        let bar = app.navigationBars.firstMatch
+        let top = (bar.exists ? bar.frame.maxY : screen.minY + 100) + 6
+        let pinned = element(app, "results.reviewAll")
+        let bottom = (pinned.exists ? pinned.frame.minY : screen.maxY - 40) - 24
+        return top...max(top + 1, bottom)
+    }
+
+    /// Moves the list by a part of a screen. `up` moves the content up (the finger goes up), which shows
+    /// what is further down. It holds the finger still at the end, so the list does not coast on.
+    private func scroll(_ app: XCUIApplication, up: Bool) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.66 : 0.34))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.38 : 0.62))
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+    }
+
+    /// Taps the row with this identifier at a point that nothing covers, scrolling the list in steps until
+    /// enough of the row is in the band between the navigation bar and the pinned button. A list holds only
+    /// the rows near the screen, so a row is first looked for further down the list, then back up it.
+    /// False when the list has no such row.
     @discardableResult
-    private func reveal(_ app: XCUIApplication, _ id: String) -> XCUIElement {
-        let target = element(app, id)
-        _ = target.waitForExistence(timeout: 5)
-        var swipes = 0
-        while !target.isHittable, swipes < 6 {
-            app.swipeUp()
-            swipes += 1
+    private func tapRow(_ app: XCUIApplication, _ id: String) -> Bool {
+        let row = element(app, id)
+        _ = row.waitForExistence(timeout: 5)
+        for step in 0..<24 {
+            if row.exists {
+                let band = tapBand(app)
+                let frame = row.frame
+                let top = max(frame.minY, band.lowerBound)
+                let bottom = min(frame.maxY, band.upperBound)
+                if bottom - top >= 60 {
+                    let x = frame.minX + frame.width * 0.35
+                    let y = top + min(40, (bottom - top) / 2)
+                    app.coordinate(withNormalizedOffset: .zero)
+                        .withOffset(CGVector(dx: x - app.frame.minX, dy: y - app.frame.minY)).tap()
+                    return true
+                }
+                // In sight but not in the band: move it toward the middle of the band.
+                scroll(app, up: frame.midY > (band.lowerBound + band.upperBound) / 2)
+            } else {
+                scroll(app, up: step < 10)
+            }
         }
-        // The row may instead be above the part that is showing.
-        swipes = 0
-        while !target.isHittable, swipes < 12 {
-            app.swipeDown()
-            swipes += 1
-        }
-        return target
+        return false
     }
 
     private func back(_ app: XCUIApplication) {
@@ -121,11 +154,17 @@ final class ScreenshotTour: XCTestCase {
         if element(app, "home.scan").waitForExistence(timeout: 10) {
             element(app, "home.scan").tap()
             if element(app, "scan.pause").waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 4)
+                // The scan is slow on purpose, but how slow depends on how many photos the machine checks
+                // at once: on a quick one it was over before the tour tapped Pause, and the tap failed. Look
+                // at it early, and pause it only if it is still going.
+                Thread.sleep(forTimeInterval: 1.5)
                 shot(app, "02-scanning")
-                element(app, "scan.pause").tap()
-                if element(app, "scan.resume").waitForExistence(timeout: 10) {
-                    shot(app, "02-scanning-paused")
+                let pause = element(app, "scan.pause")
+                if pause.exists {
+                    pause.tap()
+                    if element(app, "scan.resume").waitForExistence(timeout: 10) {
+                        shot(app, "02-scanning-paused")
+                    }
                 }
             }
         }
@@ -171,16 +210,16 @@ final class ScreenshotTour: XCTestCase {
         app.swipeDown()
 
         for category in ["duplicates", "similar", "blurry", "screenshots", "largeVideos"] {
-            let row = reveal(app, "results.category.\(category)")
-            guard row.exists else { continue }
-            // At the largest sizes the middle of a tall row is under the pinned Review bar.
-            if row.frame.height > 150 {
-                row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
-                    .withOffset(CGVector(dx: 0, dy: 32)).tap()
-            } else {
-                row.tap()
-            }
+            guard tapRow(app, "results.category.\(category)") else { continue }
             settle(1.0)
+            // A tap that reached the pinned Review button opens the Confirm sheet, not the category. Say so,
+            // instead of saving that sheet as the picture of the category.
+            if element(app, "confirm.cancel").exists {
+                XCTFail("The tap for \(category) reached the Review button, not its row")
+                element(app, "confirm.cancel").tap()
+                settle(0.5)
+                continue
+            }
             shot(app, "04-category-\(category)")
             if category == "duplicates" {
                 let group = app.descendants(matching: .any)
@@ -241,22 +280,19 @@ final class ScreenshotTour: XCTestCase {
         }
 
         // The summary after removing, last because it changes the library.
-        let again = reveal(app, "results.category.duplicates")
-        if again.frame.height > 150 {
-            again.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
-                .withOffset(CGVector(dx: 0, dy: 32)).tap()
-        } else {
-            again.tap()
-        }
-        let remove = element(app, "category.removeSelected")
-        if remove.waitForExistence(timeout: 5) {
-            remove.tap()
-            if element(app, "confirm.remove").waitForExistence(timeout: 8) {
-                element(app, "confirm.remove").tap()
-                if element(app, "done.removed").waitForExistence(timeout: 15) {
-                    shot(app, "08-done")
+        if tapRow(app, "results.category.duplicates") {
+            let remove = element(app, "category.removeSelected")
+            if remove.waitForExistence(timeout: 5) {
+                remove.tap()
+                if element(app, "confirm.remove").waitForExistence(timeout: 8) {
+                    element(app, "confirm.remove").tap()
+                    if element(app, "done.removed").waitForExistence(timeout: 15) {
+                        shot(app, "08-done")
+                    }
                 }
             }
+        } else {
+            XCTFail("The Duplicates row could not be reached to remove its items")
         }
         app.terminate()
     }
